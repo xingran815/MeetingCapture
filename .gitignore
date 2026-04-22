@@ -1,0 +1,18 @@
+# Swift / SwiftPM
+.build/
+.swiftpm/
+Package.resolved
+
+# macOS
+.DS_Store
+
+# Local agent / IDE state
+.claude/
+
+# Capture artifacts & transcripts
+*.wav
+*.txt
+!README*.txt
+
+# Whisper model cache (if WhisperKit stores anything locally to the project)
+Models/
