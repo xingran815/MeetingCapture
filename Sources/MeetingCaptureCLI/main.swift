@@ -61,18 +61,30 @@ func makeTimestamp() -> String {
     return f.string(from: Date())
 }
 
-let duration       = option("--duration").flatMap(Double.init) ?? 30.0
+// No args → launch interactive shell. Any args (including --help) → stay in flag mode.
+if rawArgs.isEmpty {
+    Task {
+        if #available(macOS 14.0, *) { await Shell().run() }
+        else { fputs("macOS 14+ required for the interactive shell.\n", stderr) }
+        exit(0)
+    }
+    RunLoop.main.run()
+}
+
+let persistedConfig = Config.load()
+
+let duration       = option("--duration").flatMap(Double.init) ?? Double(persistedConfig.defaultDurationMinutes * 60)
 let outputPath     = option("--output") ?? "meeting_\(makeTimestamp()).wav"
 let allAudio       = flag("--all-audio")
 let noMic          = flag("--no-mic")
 let listMode       = flag("--list")
 let transcribeFlag = flag("--transcribe")
 let transcribeOnly = option("--transcribe-only")
-let whisperModel   = option("--model") ?? "openai_whisper-small.en"
+let whisperModel   = option("--model") ?? persistedConfig.whisperModel
 let summarizeFlag  = flag("--summarize")
 let summarizeOnly  = option("--summarize-only")
-let llmModel       = option("--llm-model") ?? "kimi-k2.5"
-let llmBaseURL     = option("--llm-base-url") ?? "https://qianfan.baidubce.com/v2/coding"
+let llmModel       = option("--llm-model") ?? persistedConfig.llmModel
+let llmBaseURL     = option("--llm-base-url") ?? persistedConfig.llmBaseURL
 let llmApiKeyFlag  = option("--llm-api-key")
 
 // ─── Banner ───────────────────────────────────────────────────────────────────
@@ -106,10 +118,7 @@ func runTranscription(wavPath: String, model: String) async throws -> String {
 }
 
 func resolveApiKey() throws -> String {
-    if let k = llmApiKeyFlag, !k.isEmpty { return k }
-    let env = ProcessInfo.processInfo.environment
-    if let k = env["QIANFAN_API_KEY"], !k.isEmpty { return k }
-    if let k = env["LLM_API_KEY"],     !k.isEmpty { return k }
+    if let k = Config.resolveApiKey(flag: llmApiKeyFlag) { return k }
     throw NSError(domain: "Summarize", code: -1, userInfo: [
         NSLocalizedDescriptionKey:
             "No LLM API key. Set QIANFAN_API_KEY or LLM_API_KEY, or pass --llm-api-key <key>."

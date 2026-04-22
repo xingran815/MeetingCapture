@@ -12,18 +12,31 @@ import Foundation
 //   Authorization: Bearer <apiKey>
 //   body: { model, messages: [{role, content}], temperature }
 //   200 → { choices: [{ message: { content: "…markdown…" } }] }
+enum ThinkingMode: Equatable {
+    case enabled(budget: Int)
+    case disabled
+    case unspecified
+}
+
 final class Summarizer {
 
     let baseURL: URL
     let apiKey:  String
     let model:   String
     let timeout: TimeInterval
+    let thinking: ThinkingMode
 
-    init(baseURL: URL, apiKey: String, model: String, timeout: TimeInterval = 120) {
-        self.baseURL = baseURL
-        self.apiKey  = apiKey
-        self.model   = model
-        self.timeout = timeout
+    init(baseURL: URL,
+         apiKey: String,
+         model: String,
+         thinking: ThinkingMode = .unspecified,
+         timeout: TimeInterval = 180)
+    {
+        self.baseURL  = baseURL
+        self.apiKey   = apiKey
+        self.model    = model
+        self.thinking = thinking
+        self.timeout  = timeout
     }
 
     func summarize(transcript: String) async throws -> String {
@@ -34,7 +47,7 @@ final class Summarizer {
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
 
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "model": model,
             "temperature": 0.3,
             "messages": [
@@ -42,6 +55,14 @@ final class Summarizer {
                 ["role": "user",   "content": transcript]
             ]
         ]
+        switch thinking {
+        case .enabled(let budget):
+            body["thinking"] = ["type": "enabled", "budget_tokens": budget]
+        case .disabled:
+            body["thinking"] = ["type": "disabled"]
+        case .unspecified:
+            break
+        }
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let t0 = Date()
