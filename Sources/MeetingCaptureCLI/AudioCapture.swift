@@ -210,6 +210,15 @@ final class AudioCapture: NSObject {
         }
     }
 
+    // ─── Public: manual stop ─────────────────────────────────────────────────
+
+    /// Stop an in-progress recording before the duration timer fires. Safe to
+    /// call multiple times and from any queue. No-op if no recording is active
+    /// or if a stop is already in flight.
+    func manualStop() {
+        stopRecording(reason: .timerExpired)
+    }
+
     // ─── Internal ────────────────────────────────────────────────────────────
 
     private enum StopReason { case timerExpired, error(Error) }
