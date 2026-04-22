@@ -4,47 +4,80 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Spike-quality CLI (`MeetingCaptureCLI`) that proves ScreenCaptureKit can capture per-app audio from Zoom / Teams / Webex / browsers and write it to a WAV file. This is step one of a larger plan: a local-first, open-source macOS meeting-summary app (Whisper transcription + user-configurable LLM summarisation). Everything else in the plan depends on this capture path working, so the CLI exists to de-risk it.
+**MeetingCapture** — a macOS command-line tool (no GUI, that decision is final) that records a meeting, transcribes it locally with Whisper, and summarizes it with a user-configurable LLM. Full pipeline is local-first: audio capture and transcription never leave the machine; only the final transcript is sent to the user's chosen LLM endpoint.
+
+Current state (v0.4): capture + transcribe + summarize all work. Interactive menu shell is the primary UX; flag-based invocation still works and is the scripting escape hatch.
 
 ## Build & run
 
-Swift Package Manager, no external dependencies:
+Swift Package Manager, one external dep (WhisperKit). Requires macOS 14+.
 
 ```bash
 swift build
-.build/debug/MeetingCaptureCLI --list                                    # enumerate apps/displays
-.build/debug/MeetingCaptureCLI --duration 30 --output zoom.wav           # per-app capture (auto-detects Zoom/Teams/…)
-.build/debug/MeetingCaptureCLI --all-audio --duration 10 --output sys.wav # whole-display fallback
+
+# Interactive shell (primary UX):
+.build/debug/MeetingCaptureCLI
+
+# Flag path (scripting escape hatch, all still works):
+.build/debug/MeetingCaptureCLI --duration 60 --transcribe --summarize --output /tmp/m.wav
+.build/debug/MeetingCaptureCLI --transcribe-only /tmp/m.wav
+.build/debug/MeetingCaptureCLI --summarize-only /tmp/m.txt
+.build/debug/MeetingCaptureCLI --list      # enumerate SCShareableContent apps
 ```
 
-Prefer running the compiled binary over `swift run`: TCC (Screen Recording permission) is keyed to the executable path, and `swift run` occasionally rebuilds into a new hash.
+Prefer running the compiled binary over `swift run`: TCC (Screen Recording permission) is keyed to the binary path; `swift run` can invalidate that.
 
-There are no tests. Verification = capture a WAV and inspect it (`afinfo file.wav`, `ffprobe`, open in QuickTime).
+No automated tests. Verification is manual: capture a WAV, inspect with `afinfo`, eyeball the `.txt` and `.md` outputs.
 
-## Permission gotcha
+## Permissions
 
-ScreenCaptureKit requires **Screen Recording** permission on whichever binary actually runs. For `.build/debug/MeetingCaptureCLI`, add that path in System Settings → Privacy & Security → Screen Recording, and quit/relaunch the shell. Symptom of missing permission: capture succeeds but produces a <0.5s WAV with silence (no error is raised). The code prints a hint when it detects this.
+Two TCC entitlements required, both tied to the binary path:
+- **Screen Recording** — System Settings → Privacy & Security → Screen Recording → add `.build/debug/MeetingCaptureCLI`. Symptom of missing grant: capture "succeeds" but produces a <0.5 s silent WAV; the code prints a hint.
+- **Microphone** — prompted on first mic use. No prompt usually means silent denial; re-grant manually.
 
-## Architecture
+After rebuilds the path stays the same so grants persist.
 
-Three files, tight pipeline:
+## File-by-file
 
 ```
-main.swift           arg parsing → Task { AudioCapture().run(...) } → RunLoop.main.run()
-AudioCapture.swift   SCShareableContent → SCContentFilter → SCStream → SCStreamOutput → AVAudioFile
-CMSampleBuffer+PCM.swift   CMSampleBuffer → AVAudioPCMBuffer (handles non-interleaved ABL)
+main.swift           flag parsing · shell bootstrap · flag-mode pipeline
+Shell.swift          interactive menus (main + settings) · orchestrates the pipeline
+Config.swift         persisted settings (JSON) · path/api-key helpers
+AudioCapture.swift   SCShareableContent → SCContentFilter → SCStream; owns the WAV writer indirectly
+MicCapture.swift     AVAudioEngine input tap · format conversion to 48 kHz stereo float32
+MixingWriter.swift   sums mic + system samples, writes interleaved f32 WAV
+CMSampleBuffer+PCM.swift  CMSampleBuffer → AVAudioPCMBuffer (handles non-interleaved ABL)
+Transcribe.swift     WhisperKit wrapper · VAD chunking · timestamped .txt
+Summarize.swift      POST to OpenAI-compatible /chat/completions · Kimi thinking-mode toggle
 ```
 
-Key design points that aren't obvious from reading any single file:
+Defaults (all overridable via Settings menu or flags):
+- Whisper: `openai_whisper-small.en`, VAD chunking on
+- LLM: `kimi-k2.5` at `https://qianfan.baidubce.com/v2/coding` (Baidu Qianfan coding plan, OpenAI-compatible)
+- Thinking mode: on, budget 32 000 tokens
+- Output dir: `~/Documents/MeetingCapture`
+- Duration: 30 min
 
-- **SCStream always needs video.** Audio-only capture isn't a thing in ScreenCaptureKit. `AudioCapture.run()` sets a 2×2 / 1 fps dummy video stream so the video path costs nothing.
-- **Source format vs. file format differ.** SCStream delivers float32 **non-interleaved** 48kHz stereo. WAV cannot store non-interleaved PCM — AVAudioFile silently rewrites the file header to interleaved, which would mismatch a non-interleaved write buffer and crash. So `CMSampleBuffer+PCM.swift` interleaves on the fly into an interleaved `AVAudioPCMBuffer`, and `AudioCapture` opens `AVAudioFile` as interleaved float32. The README's "non-interleaved WAV" claim is outdated — the code is interleaved end-to-end.
-- **Per-app filter first, all-audio fallback.** `run()` walks a hard-coded bundle-ID candidate list (Zoom, Teams, Webex, Chrome, Safari) and builds `SCContentFilter(display:including:exceptingWindows:)` for the first match. If none are running it prints a warning and falls back to the display-wide filter. `--all-audio` forces the fallback.
-- **Stop path via continuation.** `run()` suspends on a `CheckedContinuation` that `stopRecording` resumes. The timer-triggered stop uses `DispatchQueue.main.asyncAfter`; Ctrl+C is not wired, so short durations are the only clean exit.
-- **Debug prints go to stdout with `setbuf(stdout, nil)`** in `main.swift`. This was added because a crash earlier dropped all buffered prints, making the failure invisible. Keep the unbuffered setup when debugging — remove only for "release" polish.
+API key: env var `QIANFAN_API_KEY` (or `LLM_API_KEY`), or `--llm-api-key`. **Never persisted.**
 
-## When extending this
+Settings JSON: `~/Library/Application Support/MeetingCapture/config.json`. Corrupt file → defaults + warning, never overwritten.
 
-The stated next steps (see README) are: whisper.cpp integration → real-time chunked transcription → speaker diarisation → OpenAI-compatible LLM summary. If you're plumbing in Whisper, decode the 48kHz/stereo/float32 WAV; Whisper wants 16kHz/mono/float32, so resample before feeding samples in (don't change the capture-side format — its fidelity is a feature).
+## Architecture gotchas
 
-The capture class is `final class AudioCapture: NSObject` with Swift 6 concurrency warnings around `self` capture in the Task/DispatchQueue closures. Those are intentionally left as warnings for the spike; a real app should make this an actor or an @MainActor class.
+These are load-bearing and not obvious from reading a single file:
+
+- **SCStream always needs video.** Audio-only isn't a thing in ScreenCaptureKit. `AudioCapture` sets a 2×2 / 1 fps dummy video stream so the video path costs nothing.
+- **WAV can't store non-interleaved PCM**, and AVAudioFile silently rewrites the file header to interleaved — which then mismatches a non-interleaved write buffer and crashes. `CMSampleBuffer+PCM.swift` interleaves on the fly; `AudioCapture` opens AVAudioFile as interleaved f32. Do not try to "simplify" back to non-interleaved.
+- **System audio drives the mix clock.** `MixingWriter.pushSystem()` consumes a matching number of mic frames from a FIFO per call. Mic FIFO is capped at 1 s to prevent unbounded growth if the mic is disconnected mid-recording.
+- **WhisperKit default chunking drops cross-boundary speech.** The default `ChunkingStrategy` cuts at hard 30-second marks; Whisper's `noSpeechThreshold` (0.6) then classifies the cross-boundary uncertain audio as silence. `Transcribe.swift` explicitly passes `DecodingOptions(chunkingStrategy: .vad)` — do not remove this, it was the fix for a 22 s dropout.
+- **Mid-recording stop uses stdin readability, not readLine.** `Shell.recordFlow()` installs `FileHandle.standardInput.readabilityHandler` before awaiting `capture.run()`, and removes it after. A blocking `readLine()` in a detached Task would leak the thread because Swift can't cancel blocking syscalls. Handler approach is clean.
+- **`setbuf(stdout, nil)`** at the top of `main.swift` makes prompts and progress flush correctly and kept an early crash visible. Do not remove.
+- **Sendable warnings exist** on `AudioCapture`'s Task/DispatchQueue captures. They're left as warnings deliberately; making the class an actor is a bigger refactor than we've invested in.
+
+## Extending the tool
+
+Likely next rounds: speaker diarization, custom prompt templates, chunked/streaming summarization (not needed for current transcript sizes — Kimi has 256 k context), a brittle-stdin fix via termios, Chinese-meeting polish (switch default to multilingual `small` and tune the prompt).
+
+When working on the LLM side, check `memory/llm_provider.md` — the user has committed to Baidu Qianfan + Kimi-K2.5 as the default. Don't silently swap it.
+
+When working on the shell, keep the "one keystroke to record" UX principle. If a feature needs a multi-prompt wizard, put it in the Settings menu.
