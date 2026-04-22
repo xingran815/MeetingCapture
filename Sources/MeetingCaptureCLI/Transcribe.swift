@@ -42,7 +42,10 @@ final class Transcriber {
 
         let t0 = Date()
         print("📝  Transcribing \(wavPath)…")
-        let results = try await pipe.transcribe(audioPath: wavPath)
+        // VAD chunking: split at silence instead of at hard 30 s boundaries, so
+        // speech that straddles a boundary doesn't get dropped as "no speech".
+        let options = DecodingOptions(chunkingStrategy: .vad)
+        let results = try await pipe.transcribe(audioPath: wavPath, decodeOptions: options)
         let dt = Date().timeIntervalSince(t0)
 
         let text = results.map(\.text).joined(separator: " ")
