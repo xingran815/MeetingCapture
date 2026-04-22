@@ -16,24 +16,28 @@ func option(_ name: String) -> String? {
 
 if flag("--help") || flag("-h") {
     print("""
-    MeetingCaptureCLI  —  capture meeting audio, transcribe locally
+    MeetingCaptureCLI  —  capture, transcribe, summarize meetings, all local
 
     Usage:
       swift run MeetingCaptureCLI [options]
 
     Capture options:
-      --duration <sec>      Capture duration in seconds      (default: 30)
-      --output <path>       Output .wav file path            (default: meeting_<ts>.wav)
-      --all-audio           Capture ALL system audio         (default: meeting app only)
-      --no-mic              Disable mic capture              (default: mic mixed in)
+      --duration <sec>      Capture duration in seconds       (default: 30)
+      --output <path>       Output .wav file path             (default: meeting_<ts>.wav)
+      --all-audio           Capture ALL system audio          (default: meeting app only)
+      --no-mic              Disable mic capture               (default: mic mixed in)
 
     Transcription options:
       --transcribe          Transcribe the WAV after capture
       --transcribe-only P   Skip capture; transcribe existing WAV at path P
-      --model <name>        Whisper model                    (default: openai_whisper-small.en)
-                            Common: openai_whisper-tiny.en, openai_whisper-base.en,
-                                    openai_whisper-small.en, openai_whisper-medium.en,
-                                    openai_whisper-large-v3
+      --model <name>        Whisper model                     (default: openai_whisper-small.en)
+
+    Summarization options (OpenAI-compatible /chat/completions):
+      --summarize           Generate an LLM summary after transcription
+      --summarize-only P    Skip everything; summarize existing .txt at path P
+      --llm-model <name>    LLM model name                    (default: kimi-k2.5)
+      --llm-base-url <url>  OpenAI-compatible base URL        (default: https://qianfan.baidubce.com/v2/coding)
+      --llm-api-key <key>   API key (also: $QIANFAN_API_KEY, $LLM_API_KEY)
 
     Misc:
       --list                List running applications and exit
@@ -44,9 +48,9 @@ if flag("--help") || flag("-h") {
       • Microphone (prompted on first mic use)
 
     Examples:
-      swift run MeetingCaptureCLI --duration 60 --output zoom.wav --transcribe
-      swift run MeetingCaptureCLI --transcribe-only /tmp/with_mic.wav
-      swift run MeetingCaptureCLI --all-audio --duration 10 --no-mic
+      MeetingCaptureCLI --duration 60 --transcribe --summarize --output zoom.wav
+      MeetingCaptureCLI --transcribe-only /tmp/with_mic.wav --summarize
+      MeetingCaptureCLI --summarize-only /tmp/with_mic.txt
     """)
     exit(0)
 }
@@ -64,45 +68,96 @@ let noMic          = flag("--no-mic")
 let listMode       = flag("--list")
 let transcribeFlag = flag("--transcribe")
 let transcribeOnly = option("--transcribe-only")
-let modelName      = option("--model") ?? "openai_whisper-small.en"
+let whisperModel   = option("--model") ?? "openai_whisper-small.en"
+let summarizeFlag  = flag("--summarize")
+let summarizeOnly  = option("--summarize-only")
+let llmModel       = option("--llm-model") ?? "kimi-k2.5"
+let llmBaseURL     = option("--llm-base-url") ?? "https://qianfan.baidubce.com/v2/coding"
+let llmApiKeyFlag  = option("--llm-api-key")
 
 // ─── Banner ───────────────────────────────────────────────────────────────────
 
 print("""
 ╔════════════════════════════════════════════╗
-║   MeetingCaptureCLI  ·  v0.2               ║
-║   capture + local Whisper transcription    ║
+║   MeetingCaptureCLI  ·  v0.3               ║
+║   capture · transcribe · summarize         ║
 ╚════════════════════════════════════════════╝
 """)
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 @available(macOS 14.0, *)
-func runTranscription(wavPath: String, model: String) async throws {
+func runTranscription(wavPath: String, model: String) async throws -> String {
     let transcriber = Transcriber(model: model)
     try await transcriber.load()
     let (text, segments) = try await transcriber.transcribe(wavPath: wavPath)
 
-    // Print full transcript
     print("\n──── transcript ──────────────────────────")
     print(text.trimmingCharacters(in: .whitespacesAndNewlines))
     print("──────────────────────────────────────────")
 
-    // Write sibling .txt with timestamped segments
     let wavURL = URL(fileURLWithPath: wavPath)
     let txtURL = wavURL.deletingPathExtension().appendingPathExtension("txt")
     let body = Transcriber.format(segments: segments) + "\n"
     try body.write(to: txtURL, atomically: true, encoding: .utf8)
     print("📄  Transcript saved: \(txtURL.path)")
+
+    return text
+}
+
+func resolveApiKey() throws -> String {
+    if let k = llmApiKeyFlag, !k.isEmpty { return k }
+    let env = ProcessInfo.processInfo.environment
+    if let k = env["QIANFAN_API_KEY"], !k.isEmpty { return k }
+    if let k = env["LLM_API_KEY"],     !k.isEmpty { return k }
+    throw NSError(domain: "Summarize", code: -1, userInfo: [
+        NSLocalizedDescriptionKey:
+            "No LLM API key. Set QIANFAN_API_KEY or LLM_API_KEY, or pass --llm-api-key <key>."
+    ])
+}
+
+/// Run the LLM summarizer on `transcript`, print the markdown, and write it
+/// to a sibling `.md` next to `sourcePath` (which is typically the .wav or
+/// .txt that produced the transcript).
+func runSummarization(transcript: String, sourcePath: String) async throws {
+    let apiKey = try resolveApiKey()
+    guard let baseURL = URL(string: llmBaseURL) else {
+        throw NSError(domain: "Summarize", code: -2, userInfo: [
+            NSLocalizedDescriptionKey: "Invalid --llm-base-url: \(llmBaseURL)"
+        ])
+    }
+
+    let summarizer = Summarizer(baseURL: baseURL, apiKey: apiKey, model: llmModel)
+    let summary = try await summarizer.summarize(transcript: transcript)
+
+    print("\n──── summary ─────────────────────────────")
+    print(summary.trimmingCharacters(in: .whitespacesAndNewlines))
+    print("──────────────────────────────────────────")
+
+    let mdURL = URL(fileURLWithPath: sourcePath)
+        .deletingPathExtension()
+        .appendingPathExtension("md")
+    try (summary + "\n").write(to: mdURL, atomically: true, encoding: .utf8)
+    print("📝  Summary saved: \(mdURL.path)")
 }
 
 // ─── Run ──────────────────────────────────────────────────────────────────────
 
 Task {
     do {
-        // Transcribe-only mode: skip capture entirely
+        // Summarize-only: no capture, no transcription, just summarize a .txt
+        if let path = summarizeOnly {
+            let text = try String(contentsOfFile: path, encoding: .utf8)
+            try await runSummarization(transcript: text, sourcePath: path)
+            exit(0)
+        }
+
+        // Transcribe-only: skip capture, transcribe a .wav, optionally summarize
         if let path = transcribeOnly {
-            try await runTranscription(wavPath: path, model: modelName)
+            let text = try await runTranscription(wavPath: path, model: whisperModel)
+            if summarizeFlag {
+                try await runSummarization(transcript: text, sourcePath: path)
+            }
             exit(0)
         }
 
@@ -119,13 +174,17 @@ Task {
             enableMic: !noMic
         )
 
-        if transcribeFlag {
-            // Resolve absolute path for the captured WAV
+        if transcribeFlag || summarizeFlag {
             let resolved = outputPath.hasPrefix("/")
                 ? outputPath
                 : URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
                     .appendingPathComponent(outputPath).path
-            try await runTranscription(wavPath: resolved, model: modelName)
+
+            // --summarize implies transcription (we need text to summarize)
+            let text = try await runTranscription(wavPath: resolved, model: whisperModel)
+            if summarizeFlag {
+                try await runSummarization(transcript: text, sourcePath: resolved)
+            }
         }
     } catch {
         fputs("❌  \(error.localizedDescription)\n", stderr)
