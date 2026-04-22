@@ -16,29 +16,37 @@ func option(_ name: String) -> String? {
 
 if flag("--help") || flag("-h") {
     print("""
-    MeetingCaptureCLI  —  ScreenCaptureKit audio capture spike
+    MeetingCaptureCLI  —  capture meeting audio, transcribe locally
 
     Usage:
       swift run MeetingCaptureCLI [options]
 
-    Options:
-      --duration <sec>   Capture duration in seconds      (default: 30)
-      --output <path>    Output .wav file path            (default: meeting_<ts>.wav)
-      --all-audio        Capture ALL system audio         (default: meeting app only)
-      --no-mic           Disable mic capture               (default: mic mixed in)
-      --list             List running applications and exit
-      --help             Show this help
+    Capture options:
+      --duration <sec>      Capture duration in seconds      (default: 30)
+      --output <path>       Output .wav file path            (default: meeting_<ts>.wav)
+      --all-audio           Capture ALL system audio         (default: meeting app only)
+      --no-mic              Disable mic capture              (default: mic mixed in)
 
-    Requirements:
-      • macOS 13+
-      • Screen Recording permission must be granted to the terminal /
-        the compiled binary (System Settings → Privacy & Security →
-        Screen Recording).
+    Transcription options:
+      --transcribe          Transcribe the WAV after capture
+      --transcribe-only P   Skip capture; transcribe existing WAV at path P
+      --model <name>        Whisper model                    (default: openai_whisper-small.en)
+                            Common: openai_whisper-tiny.en, openai_whisper-base.en,
+                                    openai_whisper-small.en, openai_whisper-medium.en,
+                                    openai_whisper-large-v3
+
+    Misc:
+      --list                List running applications and exit
+      --help                Show this help
+
+    Permissions (once each):
+      • Screen Recording (System Settings → Privacy & Security → Screen Recording)
+      • Microphone (prompted on first mic use)
 
     Examples:
-      swift run MeetingCaptureCLI --list
-      swift run MeetingCaptureCLI --duration 60 --output zoom_test.wav
-      swift run MeetingCaptureCLI --all-audio --duration 10
+      swift run MeetingCaptureCLI --duration 60 --output zoom.wav --transcribe
+      swift run MeetingCaptureCLI --transcribe-only /tmp/with_mic.wav
+      swift run MeetingCaptureCLI --all-audio --duration 10 --no-mic
     """)
     exit(0)
 }
@@ -49,35 +57,75 @@ func makeTimestamp() -> String {
     return f.string(from: Date())
 }
 
-let duration   = option("--duration").flatMap(Double.init) ?? 30.0
-let outputPath = option("--output") ?? "meeting_\(makeTimestamp()).wav"
-let allAudio   = flag("--all-audio")
-let noMic      = flag("--no-mic")
-let listMode   = flag("--list")
+let duration       = option("--duration").flatMap(Double.init) ?? 30.0
+let outputPath     = option("--output") ?? "meeting_\(makeTimestamp()).wav"
+let allAudio       = flag("--all-audio")
+let noMic          = flag("--no-mic")
+let listMode       = flag("--list")
+let transcribeFlag = flag("--transcribe")
+let transcribeOnly = option("--transcribe-only")
+let modelName      = option("--model") ?? "openai_whisper-small.en"
 
 // ─── Banner ───────────────────────────────────────────────────────────────────
 
 print("""
 ╔════════════════════════════════════════════╗
-║   MeetingCaptureCLI  ·  v0.1 spike         ║
-║   ScreenCaptureKit audio capture test      ║
+║   MeetingCaptureCLI  ·  v0.2               ║
+║   capture + local Whisper transcription    ║
 ╚════════════════════════════════════════════╝
 """)
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+@available(macOS 14.0, *)
+func runTranscription(wavPath: String, model: String) async throws {
+    let transcriber = Transcriber(model: model)
+    try await transcriber.load()
+    let (text, segments) = try await transcriber.transcribe(wavPath: wavPath)
+
+    // Print full transcript
+    print("\n──── transcript ──────────────────────────")
+    print(text.trimmingCharacters(in: .whitespacesAndNewlines))
+    print("──────────────────────────────────────────")
+
+    // Write sibling .txt with timestamped segments
+    let wavURL = URL(fileURLWithPath: wavPath)
+    let txtURL = wavURL.deletingPathExtension().appendingPathExtension("txt")
+    let body = Transcriber.format(segments: segments) + "\n"
+    try body.write(to: txtURL, atomically: true, encoding: .utf8)
+    print("📄  Transcript saved: \(txtURL.path)")
+}
 
 // ─── Run ──────────────────────────────────────────────────────────────────────
 
 Task {
-    let capture = AudioCapture()
     do {
+        // Transcribe-only mode: skip capture entirely
+        if let path = transcribeOnly {
+            try await runTranscription(wavPath: path, model: modelName)
+            exit(0)
+        }
+
+        let capture = AudioCapture()
         if listMode {
             try await capture.listApps()
-        } else {
-            try await capture.run(
-                duration: duration,
-                outputPath: outputPath,
-                captureAllAudio: allAudio,
-                enableMic: !noMic
-            )
+            exit(0)
+        }
+
+        try await capture.run(
+            duration: duration,
+            outputPath: outputPath,
+            captureAllAudio: allAudio,
+            enableMic: !noMic
+        )
+
+        if transcribeFlag {
+            // Resolve absolute path for the captured WAV
+            let resolved = outputPath.hasPrefix("/")
+                ? outputPath
+                : URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+                    .appendingPathComponent(outputPath).path
+            try await runTranscription(wavPath: resolved, model: modelName)
         }
     } catch {
         fputs("❌  \(error.localizedDescription)\n", stderr)

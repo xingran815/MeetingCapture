@@ -4,15 +4,18 @@ import PackageDescription
 let package = Package(
     name: "MeetingCaptureCLI",
     platforms: [
-        .macOS(.v13)   // macOS 13+ for stable SCStream audio capture
+        .macOS(.v14)   // WhisperKit requires macOS 14+
+    ],
+    dependencies: [
+        .package(url: "https://github.com/argmaxinc/WhisperKit.git", from: "0.9.4")
     ],
     targets: [
         .executableTarget(
             name: "MeetingCaptureCLI",
-            path: "Sources/MeetingCaptureCLI",
-            swiftSettings: [
-                .unsafeFlags(["-strict-concurrency=complete"])
-            ]
+            dependencies: [
+                .product(name: "WhisperKit", package: "WhisperKit")
+            ],
+            path: "Sources/MeetingCaptureCLI"
         )
     ]
 )
