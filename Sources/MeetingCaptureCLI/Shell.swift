@@ -265,7 +265,7 @@ final class Shell {
                 MenuItem(key: "6", label: "LLM model               [\(c.llmModel)]"),
                 MenuItem(key: "7", label: "LLM base URL            [\(c.llmBaseURL)]"),
                 MenuItem(key: "8", label: "Kimi thinking           [\(thinkingDesc)]"),
-                MenuItem(key: "9", label: "LLM API key             [\(keyStatus)]   (read-only)"),
+                MenuItem(key: "9", label: "LLM API key             [\(keyStatus)]"),
                 MenuItem(key: "r", label: "Reset to defaults"),
             ]
             let pick = Menu.pick(title: "\nSettings\n", items: items, allowBack: true)
@@ -283,7 +283,7 @@ final class Shell {
                 case 6:  promptString(\.llmBaseURL, label: "LLM base URL")
                 case 7:  promptKimiThinking()
                 case 8:
-                    print("API key is read from the environment. Set QIANFAN_API_KEY (or LLM_API_KEY) and relaunch.")
+                    promptApiKey()
                 case 9:
                     config = Config()
                     persistConfig()
@@ -350,6 +350,67 @@ final class Shell {
             }
         }
         persistConfig()
+    }
+
+    private func promptApiKey() {
+        let env = ProcessInfo.processInfo.environment
+        if env["QIANFAN_API_KEY"] != nil || env["LLM_API_KEY"] != nil {
+            print("ℹ  An env-var key is set in this shell; it takes precedence over the keychain while present.")
+        }
+
+        let stored = Keychain.isStored
+        var items: [MenuItem] = [
+            MenuItem(key: "s", label: stored ? "Replace stored key" : "Set new key  (stored in macOS Keychain)"),
+        ]
+        if stored {
+            items.append(MenuItem(key: "c", label: "Clear stored key"))
+        }
+        let pick = Menu.pick(title: "\nLLM API key\n", items: items, allowBack: true)
+        switch pick {
+        case .back:
+            return
+        case .selected(let i):
+            if items[i].key == "c" {
+                if Keychain.delete() { print("✓  Cleared stored key.") }
+                else                 { print("⚠  Failed to clear key from keychain.") }
+                return
+            }
+            guard let key = readSecret("Paste API key (input hidden)"),
+                  !key.isEmpty else {
+                print("↩  No change.")
+                return
+            }
+            if Keychain.write(key) { print("✓  Stored in keychain.") }
+            else                   { print("⚠  Failed to store key in keychain.") }
+        }
+    }
+
+    /// Read one line from stdin with echo suppressed. Returns nil on EOF or
+    /// if the user types `b` / `back` to cancel.
+    private func readSecret(_ label: String) -> String? {
+        fputs("\(label)  (b = back): ", stdout)
+        fflush(stdout)
+
+        var original = termios()
+        let haveTermios = (isatty(fileno(stdin)) != 0) && (tcgetattr(fileno(stdin), &original) == 0)
+        if haveTermios {
+            var raw = original
+            raw.c_lflag &= ~UInt(ECHO)
+            _ = tcsetattr(fileno(stdin), TCSANOW, &raw)
+        }
+        defer {
+            if haveTermios {
+                var r = original
+                _ = tcsetattr(fileno(stdin), TCSANOW, &r)
+            }
+            fputs("\n", stdout)
+        }
+
+        guard let raw = readLine() else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespaces)
+        let lower = trimmed.lowercased()
+        if lower == "b" || lower == "back" { return nil }
+        return trimmed
     }
 
     private func promptString(_ kp: WritableKeyPath<Config, String>, label: String) {
