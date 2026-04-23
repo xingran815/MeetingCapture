@@ -75,12 +75,13 @@ struct Config: Codable, Equatable {
         return dir.appendingPathComponent("meeting_\(f.string(from: timestamp))")
     }
 
-    /// Returns the API key from flag → env, or nil if none set.
+    /// Returns the API key from flag → env → keychain, or nil if none set.
     static func resolveApiKey(flag: String? = nil) -> String? {
         if let k = flag, !k.isEmpty { return k }
         let env = ProcessInfo.processInfo.environment
         if let k = env["QIANFAN_API_KEY"], !k.isEmpty { return k }
         if let k = env["LLM_API_KEY"],     !k.isEmpty { return k }
+        if let k = Keychain.read(),        !k.isEmpty { return k }
         return nil
     }
 
@@ -89,6 +90,7 @@ struct Config: Codable, Equatable {
         let env = ProcessInfo.processInfo.environment
         if env["QIANFAN_API_KEY"] != nil { return "set via QIANFAN_API_KEY" }
         if env["LLM_API_KEY"]     != nil { return "set via LLM_API_KEY" }
+        if Keychain.isStored              { return "stored in keychain" }
         return "not set"
     }
 }

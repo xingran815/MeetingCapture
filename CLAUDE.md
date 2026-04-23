@@ -58,7 +58,7 @@ Defaults (all overridable via Settings menu or flags):
 - Output dir: `~/Documents/MeetingCapture`
 - Duration: 30 min
 
-API key: env var `QIANFAN_API_KEY` (or `LLM_API_KEY`), or `--llm-api-key`. **Never persisted.**
+API key resolution (first hit wins): `--llm-api-key` flag → `QIANFAN_API_KEY` env → `LLM_API_KEY` env → macOS Keychain (service `MeetingCapture`, account `meeting_llm_api_key`). The Keychain entry is set/cleared from Settings → LLM API key; never written to the config JSON.
 
 Settings JSON: `~/Library/Application Support/MeetingCapture/config.json`. Corrupt file → defaults + warning, never overwritten.
 
