@@ -16,7 +16,7 @@ struct Config: Codable, Equatable {
     // LLM
     var llmModel: String                = "kimi-k2.5"
     var llmBaseURL: String              = "https://qianfan.baidubce.com/v2/coding"
-    var kimiThinkingEnabled: Bool       = true
+    var kimiThinkingEnabled: Bool       = false
     var kimiThinkingBudgetTokens: Int   = 32_000
 
     static let `default` = Config()

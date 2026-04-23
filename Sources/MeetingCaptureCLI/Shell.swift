@@ -22,19 +22,26 @@ final class Shell {
     func run() async {
         printBanner()
         loop: while true {
-            printMainMenu()
-            guard let raw = promptLine() else { break }  // Ctrl-D
-            let choice = raw.lowercased().trimmingCharacters(in: .whitespaces)
-            switch choice {
-            case "1":             await recordFlow()
-            case "2":             await transcribeFlow()
-            case "3":             await summarizeFlow()
-            case "4":             await settingsFlow()
-            case "q", "quit", "exit", "":
-                if choice.isEmpty { continue }   // just Enter → redraw menu
+            let items: [MenuItem] = [
+                MenuItem(key: "1", label: "Record a meeting          ← Enter to stop early"),
+                MenuItem(key: "2", label: "Transcribe a .wav"),
+                MenuItem(key: "3", label: "Summarize a .txt"),
+                MenuItem(key: "4", label: "Settings"),
+                MenuItem(key: "q", label: "Quit"),
+            ]
+            let pick = Menu.pick(header: mainHeader(), items: items, allowBack: false)
+            switch pick {
+            case .back:
                 break loop
-            default:
-                print("Unknown option: \(raw)\n")
+            case .selected(let i):
+                switch i {
+                case 0: await recordFlow()
+                case 1: await transcribeFlow()
+                case 2: await summarizeFlow()
+                case 3: await settingsFlow()
+                case 4: break loop
+                default: break
+                }
             }
         }
         print("Bye.")
@@ -50,27 +57,36 @@ final class Shell {
         """)
     }
 
-    private func printMainMenu() {
+    private func mainHeader() -> String {
         let thinking = config.kimiThinkingEnabled ? "on" : "off"
         let autoTS   = config.autoTranscribe ? "on" : "off"
         let autoSum  = config.autoSummarize  ? "on" : "off"
-
-        print("""
+        return """
 
           whisper: \(config.whisperModel)   ·  kimi thinking: \(thinking)   ·  auto-ts: \(autoTS), auto-sum: \(autoSum)
           output:  \(config.outputDirectory)          max: \(config.defaultDurationMinutes) min
 
-          1) Record a meeting          ← Enter to stop early
-          2) Transcribe a .wav
-          3) Summarize a .txt
-          4) Settings
-          q) Quit
-        """)
+        """
     }
 
     private func promptLine(_ prompt: String = "\n> ") -> String? {
         fputs(prompt, stdout)
         return readLine()
+    }
+
+    // Like promptLine but treats `b` / `back` (case-insensitive) as cancel,
+    // returning nil. Use for any input where the user might want to bail out
+    // without changing anything. The prompt is decorated with a `(b = back)` hint.
+    private func askLine(_ label: String) -> String? {
+        fputs("\(label)  (b = back): ", stdout)
+        guard let raw = readLine() else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespaces)
+        let lower = trimmed.lowercased()
+        if lower == "b" || lower == "back" {
+            print("↩  Back, no change.")
+            return nil
+        }
+        return trimmed
     }
 
     // MARK: - Record
@@ -135,7 +151,7 @@ final class Shell {
     // MARK: - Transcribe
 
     private func transcribeFlow() async {
-        guard let raw = promptLine("Path to .wav: "), !raw.isEmpty else { return }
+        guard let raw = askLine("Path to .wav"), !raw.isEmpty else { return }
         let path = expand(raw)
         guard FileManager.default.fileExists(atPath: path) else {
             print("❌  File not found: \(path)")
@@ -155,7 +171,7 @@ final class Shell {
     // MARK: - Summarize
 
     private func summarizeFlow() async {
-        guard let raw = promptLine("Path to .txt: "), !raw.isEmpty else { return }
+        guard let raw = askLine("Path to .txt"), !raw.isEmpty else { return }
         let path = expand(raw)
         guard let text = try? String(contentsOfFile: path, encoding: .utf8) else {
             print("❌  Couldn't read file: \(path)")
@@ -240,64 +256,86 @@ final class Shell {
                 ? "on, budget \(c.kimiThinkingBudgetTokens) tokens"
                 : "off"
 
-            print("""
-
-            Settings
-
-              1) Whisper model           [\(c.whisperModel)]
-              2) Max duration (minutes)  [\(c.defaultDurationMinutes)]
-              3) Output directory        [\(c.outputDirectory)]
-              4) Auto-transcribe         [\(c.autoTranscribe ? "on" : "off")]
-              5) Auto-summarize          [\(c.autoSummarize ? "on" : "off")]
-              6) LLM model               [\(c.llmModel)]
-              7) LLM base URL            [\(c.llmBaseURL)]
-              8) Kimi thinking           [\(thinkingDesc)]
-              9) LLM API key             [\(keyStatus)]   (read-only)
-              r) Reset to defaults
-              b) Back
-            """)
-            guard let raw = promptLine() else { return }
-            switch raw.lowercased().trimmingCharacters(in: .whitespaces) {
-            case "1":  promptWhisperModel()
-            case "2":  promptInt(\.defaultDurationMinutes, label: "duration (minutes)", min: 1, max: 600)
-            case "3":  promptString(\.outputDirectory, label: "output directory")
-            case "4":  toggle(\.autoTranscribe, label: "Auto-transcribe")
-            case "5":  toggle(\.autoSummarize,  label: "Auto-summarize")
-            case "6":  promptString(\.llmModel, label: "LLM model")
-            case "7":  promptString(\.llmBaseURL, label: "LLM base URL")
-            case "8":  promptKimiThinking()
-            case "9":
-                print("API key is read from the environment. Set QIANFAN_API_KEY (or LLM_API_KEY) and relaunch.")
-            case "r":
-                config = Config()
-                persistConfig()
-                print("✓  Reset to defaults.")
-            case "b", "":
+            let items: [MenuItem] = [
+                MenuItem(key: "1", label: "Whisper model           [\(c.whisperModel)]"),
+                MenuItem(key: "2", label: "Max duration (minutes)  [\(c.defaultDurationMinutes)]"),
+                MenuItem(key: "3", label: "Output directory        [\(c.outputDirectory)]"),
+                MenuItem(key: "4", label: "Auto-transcribe         [\(c.autoTranscribe ? "on" : "off")]"),
+                MenuItem(key: "5", label: "Auto-summarize          [\(c.autoSummarize ? "on" : "off")]"),
+                MenuItem(key: "6", label: "LLM model               [\(c.llmModel)]"),
+                MenuItem(key: "7", label: "LLM base URL            [\(c.llmBaseURL)]"),
+                MenuItem(key: "8", label: "Kimi thinking           [\(thinkingDesc)]"),
+                MenuItem(key: "9", label: "LLM API key             [\(keyStatus)]   (read-only)"),
+                MenuItem(key: "r", label: "Reset to defaults"),
+            ]
+            let pick = Menu.pick(title: "\nSettings\n", items: items, allowBack: true)
+            switch pick {
+            case .back:
                 break loop
-            default:
-                print("Unknown option: \(raw)")
+            case .selected(let i):
+                switch i {
+                case 0:  promptWhisperModel()
+                case 1:  promptInt(\.defaultDurationMinutes, label: "duration (minutes)", min: 1, max: 600)
+                case 2:  promptString(\.outputDirectory, label: "output directory")
+                case 3:  toggle(\.autoTranscribe, label: "Auto-transcribe")
+                case 4:  toggle(\.autoSummarize,  label: "Auto-summarize")
+                case 5:  promptString(\.llmModel, label: "LLM model")
+                case 6:  promptString(\.llmBaseURL, label: "LLM base URL")
+                case 7:  promptKimiThinking()
+                case 8:
+                    print("API key is read from the environment. Set QIANFAN_API_KEY (or LLM_API_KEY) and relaunch.")
+                case 9:
+                    config = Config()
+                    persistConfig()
+                    print("✓  Reset to defaults.")
+                default: break
+                }
             }
         }
     }
 
     private func promptWhisperModel() {
-        print("""
-        Common Whisper models:
-          openai_whisper-tiny.en      (~75 MB, fastest, rough)
-          openai_whisper-base.en      (~140 MB)
-          openai_whisper-small.en     (~470 MB, default)
-          openai_whisper-medium.en    (~1.5 GB, best for accents)
-          openai_whisper-small        (multilingual, for Chinese etc.)
-          openai_whisper-medium       (multilingual)
-        """)
-        guard let v = promptLine("New Whisper model [\(config.whisperModel)]: "), !v.isEmpty else { return }
-        config.whisperModel = v
-        persistConfig()
+        let models: [(id: String, blurb: String)] = [
+            ("openai_whisper-tiny.en",   "~75 MB, fastest, rough"),
+            ("openai_whisper-base.en",   "~140 MB"),
+            ("openai_whisper-small.en",  "~470 MB, default"),
+            ("openai_whisper-medium.en", "~1.5 GB, best for accents"),
+            ("openai_whisper-small",     "multilingual, for Chinese etc."),
+            ("openai_whisper-medium",    "multilingual"),
+        ]
+        var items = models.enumerated().map { (i, m) in
+            let marker = (m.id == config.whisperModel) ? "●" : " "
+            return MenuItem(key: Character("\(i + 1)"), label: "\(marker) \(m.id)   (\(m.blurb))")
+        }
+        items.append(MenuItem(key: "c", label: "  Custom…  (type any WhisperKit model id)"))
+
+        let initial = models.firstIndex(where: { $0.id == config.whisperModel }) ?? 0
+        let pick = Menu.pick(
+            title: "\nWhisper model  (current: \(config.whisperModel))\n",
+            items: items,
+            initialIndex: initial,
+            allowBack: true
+        )
+        switch pick {
+        case .back:
+            return
+        case .selected(let i):
+            if i < models.count {
+                config.whisperModel = models[i].id
+                persistConfig()
+                print("✓  Whisper model: \(config.whisperModel)")
+            } else {
+                guard let v = askLine("Custom Whisper model [\(config.whisperModel)]"),
+                      !v.isEmpty else { return }
+                config.whisperModel = v
+                persistConfig()
+            }
+        }
     }
 
     private func promptKimiThinking() {
         let cur = config.kimiThinkingEnabled ? "on" : "off"
-        guard let v = promptLine("Thinking on/off [\(cur)]: ") else { return }
+        guard let v = askLine("Thinking on/off [\(cur)]") else { return }
         let s = v.lowercased()
         if s == "on" || s == "y" || s == "yes" || s == "true" { config.kimiThinkingEnabled = true }
         else if s == "off" || s == "n" || s == "no" || s == "false" { config.kimiThinkingEnabled = false }
@@ -306,7 +344,7 @@ final class Shell {
 
         if config.kimiThinkingEnabled {
             let curBudget = config.kimiThinkingBudgetTokens
-            if let b = promptLine("Thinking budget tokens [\(curBudget)]: "), !b.isEmpty,
+            if let b = askLine("Thinking budget tokens [\(curBudget)]"), !b.isEmpty,
                let n = Int(b), n > 0 {
                 config.kimiThinkingBudgetTokens = n
             }
@@ -316,14 +354,14 @@ final class Shell {
 
     private func promptString(_ kp: WritableKeyPath<Config, String>, label: String) {
         let cur = config[keyPath: kp]
-        guard let v = promptLine("\(label) [\(cur)]: "), !v.isEmpty else { return }
+        guard let v = askLine("\(label) [\(cur)]"), !v.isEmpty else { return }
         config[keyPath: kp] = v
         persistConfig()
     }
 
     private func promptInt(_ kp: WritableKeyPath<Config, Int>, label: String, min lo: Int, max hi: Int) {
         let cur = config[keyPath: kp]
-        guard let v = promptLine("\(label) [\(cur)]: "), !v.isEmpty else { return }
+        guard let v = askLine("\(label) [\(cur)]"), !v.isEmpty else { return }
         guard let n = Int(v), n >= lo, n <= hi else {
             print("Expected an integer between \(lo) and \(hi).")
             return

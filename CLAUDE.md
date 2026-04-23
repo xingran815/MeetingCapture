@@ -54,7 +54,7 @@ Summarize.swift      POST to OpenAI-compatible /chat/completions · Kimi thinkin
 Defaults (all overridable via Settings menu or flags):
 - Whisper: `openai_whisper-small.en`, VAD chunking on
 - LLM: `kimi-k2.5` at `https://qianfan.baidubce.com/v2/coding` (Baidu Qianfan coding plan, OpenAI-compatible)
-- Thinking mode: on, budget 32 000 tokens
+- Thinking mode: off (budget 32 000 tokens when enabled)
 - Output dir: `~/Documents/MeetingCapture`
 - Duration: 30 min
 
