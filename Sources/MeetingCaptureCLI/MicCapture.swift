@@ -28,6 +28,18 @@ final class MicCapture {
             interleaved: true
         )!
 
+        // Enable Apple's Voice-Processing I/O unit on the input node. This
+        // performs acoustic echo cancellation against the system playback
+        // reference — kills the speaker→mic echo when not using headphones.
+        // Side effects (noise suppression, AGC) are fine for speech transcription.
+        // Must be called before reading the input format or starting the engine,
+        // since enabling VPIO changes the node's native format.
+        do {
+            try engine.inputNode.setVoiceProcessingEnabled(true)
+        } catch {
+            fputs("MicCapture: could not enable voice processing (\(error.localizedDescription)) — continuing without AEC\n", stderr)
+        }
+
         inputFormat = engine.inputNode.outputFormat(forBus: 0)
         guard inputFormat.sampleRate > 0 else {
             throw NSError(domain: "MicCapture", code: -1, userInfo: [
