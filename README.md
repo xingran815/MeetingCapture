@@ -1,9 +1,16 @@
-# MeetingCaptureCLI
+# MeetingCapture
 
-Minimal spike to verify that **ScreenCaptureKit can capture Zoom (and other
-meeting app) audio** and write it to a WAV file.  This is the highest-risk
-part of a full meeting-summary macOS app — everything else (Whisper, LLM
-summarisation) is straightforward once audio capture is proven.
+A local-first macOS command-line tool that records your meeting audio (Zoom,
+Teams, Google Meet, anything that plays through the speakers), transcribes it
+on-device with [WhisperKit](https://github.com/argmaxinc/WhisperKit), and
+summarizes the transcript with a bring-your-own LLM. Audio and transcripts
+never leave your machine; only the final text is sent to the LLM endpoint you
+configure.
+
+Default LLM is [Kimi-K2.5](https://platform.moonshot.ai/) served through
+[Baidu Qianfan](https://qianfan.cloud.baidu.com/)'s OpenAI-compatible
+`/v2/coding` endpoint — swap in any other OpenAI-compatible endpoint if you
+prefer.
 
 ---
 
@@ -11,138 +18,142 @@ summarisation) is straightforward once audio capture is proven.
 
 | | |
 |---|---|
-| macOS | 13.0+ (Ventura) |
-| Xcode | 15+ (Swift 5.9) |
-| Permission | **Screen Recording** granted to your terminal or binary |
+| macOS | 14.0+ (WhisperKit floor) |
+| Hardware | Apple Silicon recommended — Whisper runs on the Neural Engine. Intel works but is slow. |
+| Toolchain | Xcode 15+ / Swift 5.9 |
+| LLM | An API key for Baidu Qianfan Kimi-K2.5, **or** any other OpenAI-compatible `/chat/completions` endpoint |
 
 ---
 
-## Permission setup  ⚠️  (do this first)
-
-ScreenCaptureKit requires the **Screen Recording** privacy entitlement.
-For a CLI tool the permission is attached to whichever process runs it —
-Terminal.app if you use `swift run`, or the compiled binary itself.
-
-1. **System Settings → Privacy & Security → Screen Recording**
-2. Click **+**, navigate to `/Applications/Utilities/Terminal.app`, add it.
-3. **Quit and relaunch Terminal** (the OS won't see the new permission until
-   the process restarts).
-
-> If you compile to a binary and run it directly (`./MeetingCaptureCLI`),
-> you need to add **that binary's path** instead of Terminal.
-
----
-
-## Quick start
+## Build
 
 ```bash
-# Clone / copy the project, then:
-cd MeetingCaptureCLI
-
-# 1. List all running apps (sanity check)
-swift run MeetingCaptureCLI --list
-
-# 2. Capture 30 s of Zoom audio  (start a Zoom call first)
-swift run MeetingCaptureCLI --duration 30 --output zoom_test.wav
-
-# 3. No Zoom?  Capture all system audio instead  (play a YouTube video)
-swift run MeetingCaptureCLI --all-audio --duration 10 --output system_test.wav
-
-# 4. Verify the output
-ffprobe zoom_test.wav
-# or open in Audacity / QuickTime Player
+git clone <this repo>
+cd MeetingCapture
+swift build
 ```
+
+The binary lands at `.build/debug/MeetingCaptureCLI`. **Run the binary
+directly** — not via `swift run`. macOS ties Screen Recording permission to
+the binary path, and `swift run` invalidates that grant on every invocation.
 
 ---
 
-## What you should see
+## Permissions (TCC)
 
+Two privacy entitlements are required, both pinned to the binary path. Grant
+once and they persist across rebuilds (the path is stable).
+
+1. **Screen Recording**
+   System Settings → Privacy & Security → **Screen Recording** → click **+**
+   and add `<repo>/.build/debug/MeetingCaptureCLI`.
+   *Symptom of missing grant:* the capture "succeeds" but the output WAV is
+   under 0.5 seconds and silent. The tool prints a hint when it detects this.
+
+2. **Microphone**
+   Prompted on first mic use. If you don't see a prompt, macOS has silently
+   denied it — re-grant manually under Privacy & Security → **Microphone**.
+
+---
+
+## LLM setup
+
+### Get a Kimi-K2.5 API key (default provider)
+
+1. Sign up at [qianfan.cloud.baidu.com](https://qianfan.cloud.baidu.com/).
+2. Subscribe to the coding plan (Kimi-K2.5 lives there).
+3. Create an API key in the Qianfan console.
+
+> Qianfan is a China-hosted service. If that's not workable for you, point
+> the tool at any other OpenAI-compatible endpoint via **Settings → LLM base
+> URL** in the interactive shell, or `--llm-base-url` on the command line.
+
+### Store the key
+
+In resolution order (first hit wins):
+
+| Method | How | Notes |
+|---|---|---|
+| `--llm-api-key <key>` flag | On the command line | Visible in `ps`; use only for one-off scripting. |
+| `QIANFAN_API_KEY` env var | `export QIANFAN_API_KEY=…` | Also accepts `LLM_API_KEY`. |
+| macOS Keychain | Interactive shell → **Settings** → **LLM API key** | **Recommended.** Stored under service `MeetingCapture`, account `meeting_llm_api_key`. Never written to any config file. |
+
+---
+
+## Usage
+
+### Interactive shell (primary UX)
+
+```bash
+.build/debug/MeetingCaptureCLI
 ```
-╔════════════════════════════════════════════╗
-║   MeetingCaptureCLI  ·  v0.1 spike         ║
-║   ScreenCaptureKit audio capture test      ║
-╚════════════════════════════════════════════╝
 
-Enumerating screen content…
-Found Zoom: us.zoom.xos
-┌──────────────────────────────────────────┐
-│  Capture target : Zoom                   │
-│  Duration       : 30s                    │
-│  Format         : 48 kHz · stereo · f32  │
-│  Output         : zoom_test.wav          │
-└──────────────────────────────────────────┘
-🔴 Recording…  (Ctrl+C to stop early)
+Menu-driven: **Record → Transcribe → Summarize**. Press Enter during a
+recording to stop early. All settings (Whisper model, LLM endpoint, output
+directory, default duration, thinking-mode toggle) live under **Settings**.
 
-  [████████░░░░░░░░░░░░░░░░░░░░░░]   5.0s / 30s
-  [████████████████░░░░░░░░░░░░░░]  10.0s / 30s
-  ...
+### Flag mode (scripting)
 
-──────────────────────────────────────────
-✅  Done!
-   Captured  : 30.00s  (1440000 samples)
-   Saved to  : /path/to/zoom_test.wav
-   File size : 5625.0 KB
+```bash
+# Full pipeline: record 60 s, transcribe, summarize
+.build/debug/MeetingCaptureCLI --duration 60 --transcribe --summarize --output /tmp/m.wav
+
+# Transcribe or summarize an existing file
+.build/debug/MeetingCaptureCLI --transcribe-only /tmp/m.wav
+.build/debug/MeetingCaptureCLI --summarize-only /tmp/m.txt
+
+# Sanity-check: list what ScreenCaptureKit can see
+.build/debug/MeetingCaptureCLI --list
 ```
+
+Outputs default to `~/Documents/MeetingCapture/` — a `.wav`, a timestamped
+`.txt` transcript, and a Markdown `.md` summary per session.
+
+---
+
+## Privacy
+
+- **Audio** is captured and mixed locally into a WAV file on your disk. It is
+  never uploaded anywhere.
+- **Transcription** runs entirely on-device via WhisperKit (CoreML). The
+  Whisper model is fetched from Hugging Face on first use and cached locally;
+  subsequent runs are offline.
+- **Summarization** is the only step that leaves the machine: the transcript
+  text is POSTed to whichever LLM endpoint you configured. Choose your
+  provider accordingly.
 
 ---
 
 ## Troubleshooting
 
-### Capture is 0.00 s or file is empty
-Screen Recording permission is missing.  See **Permission setup** above.
-After granting the permission you **must restart Terminal**.
-
-### Zoom is not detected
-Run `--list` and look for `us.zoom.xos` in the output.  If it is absent,
-Zoom is not running.  Start a meeting (or the Zoom client) and retry.
-You can use `--all-audio` as a fallback — play any audio on the Mac to
-verify the pipeline works end-to-end.
-
-### "No display found"
-Run the tool on the Mac directly, not inside an SSH session or a headless
-environment.  ScreenCaptureKit requires an attached display.
-
-### Permission prompt never appeared
-Some macOS versions don't show a prompt; they silently deny and return an
-empty stream.  Go to System Settings and add the binary manually.
+| Symptom | Likely cause |
+|---|---|
+| WAV is 0 s / silent | Screen Recording permission missing or attached to the wrong binary path. Re-grant for `.build/debug/MeetingCaptureCLI`. |
+| No microphone prompt appeared | macOS silently denied. Grant manually under Privacy & Security → Microphone. |
+| `No display found` | ScreenCaptureKit needs an attached display. It does not work over SSH or on headless hardware. |
+| Zoom not detected | Run `--list`; look for `us.zoom.xos`. If absent, Zoom isn't running. Falls back to `--all-audio`. |
+| HTTP 401 from the LLM endpoint | API key unset or wrong. Re-enter under Settings → LLM API key. |
 
 ---
 
-## Architecture notes
+## Architecture
 
 ```
-SCShareableContent          ← enumerate apps/displays
-    │
-SCContentFilter             ← "only audio from us.zoom.xos"
-    │
-SCStream (audio + 2×2 video)← smallest possible video to satisfy API
-    │
-SCStreamOutput.didOutput    ← CMSampleBuffer (f32, non-interleaved, 48 kHz)
-    │
-CMSampleBuffer+PCM.swift    ← safe ABL extraction → AVAudioPCMBuffer
-    │
-AVAudioFile (WAV)           ← WAVE_FORMAT_IEEE_FLOAT, 48 kHz, stereo
+main.swift           flag parsing · shell bootstrap · flag-mode pipeline
+Shell.swift          interactive menus · orchestrates record → transcribe → summarize
+Menu.swift           arrow-key cbreak picker (+ piped-stdin fallback)
+Config.swift         persisted settings (JSON at ~/Library/Application Support/MeetingCapture/)
+Keychain.swift       LLM API key read/write via Security framework
+AudioCapture.swift   ScreenCaptureKit stream (system audio)
+MicCapture.swift     AVAudioEngine input tap with AEC
+MixingWriter.swift   sums mic + system into one interleaved f32 WAV
+CMSampleBuffer+PCM.swift   CMSampleBuffer → AVAudioPCMBuffer
+Transcribe.swift     WhisperKit wrapper with VAD chunking
+Summarize.swift      OpenAI-compatible POST to /chat/completions
 ```
-
-**Why non-interleaved float32 WAV?**
-SCStream delivers exactly that format, so zero conversion cost and zero
-precision loss.  It's valid WAV (IEEE float extension) — ffmpeg, Audacity,
-Logic, and most DAWs read it natively.
-
-**Why minimal 2×2 video?**
-SCStream requires a display even for audio-only capture.  Setting
-`minimumFrameInterval = 1 fps` and `2×2` resolution means the video path
-costs essentially nothing.
 
 ---
 
-## Next steps (once capture is verified)
+## License
 
-1. **Pipe to Whisper** — feed the WAV into `whisper.cpp` (Apple-Silicon
-   accelerated via Metal) for offline transcription.
-2. **Real-time streaming** — pass 30-second rolling chunks directly to the
-   Whisper streaming API instead of writing a file.
-3. **Speaker diarisation** — use pyannote or a CoreML TDNN model to label
-   "who said what".
-4. **LLM summary** — POST transcript to any OpenAI-compatible endpoint with
-   a user-supplied API key and a meeting-summary prompt.
+MIT. See [LICENSE](LICENSE).
