@@ -21,25 +21,34 @@ enum ThinkingMode: Equatable {
 final class Summarizer {
 
     let baseURL: URL
-    let apiKey:  String
+    /// Resolves the API key on demand. Called once per request so we never
+    /// cache the secret in an instance property — a fresh keychain read every
+    /// time, so rotating / clearing the key takes effect immediately.
+    let apiKeyProvider: () -> String?
     let model:   String
     let timeout: TimeInterval
     let thinking: ThinkingMode
 
     init(baseURL: URL,
-         apiKey: String,
+         apiKeyProvider: @escaping () -> String?,
          model: String,
          thinking: ThinkingMode = .unspecified,
          timeout: TimeInterval = 180)
     {
-        self.baseURL  = baseURL
-        self.apiKey   = apiKey
-        self.model    = model
-        self.thinking = thinking
-        self.timeout  = timeout
+        self.baseURL        = baseURL
+        self.apiKeyProvider = apiKeyProvider
+        self.model          = model
+        self.thinking       = thinking
+        self.timeout        = timeout
     }
 
     func summarize(transcript: String) async throws -> String {
+        guard let apiKey = apiKeyProvider(), !apiKey.isEmpty else {
+            throw SummarizerError.badResponse(
+                "No LLM API key available at request time. Set it via Settings → LLM API key, QIANFAN_API_KEY, or --llm-api-key."
+            )
+        }
+
         let endpoint = baseURL.appendingPathComponent("chat/completions")
         var req = URLRequest(url: endpoint)
         req.httpMethod = "POST"

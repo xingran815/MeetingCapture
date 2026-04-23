@@ -117,26 +117,27 @@ func runTranscription(wavPath: String, model: String) async throws -> String {
     return text
 }
 
-func resolveApiKey() throws -> String {
-    if let k = Config.resolveApiKey(flag: llmApiKeyFlag) { return k }
-    throw NSError(domain: "Summarize", code: -1, userInfo: [
-        NSLocalizedDescriptionKey:
-            "No LLM API key. Set QIANFAN_API_KEY or LLM_API_KEY, or pass --llm-api-key <key>."
-    ])
-}
-
 /// Run the LLM summarizer on `transcript`, print the markdown, and write it
 /// to a sibling `.md` next to `sourcePath` (which is typically the .wav or
 /// .txt that produced the transcript).
 func runSummarization(transcript: String, sourcePath: String) async throws {
-    let apiKey = try resolveApiKey()
+    guard Config.resolveApiKey(flag: llmApiKeyFlag) != nil else {
+        throw NSError(domain: "Summarize", code: -1, userInfo: [
+            NSLocalizedDescriptionKey:
+                "No LLM API key. Store one in the keychain via the interactive shell, export QIANFAN_API_KEY, or pass --llm-api-key <key>."
+        ])
+    }
     guard let baseURL = URL(string: llmBaseURL) else {
         throw NSError(domain: "Summarize", code: -2, userInfo: [
             NSLocalizedDescriptionKey: "Invalid --llm-base-url: \(llmBaseURL)"
         ])
     }
 
-    let summarizer = Summarizer(baseURL: baseURL, apiKey: apiKey, model: llmModel)
+    let summarizer = Summarizer(
+        baseURL: baseURL,
+        apiKeyProvider: { Config.resolveApiKey(flag: llmApiKeyFlag) },
+        model: llmModel
+    )
     let summary = try await summarizer.summarize(transcript: transcript)
 
     print("\n──── summary ─────────────────────────────")
