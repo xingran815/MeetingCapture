@@ -206,10 +206,12 @@ final class Shell {
     }
 
     private func runSummarize(transcript: String, sourcePath: String) async {
-        guard let apiKey = Config.resolveApiKey() else {
+        // Fail fast with a helpful message if nothing will resolve a key.
+        // The actual key is fetched fresh inside Summarizer.summarize().
+        guard Config.resolveApiKey() != nil else {
             print("""
             ❌  Summarization skipped: no API key.
-               Set QIANFAN_API_KEY or LLM_API_KEY in your shell and retry.
+               Store one with Settings → LLM API key, or export QIANFAN_API_KEY.
                Transcript is still on disk.
             """)
             return
@@ -225,7 +227,7 @@ final class Shell {
 
         let summarizer = Summarizer(
             baseURL: baseURL,
-            apiKey: apiKey,
+            apiKeyProvider: { Config.resolveApiKey() },
             model: config.llmModel,
             thinking: thinking
         )
