@@ -25,6 +25,7 @@ final class AudioCapture: NSObject {
 
     private var stream:    SCStream?
     private var micCapture: MicCapture?
+    private var echo: EchoCanceller?
 
     // Continuation that run() awaits; resumed when capture ends
     private var stopCont: CheckedContinuation<Void, Error>?
@@ -55,7 +56,7 @@ final class AudioCapture: NSObject {
         }
     }
 
-    func run(duration: Double, outputPath: String, captureAllAudio: Bool, enableMic: Bool) async throws {
+    func run(duration: Double, outputPath: String, captureAllAudio: Bool, enableMic: Bool, aecEnabled: Bool) async throws {
         targetDuration = duration
 
         // 1. Enumerate screen content ─────────────────────────────────────────
@@ -155,13 +156,30 @@ final class AudioCapture: NSObject {
         print("  WAV file created")
 
         // 6b. Optionally start mic capture and route into the writer ──────────
+        // When AEC is enabled, mic samples flow through EchoCanceller first;
+        // its onCleanMic callback then feeds MixingWriter. When AEC is off,
+        // MicCapture feeds MixingWriter directly.
         var micStatus = "disabled"
+        var aecStatus = "off"
         var mic: MicCapture?
+        var canceller: EchoCanceller?
         if enableMic {
             do {
                 let m = try MicCapture()
-                m.onSamples = { [weak writer] ptr, frames in
-                    writer?.pushMic(interleaved: ptr, frameCount: frames)
+                if aecEnabled {
+                    let c = EchoCanceller()
+                    c.onCleanMic = { [weak writer] ptr, frames in
+                        writer?.pushMic(mono: ptr, frameCount: frames)
+                    }
+                    m.onSamples = { [weak c] ptr, frames in
+                        c?.pushMic(ptr, frameCount: frames)
+                    }
+                    canceller = c
+                    aecStatus = "on (Speex, 150 ms tail)"
+                } else {
+                    m.onSamples = { [weak writer] ptr, frames in
+                        writer?.pushMic(mono: ptr, frameCount: frames)
+                    }
                 }
                 try m.start()
                 mic = m
@@ -172,12 +190,14 @@ final class AudioCapture: NSObject {
             }
         }
         self.micCapture = mic
+        self.echo = canceller
 
         // 7. Print summary ─────────────────────────────────────────────────────
         print("""
         ┌──────────────────────────────────────────┐
         │  Capture target : \(targetLabel.padding(toLength: 22, withPad: " ", startingAt: 0))│
         │  Mic            : \(micStatus.padding(toLength: 22, withPad: " ", startingAt: 0))│
+        │  AEC            : \(aecStatus.padding(toLength: 22, withPad: " ", startingAt: 0))│
         │  Duration       : \("\(Int(duration))s".padding(toLength: 22, withPad: " ", startingAt: 0))│
         │  Format         : 48 kHz · stereo · f32  │
         │  Output         : \(url.lastPathComponent.padding(toLength: 22, withPad: " ", startingAt: 0))│
@@ -228,6 +248,7 @@ final class AudioCapture: NSObject {
             try? await stream?.stopCapture()
             micCapture?.stop()
             micCapture = nil
+            echo = nil
 
             let captured = Double(sampleCount) / 48_000.0
             writer = nil        // closing AVAudioFile flushes + finalises the WAV header
@@ -320,6 +341,7 @@ extension AudioCapture: SCStreamOutput {
             return
         }
         writer?.pushSystem(pcmBuffer)
+        echo?.pushReference(pcmBuffer)
         sampleCount += Int(pcmBuffer.frameLength)
         printProgress()
     }

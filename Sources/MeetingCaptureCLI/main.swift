@@ -26,6 +26,7 @@ if flag("--help") || flag("-h") {
       --output <path>       Output .wav file path             (default: meeting_<ts>.wav)
       --all-audio           Capture ALL system audio          (default: meeting app only)
       --no-mic              Disable mic capture               (default: mic mixed in)
+      --no-aec              Disable acoustic echo cancellation (default: AEC on)
 
     Transcription options:
       --transcribe          Transcribe the WAV after capture
@@ -77,6 +78,7 @@ let duration       = option("--duration").flatMap(Double.init) ?? Double(persist
 let outputPath     = option("--output") ?? "meeting_\(makeTimestamp()).wav"
 let allAudio       = flag("--all-audio")
 let noMic          = flag("--no-mic")
+let noAec          = flag("--no-aec")
 let listMode       = flag("--list")
 let transcribeFlag = flag("--transcribe")
 let transcribeOnly = option("--transcribe-only")
@@ -181,7 +183,8 @@ Task {
             duration: duration,
             outputPath: outputPath,
             captureAllAudio: allAudio,
-            enableMic: !noMic
+            enableMic: !noMic,
+            aecEnabled: !noAec && persistedConfig.aecEnabled
         )
 
         if transcribeFlag || summarizeFlag {
