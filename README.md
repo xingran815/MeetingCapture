@@ -133,6 +133,7 @@ Outputs default to `~/Documents/MeetingCapture/` — a `.wav`, a timestamped
 | `No display found` | ScreenCaptureKit needs an attached display. It does not work over SSH or on headless hardware. |
 | Zoom not detected | Run `--list`; look for `us.zoom.xos`. If absent, Zoom isn't running. Falls back to `--all-audio`. |
 | HTTP 401 from the LLM endpoint | API key unset or wrong. Re-enter under Settings → LLM API key. |
+| Echo of the other person's voice in the recording | No software AEC yet — until v0.5 lands, use headphones to keep the partner's voice from bleeding into the mic. |
 
 ---
 
