@@ -12,6 +12,7 @@ struct Config: Codable, Equatable {
     var outputDirectory: String         = "~/Documents/MeetingCapture"
     var autoTranscribe: Bool            = true
     var autoSummarize: Bool             = true
+    var aecEnabled: Bool                = true
 
     // LLM
     var llmModel: String                = "kimi-k2.5"
@@ -20,6 +21,52 @@ struct Config: Codable, Equatable {
     var kimiThinkingBudgetTokens: Int   = 32_000
 
     static let `default` = Config()
+
+    // Memberwise initializer (for creating defaults).
+    init(
+        whisperModel: String = "openai_whisper-small.en",
+        defaultDurationMinutes: Int = 30,
+        outputDirectory: String = "~/Documents/MeetingCapture",
+        autoTranscribe: Bool = true,
+        autoSummarize: Bool = true,
+        aecEnabled: Bool = true,
+        llmModel: String = "kimi-k2.5",
+        llmBaseURL: String = "https://qianfan.baidubce.com/v2/coding",
+        kimiThinkingEnabled: Bool = false,
+        kimiThinkingBudgetTokens: Int = 32_000
+    ) {
+        self.whisperModel = whisperModel
+        self.defaultDurationMinutes = defaultDurationMinutes
+        self.outputDirectory = outputDirectory
+        self.autoTranscribe = autoTranscribe
+        self.autoSummarize = autoSummarize
+        self.aecEnabled = aecEnabled
+        self.llmModel = llmModel
+        self.llmBaseURL = llmBaseURL
+        self.kimiThinkingEnabled = kimiThinkingEnabled
+        self.kimiThinkingBudgetTokens = kimiThinkingBudgetTokens
+    }
+
+    // Custom decoder provides defaults for missing keys (backward compat).
+    enum CodingKeys: String, CodingKey {
+        case whisperModel, defaultDurationMinutes, outputDirectory
+        case autoTranscribe, autoSummarize, aecEnabled
+        case llmModel, llmBaseURL, kimiThinkingEnabled, kimiThinkingBudgetTokens
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        whisperModel = try c.decodeIfPresent(String.self, forKey: .whisperModel) ?? "openai_whisper-small.en"
+        defaultDurationMinutes = try c.decodeIfPresent(Int.self, forKey: .defaultDurationMinutes) ?? 30
+        outputDirectory = try c.decodeIfPresent(String.self, forKey: .outputDirectory) ?? "~/Documents/MeetingCapture"
+        autoTranscribe = try c.decodeIfPresent(Bool.self, forKey: .autoTranscribe) ?? true
+        autoSummarize = try c.decodeIfPresent(Bool.self, forKey: .autoSummarize) ?? true
+        aecEnabled = try c.decodeIfPresent(Bool.self, forKey: .aecEnabled) ?? true
+        llmModel = try c.decodeIfPresent(String.self, forKey: .llmModel) ?? "kimi-k2.5"
+        llmBaseURL = try c.decodeIfPresent(String.self, forKey: .llmBaseURL) ?? "https://qianfan.baidubce.com/v2/coding"
+        kimiThinkingEnabled = try c.decodeIfPresent(Bool.self, forKey: .kimiThinkingEnabled) ?? false
+        kimiThinkingBudgetTokens = try c.decodeIfPresent(Int.self, forKey: .kimiThinkingBudgetTokens) ?? 32_000
+    }
 
     static var path: URL {
         URL(fileURLWithPath: NSHomeDirectory())

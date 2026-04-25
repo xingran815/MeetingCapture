@@ -4,11 +4,14 @@ import AVFoundation
 // Writes mixed (system + mic) audio to a single interleaved 48 kHz stereo WAV.
 //
 // System audio (from SCStream) drives the clock: every pushSystem() call
-// consumes a matching number of mic frames from a small FIFO, sums them,
-// and writes exactly that many frames. If the mic FIFO is short, the gap is
-// filled with system-only audio. If it grows beyond 1 s, the oldest frames
-// are dropped — prevents unbounded memory if the mic is disconnected or
-// delivering at a slightly higher rate.
+// consumes a matching number of mic frames from a small FIFO, sums them
+// equally into both stereo channels, and writes exactly that many frames.
+// If the mic FIFO is short, the gap is filled with system-only audio. If it
+// grows beyond 1 s, the oldest frames are dropped — prevents unbounded
+// memory if the mic is disconnected or delivering at a slightly higher rate.
+//
+// Mic input is mono (one float per frame). MicCapture emits mono; if AEC is
+// enabled, EchoCanceller's clean output is mono. We expand to stereo here.
 final class MixingWriter {
 
     static let sampleRate: Double = 48_000
@@ -18,9 +21,9 @@ final class MixingWriter {
     private let format: AVAudioFormat
     private let lock = NSLock()
 
-    // Interleaved mic FIFO: [L0, R0, L1, R1, ...]
+    // Mono mic FIFO: one float per frame.
     private var micFIFO: [Float] = []
-    private let maxMicSamples = Int(sampleRate) * Int(channels)   // 1 s of stereo
+    private let maxMicSamples = Int(sampleRate)   // 1 s of mono
 
     private(set) var framesWritten: Int = 0
 
@@ -47,7 +50,6 @@ final class MixingWriter {
         else { return }
 
         let frames = Int(buffer.frameLength)
-        let samples = frames * Int(Self.channels)
 
         guard let out = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frames))
         else { return }
@@ -55,15 +57,17 @@ final class MixingWriter {
         guard let dst = out.floatChannelData?[0] else { return }
 
         lock.lock()
-        let micTake = min(samples, micFIFO.count)
-        for i in 0 ..< micTake {
-            dst[i] = src[i] + micFIFO[i]
+        let micTake = min(frames, micFIFO.count)
+        // Frames where we have mic data: sum mono mic into both stereo channels.
+        for f in 0 ..< micTake {
+            let m = micFIFO[f]
+            dst[2 * f]     = src[2 * f]     + m
+            dst[2 * f + 1] = src[2 * f + 1] + m
         }
-        if micTake < samples {
-            // Not enough mic data — fill remainder with system only
-            for i in micTake ..< samples {
-                dst[i] = src[i]
-            }
+        // Remaining frames: system only.
+        for f in micTake ..< frames {
+            dst[2 * f]     = src[2 * f]
+            dst[2 * f + 1] = src[2 * f + 1]
         }
         if micTake > 0 {
             micFIFO.removeFirst(micTake)
@@ -78,12 +82,12 @@ final class MixingWriter {
         }
     }
 
-    // Called from the mic tap.
-    func pushMic(interleaved samples: UnsafePointer<Float>, frameCount: Int) {
-        let count = frameCount * Int(Self.channels)
+    // Called from the mic tap (or from EchoCanceller.onCleanMic when AEC is on).
+    // `samples` is mono float32 — one float per frame.
+    func pushMic(mono samples: UnsafePointer<Float>, frameCount: Int) {
         lock.lock()
-        micFIFO.reserveCapacity(micFIFO.count + count)
-        for i in 0 ..< count {
+        micFIFO.reserveCapacity(micFIFO.count + frameCount)
+        for i in 0 ..< frameCount {
             micFIFO.append(samples[i])
         }
         if micFIFO.count > maxMicSamples {

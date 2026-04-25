@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **MeetingCapture** — a macOS command-line tool (no GUI, that decision is final) that records a meeting, transcribes it locally with Whisper, and summarizes it with a user-configurable LLM. Full pipeline is local-first: audio capture and transcription never leave the machine; only the final transcript is sent to the user's chosen LLM endpoint.
 
-Current state (v0.4): capture + transcribe + summarize all work. Interactive menu shell is the primary UX; flag-based invocation still works and is the scripting escape hatch.
+Current state (v0.5): capture + transcribe + summarize all work. Software AEC via vendored speexdsp is implemented. Interactive menu shell is the primary UX; flag-based invocation still works and is the scripting escape hatch.
 
 ## Build & run
 
@@ -44,11 +44,13 @@ main.swift           flag parsing · shell bootstrap · flag-mode pipeline
 Shell.swift          interactive menus (main + settings) · orchestrates the pipeline
 Config.swift         persisted settings (JSON) · path/api-key helpers
 AudioCapture.swift   SCShareableContent → SCContentFilter → SCStream; owns the WAV writer indirectly
-MicCapture.swift     AVAudioEngine input tap · format conversion to 48 kHz stereo float32
+MicCapture.swift     AVAudioEngine input tap · format conversion to 48 kHz mono
+EchoCanceller.swift  Speex-based acoustic echo cancellation (software AEC)
 MixingWriter.swift   sums mic + system samples, writes interleaved f32 WAV
 CMSampleBuffer+PCM.swift  CMSampleBuffer → AVAudioPCMBuffer (handles non-interleaved ABL)
 Transcribe.swift     WhisperKit wrapper · VAD chunking · timestamped .txt
 Summarize.swift      POST to OpenAI-compatible /chat/completions · Kimi thinking-mode toggle
+Sources/Speexdsp/    Vendored xiph/speexdsp (BSD-3) — MDF echo canceller + preprocessor
 ```
 
 Defaults (all overridable via Settings menu or flags):
@@ -73,7 +75,7 @@ These are load-bearing and not obvious from reading a single file:
 - **Mid-recording stop uses stdin readability, not readLine.** `Shell.recordFlow()` installs `FileHandle.standardInput.readabilityHandler` before awaiting `capture.run()`, and removes it after. A blocking `readLine()` in a detached Task would leak the thread because Swift can't cancel blocking syscalls. Handler approach is clean.
 - **`setbuf(stdout, nil)`** at the top of `main.swift` makes prompts and progress flush correctly and kept an early crash visible. Do not remove.
 - **Sendable warnings exist** on `AudioCapture`'s Task/DispatchQueue captures. They're left as warnings deliberately; making the class an actor is a bigger refactor than we've invested in.
-- **Do not enable Apple's Voice-Processing I/O on the mic input.** `AVAudioEngine.inputNode.setVoiceProcessingEnabled(true)` was tried (commit `fc39ed2`) to cancel the speaker→mic echo. It works as an AEC, but the API also switches the system audio HAL into "voice chat" mode — that ducks output (overriding user volume) and puts the mic into an exclusive voice-processing path. Any concurrent VoIP app (Zoom, Meet, Teams) that's also using VPIO is then unable to capture the mic, and its playback gets duck-attenuated. Recording becomes unusable in real meetings. The fix is software AEC via vendored `speexdsp` running in user-space against our own mic and SCStream buffers — that path doesn't claim the HAL session.
+- **Do not enable Apple's Voice-Processing I/O on the mic input.** `AVAudioEngine.inputNode.setVoiceProcessingEnabled(true)` was tried (commit `fc39ed2`) to cancel the speaker→mic echo. It works as an AEC, but the API also switches the system audio HAL into "voice chat" mode — that ducks output (overriding user volume) and puts the mic into an exclusive voice-processing path. Any concurrent VoIP app (Zoom, Meet, Teams) that's also using VPIO is then unable to capture the mic, and its playback gets duck-attenuated. Recording becomes unusable in real meetings. **The fix is implemented:** software AEC via vendored `speexdsp` running in user-space against our own mic and SCStream buffers — that path doesn't claim the HAL session. Disable with `--no-aec` or Settings → AEC if needed.
 
 ## Extending the tool
 

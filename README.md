@@ -133,7 +133,7 @@ Outputs default to `~/Documents/MeetingCapture/` — a `.wav`, a timestamped
 | `No display found` | ScreenCaptureKit needs an attached display. It does not work over SSH or on headless hardware. |
 | Zoom not detected | Run `--list`; look for `us.zoom.xos`. If absent, Zoom isn't running. Falls back to `--all-audio`. |
 | HTTP 401 from the LLM endpoint | API key unset or wrong. Re-enter under Settings → LLM API key. |
-| Echo of the other person's voice in the recording | No software AEC yet — until v0.5 lands, use headphones to keep the partner's voice from bleeding into the mic. |
+| Echo of the other person's voice in the recording | Software AEC is on by default (Speex, 150 ms tail). If still audible, the mic may be too close to speakers or volume is very high — try headphones for critical recordings. Disable with `--no-aec` or Settings → AEC if you prefer. |
 
 ---
 
@@ -146,7 +146,8 @@ Menu.swift           arrow-key cbreak picker (+ piped-stdin fallback)
 Config.swift         persisted settings (JSON at ~/Library/Application Support/MeetingCapture/)
 Keychain.swift       LLM API key read/write via Security framework
 AudioCapture.swift   ScreenCaptureKit stream (system audio)
-MicCapture.swift     AVAudioEngine input tap with AEC
+MicCapture.swift     AVAudioEngine input tap (mono, 48 kHz)
+EchoCanceller.swift  Speex-based acoustic echo cancellation (software AEC)
 MixingWriter.swift   sums mic + system into one interleaved f32 WAV
 CMSampleBuffer+PCM.swift   CMSampleBuffer → AVAudioPCMBuffer
 Transcribe.swift     WhisperKit wrapper with VAD chunking

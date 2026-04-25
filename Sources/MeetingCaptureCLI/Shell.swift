@@ -123,7 +123,8 @@ final class Shell {
                 duration: totalSec,
                 outputPath: wavURL.path,
                 captureAllAudio: false,
-                enableMic: true
+                enableMic: true,
+                aecEnabled: config.aecEnabled
             )
         } catch {
             print("❌  Capture failed: \(error.localizedDescription)")
@@ -268,6 +269,7 @@ final class Shell {
                 MenuItem(key: "7", label: "LLM base URL            [\(c.llmBaseURL)]"),
                 MenuItem(key: "8", label: "Kimi thinking           [\(thinkingDesc)]"),
                 MenuItem(key: "9", label: "LLM API key             [\(keyStatus)]"),
+                MenuItem(key: "a", label: "AEC (echo cancel)       [\(c.aecEnabled ? "on" : "off")]"),
                 MenuItem(key: "r", label: "Reset to defaults"),
             ]
             let pick = Menu.pick(title: "\nSettings\n", items: items, allowBack: true)
@@ -287,6 +289,8 @@ final class Shell {
                 case 8:
                     promptApiKey()
                 case 9:
+                    toggle(\.aecEnabled, label: "AEC")
+                case 10:
                     config = Config()
                     persistConfig()
                     print("✓  Reset to defaults.")
