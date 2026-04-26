@@ -239,6 +239,15 @@ final class AudioCapture: NSObject {
         stopRecording(reason: .timerExpired)
     }
 
+    /// Toggle pause state on the active recording. Frames received while
+    /// paused are dropped — the wall-clock gap simply does not exist in
+    /// the output WAV. Safe to call multiple times and from any queue.
+    func pauseToggle() {
+        guard let writer = writer else { return }
+        let paused = writer.togglePause()
+        print(paused ? "\n⏸  Paused — Space+Enter to resume." : "\n▶  Resumed.")
+    }
+
     // ─── Internal ────────────────────────────────────────────────────────────
 
     private enum StopReason { case timerExpired, error(Error) }

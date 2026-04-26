@@ -46,6 +46,11 @@ final class MixingWriter {
 
     private(set) var framesWritten: Int = 0
 
+    // Pause state: when true, pushSystem/pushMic drop their input. The wall-
+    // clock gap during pause simply does not appear in the output WAV — audio
+    // time stays contiguous, transcript timestamps reflect audio time.
+    private var paused: Bool = false
+
     // Chunking state
     private let baseURL: URL
     private var chunkFrames: Int = 0
@@ -84,6 +89,10 @@ final class MixingWriter {
         guard let dst = out.int16ChannelData?[0] else { return }
 
         lock.lock()
+        if paused {
+            lock.unlock()
+            return
+        }
         let micTake = min(frames, micFIFO.count)
         // Downmix stereo system → mono by averaging L+R, sum mic where present,
         // then convert float → int16 with hard clamp.
@@ -118,6 +127,10 @@ final class MixingWriter {
     // `samples` is mono float32 — one float per frame.
     func pushMic(mono samples: UnsafePointer<Float>, frameCount: Int) {
         lock.lock()
+        if paused {
+            lock.unlock()
+            return
+        }
         micFIFO.reserveCapacity(micFIFO.count + frameCount)
         for i in 0 ..< frameCount {
             micFIFO.append(samples[i])
@@ -155,5 +168,23 @@ final class MixingWriter {
     // Note: WAV headers are finalized when this MixingWriter is deallocated.
     func finish() -> [URL] {
         return allFiles
+    }
+
+    /// Toggle pause state. Returns the new state (true = paused).
+    /// While paused, pushSystem/pushMic drop their input and the mic FIFO
+    /// stops draining; the FIFO's 1-s cap prevents unbounded growth across
+    /// the toggle.
+    @discardableResult
+    func togglePause() -> Bool {
+        lock.lock()
+        paused.toggle()
+        // When pausing, drop any buffered mic samples so they don't get
+        // spliced in when we resume.
+        if paused {
+            micFIFO.removeAll(keepingCapacity: true)
+        }
+        let nowPaused = paused
+        lock.unlock()
+        return nowPaused
     }
 }
