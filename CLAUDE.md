@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **MeetingCapture** — a macOS command-line tool (no GUI, that decision is final) that records a meeting, transcribes it locally with Whisper, and summarizes it with a user-configurable LLM. Full pipeline is local-first: audio capture and transcription never leave the machine; only the final transcript is sent to the user's chosen LLM endpoint.
 
-Current state (v0.5): capture + transcribe + summarize all work. Software AEC via vendored speexdsp is implemented. Interactive menu shell is the primary UX; flag-based invocation still works and is the scripting escape hatch.
+Current state (v0.6): capture + transcribe + summarize all work. Software AEC via vendored speexdsp. Indefinite-length recordings with 30-min chunking for fault tolerance. Interactive menu shell is the primary UX; flag-based invocation still works and is the scripting escape hatch.
 
 ## Build & run
 
@@ -46,7 +46,7 @@ Config.swift         persisted settings (JSON) · path/api-key helpers
 AudioCapture.swift   SCShareableContent → SCContentFilter → SCStream; owns the WAV writer indirectly
 MicCapture.swift     AVAudioEngine input tap · format conversion to 48 kHz mono
 EchoCanceller.swift  Speex-based acoustic echo cancellation (software AEC)
-MixingWriter.swift   sums mic + system samples, writes interleaved f32 WAV
+MixingWriter.swift   sums mic + system samples, writes interleaved f32 WAV; 30-min chunk rotation
 CMSampleBuffer+PCM.swift  CMSampleBuffer → AVAudioPCMBuffer (handles non-interleaved ABL)
 Transcribe.swift     WhisperKit wrapper · VAD chunking · timestamped .txt
 Summarize.swift      POST to OpenAI-compatible /chat/completions · Kimi thinking-mode toggle
@@ -58,7 +58,7 @@ Defaults (all overridable via Settings menu or flags):
 - LLM: `kimi-k2.5` at `https://qianfan.baidubce.com/v2/coding` (Baidu Qianfan coding plan, OpenAI-compatible)
 - Thinking mode: off (budget 32 000 tokens when enabled)
 - Output dir: `~/Documents/MeetingCapture`
-- Duration: 30 min
+- Duration: 480 min (8h safety cap; Enter to stop; recordings chunked every 30 min)
 
 API key resolution (first hit wins): `--llm-api-key` flag → `QIANFAN_API_KEY` env → `LLM_API_KEY` env → macOS Keychain (service `MeetingCapture`, account `meeting_llm_api_key`). The Keychain entry is set/cleared from Settings → LLM API key; never written to the config JSON.
 
@@ -71,6 +71,7 @@ These are load-bearing and not obvious from reading a single file:
 - **SCStream always needs video.** Audio-only isn't a thing in ScreenCaptureKit. `AudioCapture` sets a 2×2 / 1 fps dummy video stream so the video path costs nothing.
 - **WAV can't store non-interleaved PCM**, and AVAudioFile silently rewrites the file header to interleaved — which then mismatches a non-interleaved write buffer and crashes. `CMSampleBuffer+PCM.swift` interleaves on the fly; `AudioCapture` opens AVAudioFile as interleaved f32. Do not try to "simplify" back to non-interleaved.
 - **System audio drives the mix clock.** `MixingWriter.pushSystem()` consumes a matching number of mic frames from a FIFO per call. Mic FIFO is capped at 1 s to prevent unbounded growth if the mic is disconnected mid-recording.
+- **Long recordings are chunked.** `MixingWriter` rotates to a new WAV file every 30 minutes (`meeting.wav`, `meeting_part2.wav`, ...). This provides fault tolerance — if a crash occurs at minute 45, the first chunk is preserved. `Transcribe.transcribe(wavPaths:)` concatenates chunks with adjusted timestamps.
 - **WhisperKit default chunking drops cross-boundary speech.** The default `ChunkingStrategy` cuts at hard 30-second marks; Whisper's `noSpeechThreshold` (0.6) then classifies the cross-boundary uncertain audio as silence. `Transcribe.swift` explicitly passes `DecodingOptions(chunkingStrategy: .vad)` — do not remove this, it was the fix for a 22 s dropout.
 - **Mid-recording stop uses stdin readability, not readLine.** `Shell.recordFlow()` installs `FileHandle.standardInput.readabilityHandler` before awaiting `capture.run()`, and removes it after. A blocking `readLine()` in a detached Task would leak the thread because Swift can't cancel blocking syscalls. Handler approach is clean.
 - **`setbuf(stdout, nil)`** at the top of `main.swift` makes prompts and progress flush correctly and kept an early crash visible. Do not remove.
