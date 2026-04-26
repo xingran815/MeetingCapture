@@ -25,15 +25,26 @@ prefer.
 
 ---
 
-## Build
+## Quick install
 
 ```bash
 git clone <this repo>
 cd MeetingCapture
-swift build
+./install.sh
 ```
 
-The binary lands at `.build/debug/MeetingCaptureCLI`. **Run the binary
+Builds release, installs to `~/.local/bin/meetingcapture`, triggers the
+Microphone prompt, and walks you through the Screen Recording grant. Safe to
+re-run after rebuilds — TCC grants stay valid because the install path is
+stable.
+
+### Manual build (fallback)
+
+```bash
+swift build -c release
+```
+
+The binary lands at `.build/release/MeetingCaptureCLI`. **Run the binary
 directly** — not via `swift run`. macOS ties Screen Recording permission to
 the binary path, and `swift run` invalidates that grant on every invocation.
 
@@ -41,12 +52,13 @@ the binary path, and `swift run` invalidates that grant on every invocation.
 
 ## Permissions (TCC)
 
-Two privacy entitlements are required, both pinned to the binary path. Grant
-once and they persist across rebuilds (the path is stable).
+`./install.sh` handles both grants. If you built manually, do them by hand —
+both are pinned to the binary path and persist across rebuilds.
 
 1. **Screen Recording**
    System Settings → Privacy & Security → **Screen Recording** → click **+**
-   and add `<repo>/.build/debug/MeetingCaptureCLI`.
+   and add the binary path (`~/.local/bin/meetingcapture` if you used the
+   installer, otherwise `<repo>/.build/release/MeetingCaptureCLI`).
    *Symptom of missing grant:* the capture "succeeds" but the output WAV is
    under 0.5 seconds and silent. The tool prints a hint when it detects this.
 
