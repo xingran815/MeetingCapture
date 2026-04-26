@@ -59,6 +59,37 @@ final class Transcriber {
         return (text, segments)
     }
 
+    /// Transcribe multiple WAV files, adjusting timestamps for continuity.
+    /// Returns combined text and segments with correct absolute timestamps.
+    func transcribe(wavPaths: [String]) async throws -> (text: String, segments: [Segment]) {
+        guard !wavPaths.isEmpty else {
+            return ("", [])
+        }
+
+        var allText: [String] = []
+        var allSegments: [Segment] = []
+        var timeOffset: Double = 0
+
+        for path in wavPaths {
+            let (text, segments) = try await transcribe(wavPath: path)
+
+            // Adjust segment timestamps by the offset
+            let adjustedSegments = segments.map { seg in
+                Segment(start: seg.start + timeOffset, end: seg.end + timeOffset, text: seg.text)
+            }
+
+            allText.append(text)
+            allSegments.append(contentsOf: adjustedSegments)
+
+            // Update offset: use the last segment's end time, or estimate from duration
+            if let last = segments.last {
+                timeOffset += last.end
+            }
+        }
+
+        return (allText.joined(separator: " "), allSegments)
+    }
+
     /// Format segments as `[HH:MM:SS] text` one per line.
     static func format(segments: [Segment]) -> String {
         segments.map { seg in

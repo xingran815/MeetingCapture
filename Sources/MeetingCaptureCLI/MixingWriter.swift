@@ -1,11 +1,14 @@
 import Foundation
 import AVFoundation
 
-// Writes mixed (system + mic) audio to a single interleaved 48 kHz stereo WAV.
+// Writes mixed (system + mic) audio to interleaved 48 kHz stereo WAV files.
+//
+// Splits long recordings into ~30-minute chunks for fault tolerance.
+// File naming: meeting.wav (part 1), meeting_part2.wav, meeting_part3.wav, ...
 //
 // System audio (from SCStream) drives the clock: every pushSystem() call
 // consumes a matching number of mic frames from a small FIFO, sums them
-// equally into both stereo channels, and writes exactly that many frames.
+// equally into both stereo channels, and writes exactly that number of frames.
 // If the mic FIFO is short, the gap is filled with system-only audio. If it
 // grows beyond 1 s, the oldest frames are dropped — prevents unbounded
 // memory if the mic is disconnected or delivering at a slightly higher rate.
@@ -17,7 +20,10 @@ final class MixingWriter {
     static let sampleRate: Double = 48_000
     static let channels: AVAudioChannelCount = 2
 
-    private let file: AVAudioFile
+    // 30 minutes of frames at 48 kHz
+    static let chunkFrameLimit: Int = 30 * 60 * Int(sampleRate)
+
+    private var currentFile: AVAudioFile
     private let format: AVAudioFormat
     private let lock = NSLock()
 
@@ -27,19 +33,27 @@ final class MixingWriter {
 
     private(set) var framesWritten: Int = 0
 
+    // Chunking state
+    private let baseURL: URL
+    private var chunkFrames: Int = 0
+    private var partNumber: Int = 1
+    private var allFiles: [URL] = []
+
     init(outputURL: URL) throws {
+        self.baseURL = outputURL
         format = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
             sampleRate: Self.sampleRate,
             channels: Self.channels,
             interleaved: true
         )!
-        file = try AVAudioFile(
+        currentFile = try AVAudioFile(
             forWriting: outputURL,
             settings: format.settings,
             commonFormat: .pcmFormatFloat32,
             interleaved: true
         )
+        allFiles.append(outputURL)
     }
 
     // Called from SCStream callback queue.
@@ -72,14 +86,21 @@ final class MixingWriter {
         if micTake > 0 {
             micFIFO.removeFirst(micTake)
         }
-        lock.unlock()
 
         do {
-            try file.write(from: out)
+            try currentFile.write(from: out)
             framesWritten += frames
+            chunkFrames += frames
+
+            // Rotate to new chunk if limit reached
+            if chunkFrames >= Self.chunkFrameLimit {
+                try rotateChunk()
+            }
         } catch {
             fputs("MixingWriter: write error: \(error)\n", stderr)
         }
+
+        lock.unlock()
     }
 
     // Called from the mic tap (or from EchoCanceller.onCleanMic when AEC is on).
@@ -96,9 +117,32 @@ final class MixingWriter {
         lock.unlock()
     }
 
-    // Close the file. AVAudioFile finalises the WAV header on deinit.
-    func finish() {
-        // No explicit close; releasing the file handle via deinit is enough,
-        // but the caller holds the reference — nothing else to do here.
+    // Close current chunk and start a new one.
+    // Must be called with lock held.
+    private func rotateChunk() throws {
+        // Reassigning currentFile triggers deinit of old file, which finalizes WAV header
+        let newURL = nextChunkURL()
+        currentFile = try AVAudioFile(
+            forWriting: newURL,
+            settings: format.settings,
+            commonFormat: .pcmFormatFloat32,
+            interleaved: true
+        )
+        allFiles.append(newURL)
+        chunkFrames = 0
+        partNumber += 1
+    }
+
+    // Generate URL for next chunk: base_partN.wav
+    private func nextChunkURL() -> URL {
+        let basePath = baseURL.deletingPathExtension().path
+        let ext = baseURL.pathExtension
+        return URL(fileURLWithPath: "\(basePath)_part\(partNumber + 1).\(ext)")
+    }
+
+    // Return list of all written files.
+    // Note: WAV headers are finalized when this MixingWriter is deallocated.
+    func finish() -> [URL] {
+        return allFiles
     }
 }

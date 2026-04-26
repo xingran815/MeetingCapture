@@ -23,7 +23,7 @@ final class Shell {
         printBanner()
         loop: while true {
             let items: [MenuItem] = [
-                MenuItem(key: "1", label: "Record a meeting          ← Enter to stop early"),
+                MenuItem(key: "1", label: "Record a meeting          ← Enter to stop"),
                 MenuItem(key: "2", label: "Transcribe a .wav"),
                 MenuItem(key: "3", label: "Summarize a .txt"),
                 MenuItem(key: "4", label: "Settings"),
@@ -64,7 +64,7 @@ final class Shell {
         return """
 
           whisper: \(config.whisperModel)   ·  kimi thinking: \(thinking)   ·  auto-ts: \(autoTS), auto-sum: \(autoSum)
-          output:  \(config.outputDirectory)          max: \(config.defaultDurationMinutes) min
+          output:  \(config.outputDirectory)          safety cap: \(config.defaultDurationMinutes) min
 
         """
     }
@@ -106,7 +106,7 @@ final class Shell {
         print("""
 
         🔴  Recording → \(wavURL.path)
-            Press Enter to stop early (or wait \(config.defaultDurationMinutes) min).
+            Press Enter to stop.
         """)
 
         // Install stdin-readability handler that triggers manualStop on any input.
@@ -118,8 +118,9 @@ final class Shell {
         }
         defer { stdin.readabilityHandler = nil }
 
+        let wavFiles: [URL]
         do {
-            try await capture.run(
+            wavFiles = try await capture.run(
                 duration: totalSec,
                 outputPath: wavURL.path,
                 captureAllAudio: false,
@@ -131,12 +132,15 @@ final class Shell {
             return
         }
 
-        print("\n   wav:  \(wavURL.path)")
+        guard !wavFiles.isEmpty else {
+            print("❌  No audio files were saved.")
+            return
+        }
 
         // Post-capture pipeline
         var transcript: String? = nil
         if config.autoTranscribe {
-            transcript = await runTranscribe(wavPath: wavURL.path)
+            transcript = await runTranscribe(wavPaths: wavFiles.map { $0.path })
         }
 
         if config.autoSummarize {
@@ -158,7 +162,7 @@ final class Shell {
             print("❌  File not found: \(path)")
             return
         }
-        _ = await runTranscribe(wavPath: path)
+        _ = await runTranscribe(wavPaths: [path])
 
         // Offer to summarize the fresh transcript
         let txtPath = (path as NSString).deletingPathExtension + ".txt"
@@ -184,18 +188,25 @@ final class Shell {
     // MARK: - Pipeline primitives
 
     @discardableResult
-    private func runTranscribe(wavPath: String) async -> String? {
+    private func runTranscribe(wavPaths: [String]) async -> String? {
+        guard !wavPaths.isEmpty else { return nil }
+
         let transcriber = Transcriber(model: config.whisperModel)
         do {
             try await transcriber.load()
-            let (text, segments) = try await transcriber.transcribe(wavPath: wavPath)
+            let (text, segments) = try await transcriber.transcribe(wavPaths: wavPaths)
 
             print("\n──── transcript ──────────────────────────")
             print(text.trimmingCharacters(in: .whitespacesAndNewlines))
             print("──────────────────────────────────────────")
 
-            let wavURL = URL(fileURLWithPath: wavPath)
-            let txtURL = wavURL.deletingPathExtension().appendingPathExtension("txt")
+            // Use the first WAV file's base name (without _partN suffix) for the output
+            let firstPath = wavPaths[0]
+            let wavURL = URL(fileURLWithPath: firstPath)
+            let baseName = wavURL.deletingPathExtension().lastPathComponent
+                .replacingOccurrences(of: "_part\\d+$", with: "", options: .regularExpression)
+            let dir = wavURL.deletingLastPathComponent()
+            let txtURL = dir.appendingPathComponent(baseName).appendingPathExtension("txt")
             let body = Transcriber.format(segments: segments) + "\n"
             try body.write(to: txtURL, atomically: true, encoding: .utf8)
             print("   txt:  \(txtURL.path)")
@@ -261,7 +272,7 @@ final class Shell {
 
             let items: [MenuItem] = [
                 MenuItem(key: "1", label: "Whisper model           [\(c.whisperModel)]"),
-                MenuItem(key: "2", label: "Max duration (minutes)  [\(c.defaultDurationMinutes)]"),
+                MenuItem(key: "2", label: "Safety cap (minutes)    [\(c.defaultDurationMinutes)]"),
                 MenuItem(key: "3", label: "Output directory        [\(c.outputDirectory)]"),
                 MenuItem(key: "4", label: "Auto-transcribe         [\(c.autoTranscribe ? "on" : "off")]"),
                 MenuItem(key: "5", label: "Auto-summarize          [\(c.autoSummarize ? "on" : "off")]"),
@@ -279,7 +290,7 @@ final class Shell {
             case .selected(let i):
                 switch i {
                 case 0:  promptWhisperModel()
-                case 1:  promptInt(\.defaultDurationMinutes, label: "duration (minutes)", min: 1, max: 600)
+                case 1:  promptInt(\.defaultDurationMinutes, label: "safety cap (minutes)", min: 1, max: 600)
                 case 2:  promptString(\.outputDirectory, label: "output directory")
                 case 3:  toggle(\.autoTranscribe, label: "Auto-transcribe")
                 case 4:  toggle(\.autoSummarize,  label: "Auto-summarize")
