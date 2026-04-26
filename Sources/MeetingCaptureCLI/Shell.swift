@@ -191,7 +191,7 @@ final class Shell {
     private func runTranscribe(wavPaths: [String]) async -> String? {
         guard !wavPaths.isEmpty else { return nil }
 
-        let transcriber = Transcriber(model: config.whisperModel)
+        let transcriber = Transcriber(model: config.whisperModel, language: config.whisperLanguage)
         do {
             try await transcriber.load()
             let (text, segments) = try await transcriber.transcribe(wavPaths: wavPaths)
@@ -347,7 +347,31 @@ final class Shell {
                 config.whisperModel = v
                 persistConfig()
             }
+            promptWhisperLanguageIfNeeded()
         }
+    }
+
+    /// For multilingual models, optionally pin a language. Leaving it blank
+    /// lets Whisper auto-detect on the first window — that's faster than
+    /// pinning when wrong and still works. Pinning is only useful if
+    /// auto-detection picks the wrong language.
+    private func promptWhisperLanguageIfNeeded() {
+        guard !config.whisperModel.contains(".en") else {
+            // Switching back to an .en model — clear any stale language pin.
+            if config.whisperLanguage != nil {
+                config.whisperLanguage = nil
+                persistConfig()
+            }
+            return
+        }
+        let cur = config.whisperLanguage ?? "auto-detect"
+        print("Multilingual model. Language is auto-detected from the audio by default.")
+        guard let v = askLine("Pin a language code (en, zh, ja, …) or blank for auto [\(cur)]")
+        else { return }
+        let trimmed = v.trimmingCharacters(in: .whitespaces)
+        config.whisperLanguage = trimmed.isEmpty ? nil : trimmed
+        persistConfig()
+        print("✓  Whisper language: \(config.whisperLanguage ?? "auto-detect")")
     }
 
     private func promptKimiThinking() {

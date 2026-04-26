@@ -13,11 +13,18 @@ import WhisperKit
 final class Transcriber {
 
     let modelName: String
+    let language: String?
     private var pipe: WhisperKit?
 
-    init(model: String) {
+    /// `language` is a 2-letter code like "en" or "zh". Pass nil to let
+    /// WhisperKit auto-detect via a one-shot detection pass (`detectLanguage:
+    /// true`). `.en` models ignore both — they're English-only.
+    init(model: String, language: String? = nil) {
         self.modelName = model
+        self.language = language
     }
+
+    private var isMultilingual: Bool { !modelName.contains(".en") }
 
     func load() async throws {
         let t0 = Date()
@@ -42,9 +49,63 @@ final class Transcriber {
 
         let t0 = Date()
         print("📝  Transcribing \(wavPath)…")
-        // VAD chunking: split at silence instead of at hard 30 s boundaries, so
-        // speech that straddles a boundary doesn't get dropped as "no speech".
-        let options = DecodingOptions(chunkingStrategy: .vad)
+
+        // Resolve the language to pin. For multilingual models with no
+        // user-supplied language, run a one-shot detection pass *before* the
+        // main transcribe call. Doing detection in-line via
+        // `DecodingOptions.detectLanguage = true` interacts badly with VAD
+        // chunking and tends to drop the first chunk's content.
+        var resolvedLanguage = language
+        if isMultilingual && resolvedLanguage == nil {
+            if let detected = await detectLanguage(pipe: pipe, audioPath: wavPath) {
+                resolvedLanguage = detected
+            }
+            // If detection failed, fall through with language = nil and let
+            // DecodingOptions.detectLanguage = true handle it (degraded path).
+        }
+
+        if isMultilingual {
+            print("   language: \(resolvedLanguage ?? "auto-detect (in-line)")")
+        }
+
+        // Two-track decoding strategy:
+        //
+        // - `.en` models: VAD chunking ON. Documented fix for cross-30s
+        //   boundary speech loss in English (see CLAUDE.md). The default
+        //   quality thresholds (compressionRatio, logProb, firstTokenLogProb)
+        //   are tuned on English statistics and catch real hallucinations.
+        //
+        // - Multilingual models: VAD chunking OFF (use default 30s windowing).
+        //   Empirically, VAD-chunked decoding on Chinese audio with the
+        //   multilingual `small` model returns zero segments — VAD's energy
+        //   threshold appears to misclassify a lot of speech as silence on
+        //   our SCStream + mic mix. Default windowing produces clean output.
+        //   We also disable the English-tuned quality guards: they routinely
+        //   reject valid CJK / Turkish / Arabic / Thai / Hindi / Vietnamese
+        //   output as "low confidence," yielding empty transcripts.
+        //
+        // `usePrefillPrompt: true` ensures the language token reaches the
+        // decoder in both paths.
+        let options: DecodingOptions
+        if isMultilingual {
+            options = DecodingOptions(
+                task: .transcribe,
+                language: resolvedLanguage,
+                usePrefillPrompt: true,
+                detectLanguage: resolvedLanguage == nil,
+                compressionRatioThreshold: nil,
+                logProbThreshold: nil,
+                firstTokenLogProbThreshold: nil,
+                chunkingStrategy: ChunkingStrategy.none
+            )
+        } else {
+            options = DecodingOptions(
+                task: .transcribe,
+                usePrefillPrompt: true,
+                chunkingStrategy: .vad
+            )
+        }
+
         let results = try await pipe.transcribe(audioPath: wavPath, decodeOptions: options)
         let dt = Date().timeIntervalSince(t0)
 
@@ -56,7 +117,25 @@ final class Transcriber {
         }
 
         print(String(format: "   done in %.1fs (%d segments)", dt, segments.count))
+
+        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            print("⚠  Transcription produced no text. Try --language <code> to pin, or check audio with `afinfo`.")
+        }
+
         return (text, segments)
+    }
+
+    /// Best-effort language detection. Returns nil on any failure so the
+    /// caller can fall back to in-line detection.
+    private func detectLanguage(pipe: WhisperKit, audioPath: String) async -> String? {
+        do {
+            let result = try await pipe.detectLanguage(audioPath: audioPath)
+            print(String(format: "🌐  Detected language: %@ (%.2f)", result.language, result.langProbs[result.language] ?? 0))
+            return result.language
+        } catch {
+            // Older WhisperKit versions used a different method name.
+            return nil
+        }
     }
 
     /// Transcribe multiple WAV files, adjusting timestamps for continuity.
