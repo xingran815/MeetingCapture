@@ -14,6 +14,21 @@ func option(_ name: String) -> String? {
     return rawArgs[rawArgs.index(after: i)]
 }
 
+if flag("--permission-probe") {
+    // Triggers the macOS Microphone TCC prompt by opening an AVAudioEngine
+    // input tap for ~1 s, then exits. Used by install.sh.
+    do {
+        let mic = try MicCapture()
+        try mic.start()
+        Thread.sleep(forTimeInterval: 1.0)
+        mic.stop()
+        exit(0)
+    } catch {
+        fputs("permission-probe: \(error.localizedDescription)\n", stderr)
+        exit(1)
+    }
+}
+
 if flag("--help") || flag("-h") {
     print("""
     MeetingCaptureCLI  —  capture, transcribe, summarize meetings, all local

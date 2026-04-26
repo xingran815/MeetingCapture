@@ -12,6 +12,10 @@ Current state (v0.6): capture + transcribe + summarize all work. Software AEC vi
 
 Swift Package Manager, one external dep (WhisperKit). Requires macOS 14+.
 
+End-user / fresh-machine path: `./install.sh` builds release, installs to `~/.local/bin/meetingcapture`, triggers the mic prompt via the hidden `--permission-probe` flag, and walks the user through the Screen Recording grant. Idempotent.
+
+Dev loop:
+
 ```bash
 swift build
 
@@ -51,6 +55,7 @@ CMSampleBuffer+PCM.swift  CMSampleBuffer → AVAudioPCMBuffer (handles non-inter
 Transcribe.swift     WhisperKit wrapper · VAD chunking · timestamped .txt
 Summarize.swift      POST to OpenAI-compatible /chat/completions · Kimi thinking-mode toggle
 Sources/Speexdsp/    Vendored xiph/speexdsp (BSD-3) — MDF echo canceller + preprocessor
+install.sh           build (release) → install to ~/.local/bin → trigger TCC prompts
 ```
 
 Defaults (all overridable via Settings menu or flags):
