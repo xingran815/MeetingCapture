@@ -8,6 +8,8 @@ struct Config: Codable, Equatable {
 
     // Capture & transcription
     var whisperModel: String            = "openai_whisper-small.en"
+    /// 2-letter language hint (e.g. "en", "zh"). nil = auto-detect (only safe for `.en` models).
+    var whisperLanguage: String?        = nil
     var defaultDurationMinutes: Int     = 480
     var outputDirectory: String         = "~/Documents/MeetingCapture"
     var autoTranscribe: Bool            = true
@@ -25,6 +27,7 @@ struct Config: Codable, Equatable {
     // Memberwise initializer (for creating defaults).
     init(
         whisperModel: String = "openai_whisper-small.en",
+        whisperLanguage: String? = nil,
         defaultDurationMinutes: Int = 480,
         outputDirectory: String = "~/Documents/MeetingCapture",
         autoTranscribe: Bool = true,
@@ -36,6 +39,7 @@ struct Config: Codable, Equatable {
         kimiThinkingBudgetTokens: Int = 32_000
     ) {
         self.whisperModel = whisperModel
+        self.whisperLanguage = whisperLanguage
         self.defaultDurationMinutes = defaultDurationMinutes
         self.outputDirectory = outputDirectory
         self.autoTranscribe = autoTranscribe
@@ -49,7 +53,7 @@ struct Config: Codable, Equatable {
 
     // Custom decoder provides defaults for missing keys (backward compat).
     enum CodingKeys: String, CodingKey {
-        case whisperModel, defaultDurationMinutes, outputDirectory
+        case whisperModel, whisperLanguage, defaultDurationMinutes, outputDirectory
         case autoTranscribe, autoSummarize, aecEnabled
         case llmModel, llmBaseURL, kimiThinkingEnabled, kimiThinkingBudgetTokens
     }
@@ -57,6 +61,7 @@ struct Config: Codable, Equatable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         whisperModel = try c.decodeIfPresent(String.self, forKey: .whisperModel) ?? "openai_whisper-small.en"
+        whisperLanguage = try c.decodeIfPresent(String.self, forKey: .whisperLanguage)
         defaultDurationMinutes = try c.decodeIfPresent(Int.self, forKey: .defaultDurationMinutes) ?? 480
         outputDirectory = try c.decodeIfPresent(String.self, forKey: .outputDirectory) ?? "~/Documents/MeetingCapture"
         autoTranscribe = try c.decodeIfPresent(Bool.self, forKey: .autoTranscribe) ?? true

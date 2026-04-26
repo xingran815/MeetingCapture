@@ -48,6 +48,7 @@ if flag("--help") || flag("-h") {
       --transcribe          Transcribe the WAV after capture
       --transcribe-only P   Skip capture; transcribe existing WAV at path P
       --model <name>        Whisper model                     (default: openai_whisper-small.en)
+      --language <code>     Pin language (en, zh, …)           (multilingual models auto-detect if omitted)
 
     Summarization options (OpenAI-compatible /chat/completions):
       --summarize           Generate an LLM summary after transcription
@@ -99,6 +100,7 @@ let listMode       = flag("--list")
 let transcribeFlag = flag("--transcribe")
 let transcribeOnly = option("--transcribe-only")
 let whisperModel   = option("--model") ?? persistedConfig.whisperModel
+let whisperLang    = option("--language") ?? persistedConfig.whisperLanguage
 let summarizeFlag  = flag("--summarize")
 let summarizeOnly  = option("--summarize-only")
 let llmModel       = option("--llm-model") ?? persistedConfig.llmModel
@@ -117,14 +119,14 @@ print("""
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 @available(macOS 14.0, *)
-func runTranscription(wavPaths: [String], model: String) async throws -> String {
+func runTranscription(wavPaths: [String], model: String, language: String?) async throws -> String {
     guard !wavPaths.isEmpty else {
         throw NSError(domain: "Transcription", code: -1, userInfo: [
             NSLocalizedDescriptionKey: "No WAV files to transcribe"
         ])
     }
 
-    let transcriber = Transcriber(model: model)
+    let transcriber = Transcriber(model: model, language: language)
     try await transcriber.load()
     let (text, segments) = try await transcriber.transcribe(wavPaths: wavPaths)
 
@@ -193,7 +195,7 @@ Task {
 
         // Transcribe-only: skip capture, transcribe a .wav, optionally summarize
         if let path = transcribeOnly {
-            let text = try await runTranscription(wavPaths: [path], model: whisperModel)
+            let text = try await runTranscription(wavPaths: [path], model: whisperModel, language: whisperLang)
             if summarizeFlag {
                 try await runSummarization(transcript: text, sourcePath: path)
             }
@@ -218,7 +220,7 @@ Task {
             let wavPaths = wavFiles.map { $0.path }
 
             // --summarize implies transcription (we need text to summarize)
-            let text = try await runTranscription(wavPaths: wavPaths, model: whisperModel)
+            let text = try await runTranscription(wavPaths: wavPaths, model: whisperModel, language: whisperLang)
             if summarizeFlag {
                 // Use first file's base name for the summary
                 let firstPath = wavPaths[0]
