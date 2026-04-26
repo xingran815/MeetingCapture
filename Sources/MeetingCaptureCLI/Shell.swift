@@ -52,7 +52,7 @@ final class Shell {
     private func printBanner() {
         print("""
         ╔════════════════════════════════════════════╗
-        ║   MeetingCapture  ·  v0.4                  ║
+        ║   MeetingCapture  ·  v0.6                  ║
         ╚════════════════════════════════════════════╝
         """)
     }

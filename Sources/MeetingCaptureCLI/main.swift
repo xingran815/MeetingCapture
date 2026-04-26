@@ -94,7 +94,7 @@ let llmApiKeyFlag  = option("--llm-api-key")
 
 print("""
 ╔════════════════════════════════════════════╗
-║   MeetingCaptureCLI  ·  v0.3               ║
+║   MeetingCaptureCLI  ·  v0.6               ║
 ║   capture · transcribe · summarize         ║
 ╚════════════════════════════════════════════╝
 """)
