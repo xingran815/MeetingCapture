@@ -28,7 +28,7 @@ final class AudioCapture: NSObject {
     private var echo: EchoCanceller?
 
     // Continuation that run() awaits; resumed when capture ends
-    private var stopCont: CheckedContinuation<Void, Error>?
+    private var stopCont: CheckedContinuation<[URL], Error>?
 
     private let fileWriteQueue = DispatchQueue(
         label: "com.meetingcapture.filewrite",
@@ -56,7 +56,7 @@ final class AudioCapture: NSObject {
         }
     }
 
-    func run(duration: Double, outputPath: String, captureAllAudio: Bool, enableMic: Bool, aecEnabled: Bool) async throws {
+    func run(duration: Double, outputPath: String, captureAllAudio: Bool, enableMic: Bool, aecEnabled: Bool) async throws -> [URL] {
         targetDuration = duration
 
         // 1. Enumerate screen content ─────────────────────────────────────────
@@ -212,7 +212,7 @@ final class AudioCapture: NSObject {
             sampleHandlerQueue: fileWriteQueue
         )
 
-        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
+        return try await withCheckedThrowingContinuation { (cont: CheckedContinuation<[URL], Error>) in
             stopCont = cont
             Task {
                 do {
@@ -251,6 +251,7 @@ final class AudioCapture: NSObject {
             echo = nil
 
             let captured = Double(sampleCount) / 48_000.0
+            let files = writer?.finish() ?? []
             writer = nil        // closing AVAudioFile flushes + finalises the WAV header
 
             print("\n──────────────────────────────────────────")
@@ -261,11 +262,18 @@ final class AudioCapture: NSObject {
                 print("⚠   Stopped with error: \(e.localizedDescription)")
             }
             print(String(format: "   Captured  : %.2fs  (%d samples)", captured, sampleCount))
-            if let url = outputURL {
+            if files.count == 1 {
+                let url = files[0]
                 print("   Saved to  : \(url.path)")
                 if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
                    let size = attrs[.size] as? Int {
                     print(String(format: "   File size : %.1f KB", Double(size) / 1024))
+                }
+            } else if files.count > 1 {
+                print("   Saved to  : \(files.count) files (chunked)")
+                for (i, url) in files.enumerated() {
+                    let label = i == 0 ? "part 1" : "part \(i + 1)"
+                    print("      \(label): \(url.lastPathComponent)")
                 }
             }
 
@@ -287,7 +295,7 @@ final class AudioCapture: NSObject {
 
             switch reason {
             case .timerExpired:
-                stopCont?.resume()
+                stopCont?.resume(returning: files)
             case .error(let e):
                 stopCont?.resume(throwing: e)
             }
@@ -353,10 +361,19 @@ extension AudioCapture: SCStreamOutput {
         let everyN: Double = 5
         guard Int(elapsed / everyN) > Int(prevElapsed / everyN) else { return }
 
-        let progress  = min(elapsed / targetDuration, 1.0)
-        let filled    = Int(progress * 30)
-        let bar       = String(repeating: "█", count: filled)
-            + String(repeating: "░", count: 30 - filled)
-        print(String(format: "  [%@] %5.1fs / %.0fs", bar, elapsed, targetDuration))
+        // "Open-ended" mode for very long durations (>= 4 hours)
+        // Show elapsed time only, no progress bar
+        if targetDuration >= 4 * 3600 {
+            let mins = Int(elapsed) / 60
+            let secs = Int(elapsed) % 60
+            print(String(format: "  🔴  %02d:%02d elapsed  (Enter to stop)", mins, secs))
+        } else {
+            // Traditional progress bar for short, known durations
+            let progress = min(elapsed / targetDuration, 1.0)
+            let filled = Int(progress * 30)
+            let bar = String(repeating: "█", count: filled)
+                + String(repeating: "░", count: 30 - filled)
+            print(String(format: "  [%@] %5.1fs / %.0fs", bar, elapsed, targetDuration))
+        }
     }
 }

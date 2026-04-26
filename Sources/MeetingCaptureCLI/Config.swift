@@ -8,7 +8,7 @@ struct Config: Codable, Equatable {
 
     // Capture & transcription
     var whisperModel: String            = "openai_whisper-small.en"
-    var defaultDurationMinutes: Int     = 30
+    var defaultDurationMinutes: Int     = 480
     var outputDirectory: String         = "~/Documents/MeetingCapture"
     var autoTranscribe: Bool            = true
     var autoSummarize: Bool             = true
@@ -25,7 +25,7 @@ struct Config: Codable, Equatable {
     // Memberwise initializer (for creating defaults).
     init(
         whisperModel: String = "openai_whisper-small.en",
-        defaultDurationMinutes: Int = 30,
+        defaultDurationMinutes: Int = 480,
         outputDirectory: String = "~/Documents/MeetingCapture",
         autoTranscribe: Bool = true,
         autoSummarize: Bool = true,
@@ -57,7 +57,7 @@ struct Config: Codable, Equatable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         whisperModel = try c.decodeIfPresent(String.self, forKey: .whisperModel) ?? "openai_whisper-small.en"
-        defaultDurationMinutes = try c.decodeIfPresent(Int.self, forKey: .defaultDurationMinutes) ?? 30
+        defaultDurationMinutes = try c.decodeIfPresent(Int.self, forKey: .defaultDurationMinutes) ?? 480
         outputDirectory = try c.decodeIfPresent(String.self, forKey: .outputDirectory) ?? "~/Documents/MeetingCapture"
         autoTranscribe = try c.decodeIfPresent(Bool.self, forKey: .autoTranscribe) ?? true
         autoSummarize = try c.decodeIfPresent(Bool.self, forKey: .autoSummarize) ?? true

@@ -22,7 +22,8 @@ if flag("--help") || flag("-h") {
       swift run MeetingCaptureCLI [options]
 
     Capture options:
-      --duration <sec>      Capture duration in seconds       (default: 30)
+      --duration <sec>      Maximum capture duration          (default: 28800 = 8h safety cap)
+                             Press Enter during recording to stop earlier
       --output <path>       Output .wav file path             (default: meeting_<ts>.wav)
       --all-audio           Capture ALL system audio          (default: meeting app only)
       --no-mic              Disable mic capture               (default: mic mixed in)
@@ -101,17 +102,28 @@ print("""
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 @available(macOS 14.0, *)
-func runTranscription(wavPath: String, model: String) async throws -> String {
+func runTranscription(wavPaths: [String], model: String) async throws -> String {
+    guard !wavPaths.isEmpty else {
+        throw NSError(domain: "Transcription", code: -1, userInfo: [
+            NSLocalizedDescriptionKey: "No WAV files to transcribe"
+        ])
+    }
+
     let transcriber = Transcriber(model: model)
     try await transcriber.load()
-    let (text, segments) = try await transcriber.transcribe(wavPath: wavPath)
+    let (text, segments) = try await transcriber.transcribe(wavPaths: wavPaths)
 
     print("\n──── transcript ──────────────────────────")
     print(text.trimmingCharacters(in: .whitespacesAndNewlines))
     print("──────────────────────────────────────────")
 
-    let wavURL = URL(fileURLWithPath: wavPath)
-    let txtURL = wavURL.deletingPathExtension().appendingPathExtension("txt")
+    // Use the first WAV file's base name (without _partN suffix) for the output
+    let firstPath = wavPaths[0]
+    let wavURL = URL(fileURLWithPath: firstPath)
+    let baseName = wavURL.deletingPathExtension().lastPathComponent
+        .replacingOccurrences(of: "_part\\d+$", with: "", options: .regularExpression)
+    let dir = wavURL.deletingLastPathComponent()
+    let txtURL = dir.appendingPathComponent(baseName).appendingPathExtension("txt")
     let body = Transcriber.format(segments: segments) + "\n"
     try body.write(to: txtURL, atomically: true, encoding: .utf8)
     print("📄  Transcript saved: \(txtURL.path)")
@@ -166,7 +178,7 @@ Task {
 
         // Transcribe-only: skip capture, transcribe a .wav, optionally summarize
         if let path = transcribeOnly {
-            let text = try await runTranscription(wavPath: path, model: whisperModel)
+            let text = try await runTranscription(wavPaths: [path], model: whisperModel)
             if summarizeFlag {
                 try await runSummarization(transcript: text, sourcePath: path)
             }
@@ -179,7 +191,7 @@ Task {
             exit(0)
         }
 
-        try await capture.run(
+        let wavFiles = try await capture.run(
             duration: duration,
             outputPath: outputPath,
             captureAllAudio: allAudio,
@@ -187,16 +199,15 @@ Task {
             aecEnabled: !noAec && persistedConfig.aecEnabled
         )
 
-        if transcribeFlag || summarizeFlag {
-            let resolved = outputPath.hasPrefix("/")
-                ? outputPath
-                : URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-                    .appendingPathComponent(outputPath).path
+        if (transcribeFlag || summarizeFlag) && !wavFiles.isEmpty {
+            let wavPaths = wavFiles.map { $0.path }
 
             // --summarize implies transcription (we need text to summarize)
-            let text = try await runTranscription(wavPath: resolved, model: whisperModel)
+            let text = try await runTranscription(wavPaths: wavPaths, model: whisperModel)
             if summarizeFlag {
-                try await runSummarization(transcript: text, sourcePath: resolved)
+                // Use first file's base name for the summary
+                let firstPath = wavPaths[0]
+                try await runSummarization(transcript: text, sourcePath: firstPath)
             }
         }
     } catch {
