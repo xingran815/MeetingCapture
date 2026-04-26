@@ -25,6 +25,22 @@ prefer.
 
 ---
 
+## Recording disclosure & consent
+
+This tool captures audio via OS-level taps (system audio + your local mic). It
+does **not** notify other meeting participants — Zoom, Teams, and Meet only
+display a "recording" indicator when *their own* record button is used. Other
+participants will not know you're recording unless you tell them.
+
+- **Disclose verbally before recording.** Consent-to-record laws vary by
+  jurisdiction (US two-party-consent states, GDPR in the EU, etc.). It is your
+  responsibility to comply with the law where you and the other participants
+  are located.
+- macOS displays a **purple dot** in the menu bar while Screen Recording is
+  active. Anyone watching your screen-share can see it.
+
+---
+
 ## Quick install
 
 ```bash
