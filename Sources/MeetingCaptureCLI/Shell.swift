@@ -106,15 +106,22 @@ final class Shell {
         print("""
 
         🔴  Recording → \(wavURL.path)
-            Press Enter to stop.
+            Space+Enter to pause/resume · Enter to stop.
         """)
 
-        // Install stdin-readability handler that triggers manualStop on any input.
+        // Install stdin-readability handler. Line is "<space>\n" → pause toggle;
+        // anything else (including a bare "\n") → stop. Terminals are line-
+        // buffered by default so a bare space won't reach us until Enter.
         let stdin = FileHandle.standardInput
         stdin.readabilityHandler = { handle in
             let data = handle.availableData
             guard !data.isEmpty else { return }
-            capture.manualStop()
+            let trimmed = data.filter { $0 != 0x0A && $0 != 0x0D }
+            if trimmed == Data([0x20]) {
+                capture.pauseToggle()
+            } else {
+                capture.manualStop()
+            }
         }
         defer { stdin.readabilityHandler = nil }
 
