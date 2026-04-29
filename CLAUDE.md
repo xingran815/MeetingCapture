@@ -50,7 +50,7 @@ Config.swift         persisted settings (JSON) · path/api-key helpers
 AudioCapture.swift   SCShareableContent → SCContentFilter → SCStream; owns the WAV writer indirectly
 MicCapture.swift     AVAudioEngine input tap · format conversion to 48 kHz mono
 EchoCanceller.swift  Speex-based acoustic echo cancellation (software AEC)
-MixingWriter.swift   sums mic + system samples, writes interleaved f32 WAV; 30-min chunk rotation
+MixingWriter.swift   sums mic + system, downmixes to mono, writes int16 WAV; 30-min chunk rotation; pause/resume
 CMSampleBuffer+PCM.swift  CMSampleBuffer → AVAudioPCMBuffer (handles non-interleaved ABL)
 Transcribe.swift     WhisperKit wrapper · VAD chunking · timestamped .txt
 Summarize.swift      POST to OpenAI-compatible /chat/completions · Kimi thinking-mode toggle
@@ -63,7 +63,8 @@ Defaults (all overridable via Settings menu or flags):
 - LLM: `kimi-k2.5` at `https://qianfan.baidubce.com/v2/coding` (Baidu Qianfan coding plan, OpenAI-compatible)
 - Thinking mode: off (budget 32 000 tokens when enabled)
 - Output dir: `~/Documents/MeetingCapture`
-- Duration: 480 min (8h safety cap; Enter to stop; recordings chunked every 30 min)
+- Duration: 480 min (8h safety cap; Enter to stop, Space+Enter to pause/resume; recordings chunked every 30 min)
+- WAV output: interleaved mono int16 @ 48 kHz (~5.6 MB/min)
 
 API key resolution (first hit wins): `--llm-api-key` flag → `QIANFAN_API_KEY` env → `LLM_API_KEY` env → macOS Keychain (service `MeetingCapture`, account `meeting_llm_api_key`). The Keychain entry is set/cleared from Settings → LLM API key; never written to the config JSON.
 
@@ -74,11 +75,12 @@ Settings JSON: `~/Library/Application Support/MeetingCapture/config.json`. Corru
 These are load-bearing and not obvious from reading a single file:
 
 - **SCStream always needs video.** Audio-only isn't a thing in ScreenCaptureKit. `AudioCapture` sets a 2×2 / 1 fps dummy video stream so the video path costs nothing.
-- **WAV can't store non-interleaved PCM**, and AVAudioFile silently rewrites the file header to interleaved — which then mismatches a non-interleaved write buffer and crashes. `CMSampleBuffer+PCM.swift` interleaves on the fly; `AudioCapture` opens AVAudioFile as interleaved f32. Do not try to "simplify" back to non-interleaved.
+- **WAV can't store non-interleaved PCM**, and AVAudioFile silently rewrites the file header to interleaved — which then mismatches a non-interleaved write buffer and crashes. `CMSampleBuffer+PCM.swift` interleaves on the fly; `MixingWriter` opens AVAudioFile as interleaved mono int16. Do not try to "simplify" back to non-interleaved. Internal mixing is float32; the float→int16 clamp + scale happens at the write boundary in `pushSystem()`.
+- **Pause drops frames; it does not splice silence.** `MixingWriter.togglePause()` early-returns from `pushSystem`/`pushMic` while paused, and clears the mic FIFO on pause-entry to avoid a splice on resume. Audio time stays contiguous in the WAV — wall-clock pause gap simply doesn't exist in the file. Transcript timestamps reflect audio time.
 - **System audio drives the mix clock.** `MixingWriter.pushSystem()` consumes a matching number of mic frames from a FIFO per call. Mic FIFO is capped at 1 s to prevent unbounded growth if the mic is disconnected mid-recording.
 - **Long recordings are chunked.** `MixingWriter` rotates to a new WAV file every 30 minutes (`meeting.wav`, `meeting_part2.wav`, ...). This provides fault tolerance — if a crash occurs at minute 45, the first chunk is preserved. `Transcribe.transcribe(wavPaths:)` concatenates chunks with adjusted timestamps.
 - **WhisperKit default chunking drops cross-boundary speech.** The default `ChunkingStrategy` cuts at hard 30-second marks; Whisper's `noSpeechThreshold` (0.6) then classifies the cross-boundary uncertain audio as silence. `Transcribe.swift` explicitly passes `DecodingOptions(chunkingStrategy: .vad)` — do not remove this, it was the fix for a 22 s dropout.
-- **Mid-recording stop uses stdin readability, not readLine.** `Shell.recordFlow()` installs `FileHandle.standardInput.readabilityHandler` before awaiting `capture.run()`, and removes it after. A blocking `readLine()` in a detached Task would leak the thread because Swift can't cancel blocking syscalls. Handler approach is clean.
+- **Mid-recording stop/pause uses stdin readability, not readLine.** `Shell.recordFlow()` installs `FileHandle.standardInput.readabilityHandler` before awaiting `capture.run()`, and removes it after. The handler dispatches on input: bare `" "` (after stripping CR/LF) → `pauseToggle()`, anything else → `manualStop()`. A blocking `readLine()` in a detached Task would leak the thread because Swift can't cancel blocking syscalls. Handler approach is clean. **Caveat:** the handler only fires on a real TTY — when stdin is piped (testing), libc fully buffers stdin and the FileHandle dispatch source never sees subsequent bytes. Pause/stop are not reachable from piped tests; verify via interactive tty.
 - **`setbuf(stdout, nil)`** at the top of `main.swift` makes prompts and progress flush correctly and kept an early crash visible. Do not remove.
 - **Sendable warnings exist** on `AudioCapture`'s Task/DispatchQueue captures. They're left as warnings deliberately; making the class an actor is a bigger refactor than we've invested in.
 - **Do not enable Apple's Voice-Processing I/O on the mic input.** `AVAudioEngine.inputNode.setVoiceProcessingEnabled(true)` was tried (commit `fc39ed2`) to cancel the speaker→mic echo. It works as an AEC, but the API also switches the system audio HAL into "voice chat" mode — that ducks output (overriding user volume) and puts the mic into an exclusive voice-processing path. Any concurrent VoIP app (Zoom, Meet, Teams) that's also using VPIO is then unable to capture the mic, and its playback gets duck-attenuated. Recording becomes unusable in real meetings. **The fix is implemented:** software AEC via vendored `speexdsp` running in user-space against our own mic and SCStream buffers — that path doesn't claim the HAL session. Disable with `--no-aec` or Settings → AEC if needed.
