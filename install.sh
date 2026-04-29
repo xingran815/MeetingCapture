@@ -64,12 +64,15 @@ fi
 
 # ─── 5. Screen Recording permission ──────────────────────────────────────────
 bold "[5/6] Screen Recording permission"
-info "macOS requires you to add the binary by hand (no API to grant it)."
-info "Path to add:  $INSTALL_PATH"
-open "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture" 2>/dev/null || true
-open -R "$INSTALL_PATH" 2>/dev/null || true
+if "$INSTALL_PATH" --list >/dev/null 2>&1; then
+    ok "Screen Recording already granted — skipping."
+else
+    info "macOS requires you to add the binary by hand (no API to grant it)."
+    info "Path to add:  $INSTALL_PATH"
+    open "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture" 2>/dev/null || true
+    open -R "$INSTALL_PATH" 2>/dev/null || true
 
-osascript <<EOF >/dev/null 2>&1 || true
+    osascript <<EOF >/dev/null 2>&1 || true
 display dialog "In System Settings → Privacy & Security → Screen Recording, click + and add:
 
 $INSTALL_PATH
@@ -78,6 +81,7 @@ A Finder window has been opened at the binary's location to make this easier.
 
 Click OK once you've added (and enabled) it." buttons {"OK"} default button 1 with title "MeetingCapture install"
 EOF
+fi
 
 # ─── 6. Verify ───────────────────────────────────────────────────────────────
 bold "[6/6] Verify"
