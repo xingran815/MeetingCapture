@@ -14,6 +14,7 @@ import Foundation
 final class Shell {
 
     private var config: Config
+    private var sessionApiKey: String? = nil
 
     init() {
         self.config = Config.load()
@@ -225,9 +226,8 @@ final class Shell {
     }
 
     private func runSummarize(transcript: String, sourcePath: String) async {
-        // Fail fast with a helpful message if nothing will resolve a key.
-        // The actual key is fetched fresh inside Summarizer.summarize().
-        guard Config.resolveApiKey() != nil else {
+        if sessionApiKey == nil { sessionApiKey = Config.resolveApiKey() }
+        guard let apiKey = sessionApiKey else {
             print("""
             ❌  Summarization skipped: no API key.
                Store one with Settings → LLM API key, or export QIANFAN_API_KEY.
@@ -246,16 +246,19 @@ final class Shell {
 
         let summarizer = Summarizer(
             baseURL: baseURL,
-            apiKeyProvider: { Config.resolveApiKey() },
+            apiKeyProvider: { apiKey },
             model: config.llmModel,
             thinking: thinking
         )
         do {
             let summary = try await summarizer.summarize(transcript: transcript)
 
-            print("\n──── summary ─────────────────────────────")
-            print(summary.trimmingCharacters(in: .whitespacesAndNewlines))
-            print("──────────────────────────────────────────")
+            let totalWidth = 50
+            let labelPart  = "──── summary "
+            let fill = String(repeating: "─", count: max(0, totalWidth - labelPart.count))
+            print("\n" + labelPart + fill)
+            print(renderMarkdown(summary.trimmingCharacters(in: .whitespacesAndNewlines)))
+            print(String(repeating: "─", count: totalWidth))
 
             let mdURL = URL(fileURLWithPath: sourcePath)
                 .deletingPathExtension()
@@ -496,5 +499,63 @@ final class Shell {
         if path.hasPrefix("~/") { return NSHomeDirectory() + String(path.dropFirst(1)) }
         if path == "~" { return NSHomeDirectory() }
         return path
+    }
+
+    // MARK: - Markdown rendering
+
+    // Converts basic markdown to ANSI-styled terminal output for readability.
+    // The .md file on disk always receives the raw markdown string.
+    private func renderMarkdown(_ text: String) -> String {
+        let reset = "\u{001B}[0m"
+        let bold  = "\u{001B}[1m"
+        let dim   = "\u{001B}[2m"
+
+        var out: [String] = []
+        var inCode = false
+
+        for raw in text.components(separatedBy: "\n") {
+            if raw.hasPrefix("```") {
+                inCode.toggle()
+                if inCode {
+                    let lang = String(raw.dropFirst(3)).trimmingCharacters(in: .whitespaces)
+                    out.append(dim + (lang.isEmpty ? "▸ code" : "▸ \(lang)") + reset)
+                }
+                continue
+            }
+            if inCode {
+                out.append(dim + "  " + raw + reset); continue
+            }
+
+            if raw.hasPrefix("### ") {
+                out.append("\n" + bold + String(raw.dropFirst(4)) + reset)
+            } else if raw.hasPrefix("## ") {
+                out.append("\n" + bold + String(raw.dropFirst(3)).uppercased() + reset)
+            } else if raw.hasPrefix("# ") {
+                let title = String(raw.dropFirst(2)).uppercased()
+                let bar   = String(repeating: "─", count: min(title.count + 4, 60))
+                out.append("\n" + bold + bar + "\n  " + title + "\n" + bar + reset)
+            } else if raw.hasPrefix("- ") || raw.hasPrefix("* ") {
+                out.append("  •  " + inlineFmt(String(raw.dropFirst(2)), bold: bold, reset: reset))
+            } else if raw.range(of: #"^\d+\. "#, options: .regularExpression) != nil {
+                out.append("  " + inlineFmt(raw, bold: bold, reset: reset))
+            } else if raw == "---" || raw == "***" || raw == "___" {
+                out.append(String(repeating: "─", count: 60))
+            } else {
+                out.append(inlineFmt(raw, bold: bold, reset: reset))
+            }
+        }
+        return out.joined(separator: "\n")
+    }
+
+    private func inlineFmt(_ text: String, bold: String, reset: String) -> String {
+        let cyan = "\u{001B}[36m"
+        var s = text
+        s = s.replacingOccurrences(of: #"\*\*(.+?)\*\*"#,
+                                    with: bold + "$1" + reset, options: .regularExpression)
+        s = s.replacingOccurrences(of: #"__(.+?)__"#,
+                                    with: bold + "$1" + reset, options: .regularExpression)
+        s = s.replacingOccurrences(of: #"`([^`]+)`"#,
+                                    with: cyan + "$1" + reset, options: .regularExpression)
+        return s
     }
 }
