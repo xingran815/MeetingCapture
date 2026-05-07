@@ -56,9 +56,14 @@ final class MixingWriter {
     private var chunkFrames: Int = 0
     private var partNumber: Int = 1
     private var allFiles: [URL] = []
+    // 0 means unlimited; set to prevent spurious chunks at the recording boundary.
+    private let targetDurationFrames: Int
 
-    init(outputURL: URL) throws {
+    init(outputURL: URL, targetDurationSeconds: Double = 0) throws {
         self.baseURL = outputURL
+        self.targetDurationFrames = targetDurationSeconds > 0
+            ? Int(targetDurationSeconds * Self.sampleRate)
+            : 0
         format = AVAudioFormat(
             commonFormat: .pcmFormatInt16,
             sampleRate: Self.sampleRate,
@@ -144,6 +149,9 @@ final class MixingWriter {
     // Close current chunk and start a new one.
     // Must be called with lock held.
     private func rotateChunk() throws {
+        // Skip rotation if we've already written the full target duration.
+        // Prevents a spurious short chunk when safety cap == chunk size.
+        if targetDurationFrames > 0 && framesWritten >= targetDurationFrames { return }
         // Reassigning currentFile triggers deinit of old file, which finalizes WAV header
         let newURL = nextChunkURL()
         currentFile = try AVAudioFile(

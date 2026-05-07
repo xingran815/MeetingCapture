@@ -151,7 +151,7 @@ final class AudioCapture: NSObject {
 
         // 6. Create the mixing writer ─────────────────────────────────────────
         print("  creating WAV at \(url.path)…")
-        let writer = try MixingWriter(outputURL: url)
+        let writer = try MixingWriter(outputURL: url, targetDurationSeconds: duration)
         self.writer = writer
         print("  WAV file created")
 
