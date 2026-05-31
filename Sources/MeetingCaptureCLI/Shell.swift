@@ -105,7 +105,10 @@ final class Shell {
         let capture = AudioCapture()
         let totalSec = Double(config.defaultDurationMinutes * 60)
 
-        let modeHint = config.micEnabled ? "" : "  (system audio only — mic off)"
+        let modeHint: String = {
+            if config.captureAllAudio { return "  (all system audio)" }
+            return config.micEnabled ? "" : "  (system audio only — mic off)"
+        }()
         print("""
 
         🔴  Recording → \(wavURL.path)\(modeHint)
@@ -133,7 +136,7 @@ final class Shell {
             wavFiles = try await capture.run(
                 duration: totalSec,
                 outputPath: wavURL.path,
-                captureAllAudio: false,
+                captureAllAudio: config.captureAllAudio,
                 meetingApps: MeetingApp.catalog.filter { config.enabledMeetingAppIDs.contains($0.id) },
                 enableMic: config.micEnabled,
                 aecEnabled: config.micEnabled && config.aecEnabled
@@ -276,17 +279,21 @@ final class Shell {
     // MARK: - Settings
 
     private func settingsFlow() async {
-        loop: while true {
+        // Rebuilt before every redraw so the [bracketed] values reflect the
+        // latest config; Menu.run keeps the menu in place across changes.
+        func buildItems() -> [MenuItem] {
             let c = config
             let keyStatus = Config.apiKeySourceDescription
             let thinkingDesc = c.kimiThinkingEnabled
                 ? "on, budget \(c.kimiThinkingBudgetTokens) tokens"
                 : "off"
-
             let aecDesc = c.micEnabled
                 ? (c.aecEnabled ? "on" : "off")
                 : "n/a — mic off"
-            let items: [MenuItem] = [
+            let appsDesc = c.captureAllAudio
+                ? "all system audio"
+                : "\(c.enabledMeetingAppIDs.count) of \(MeetingApp.catalog.count) on"
+            return [
                 MenuItem(key: "1", label: "Whisper model           [\(c.whisperModel)]"),
                 MenuItem(key: "2", label: "Safety cap (minutes)    [\(c.defaultDurationMinutes)]"),
                 MenuItem(key: "3", label: "Output directory        [\(c.outputDirectory)]"),
@@ -298,41 +305,35 @@ final class Shell {
                 MenuItem(key: "9", label: "LLM API key             [\(keyStatus)]"),
                 MenuItem(key: "a", label: "AEC (echo cancel)       [\(aecDesc)]"),
                 MenuItem(key: "m", label: "Mic capture             [\(c.micEnabled ? "on" : "off")]"),
-                MenuItem(key: "s", label: "Meeting apps (auto-detect) [\(c.enabledMeetingAppIDs.count) of \(MeetingApp.catalog.count) on]"),
+                MenuItem(key: "s", label: "Audio source            [\(appsDesc)]"),
                 MenuItem(key: "r", label: "Reset to defaults"),
             ]
-            let pick = Menu.pick(title: "\nSettings\n", items: items, allowBack: true)
-            switch pick {
-            case .back:
-                break loop
-            case .selected(let i):
-                switch i {
-                case 0:  promptWhisperModel()
-                case 1:  promptInt(\.defaultDurationMinutes, label: "safety cap (minutes)", min: 1, max: 600)
-                case 2:  promptString(\.outputDirectory, label: "output directory")
-                case 3:  toggle(\.autoTranscribe, label: "Auto-transcribe")
-                case 4:  toggle(\.autoSummarize,  label: "Auto-summarize")
-                case 5:  promptString(\.llmModel, label: "LLM model")
-                case 6:  promptString(\.llmBaseURL, label: "LLM base URL")
-                case 7:  promptKimiThinking()
-                case 8:
-                    promptApiKey()
-                case 9:
-                    if config.micEnabled {
-                        toggle(\.aecEnabled, label: "AEC")
-                    } else {
-                        print("AEC has no effect while mic is off — enable mic first.")
-                    }
-                case 10:
-                    toggle(\.micEnabled, label: "Mic capture")
-                case 11:
-                    promptMeetingApps()
-                case 12:
-                    config = Config()
-                    persistConfig()
-                    print("✓  Reset to defaults.")
-                default: break
+        }
+
+        Menu.run(title: "\nSettings\n", items: buildItems, allowBack: true) { i in
+            switch i {
+            case 0:  promptWhisperModel()
+            case 1:  promptInt(\.defaultDurationMinutes, label: "safety cap (minutes)", min: 1, max: 600)
+            case 2:  promptString(\.outputDirectory, label: "output directory")
+            case 3:  toggle(\.autoTranscribe, label: "Auto-transcribe")
+            case 4:  toggle(\.autoSummarize,  label: "Auto-summarize")
+            case 5:  promptString(\.llmModel, label: "LLM model")
+            case 6:  promptString(\.llmBaseURL, label: "LLM base URL")
+            case 7:  promptKimiThinking()
+            case 8:  promptApiKey()
+            case 9:
+                if config.micEnabled {
+                    toggle(\.aecEnabled, label: "AEC")
+                } else {
+                    print("AEC has no effect while mic is off — enable mic first.")
                 }
+            case 10: toggle(\.micEnabled, label: "Mic capture")
+            case 11: promptMeetingApps()
+            case 12:
+                config = Config()
+                persistConfig()
+                print("✓  Reset to defaults.")
+            default: break
             }
         }
     }
@@ -419,36 +420,52 @@ final class Shell {
         persistConfig()
     }
 
-    /// Toggle which conferencing apps are eligible for SCStream auto-detection.
-    /// When none of the enabled apps are running at record time, capture falls
-    /// back to all system audio — stated in the menu title so the rule is clear.
+    /// Choose the capture audio source. "All system audio" (item 0) forces
+    /// capturing everything; when off, capture auto-detects the first enabled
+    /// conferencing app that's running, falling back to all system audio if none
+    /// are. While all-audio is on, the per-app rows are dimmed/unselectable.
     private func promptMeetingApps() {
         let title = """
 
-        Meeting apps  (auto-detect)
-        Capture is scoped to the first enabled app that's running.
-        If none are running when you record, ALL system audio is captured.
+        Audio source
+        All system audio captures everything. Otherwise capture is scoped to the
+        first enabled app that's running (or all audio if none are running).
         """
-        loop: while true {
+        // index 0 = All system audio · index 1 = separator · 2… = apps
+        func buildItems() -> [MenuItem] {
+            let all = config.captureAllAudio
             let enabled = Set(config.enabledMeetingAppIDs)
-            let items = MeetingApp.catalog.map { app in
-                MenuItem(label: "[\(enabled.contains(app.id) ? "on" : "off")] \(app.label)")
+            var items: [MenuItem] = [
+                MenuItem(label: "(\(all ? "●" : " ")) All system audio")
+            ]
+            items.append(.separator("──────────────────────"))
+            for app in MeetingApp.catalog {
+                items.append(MenuItem(
+                    label: "[\(enabled.contains(app.id) ? "on" : "off")] \(app.label)",
+                    enabled: !all
+                ))
             }
-            let pick = Menu.pick(title: title, items: items, allowBack: true)
-            switch pick {
-            case .back:
-                break loop
-            case .selected(let i):
-                let app = MeetingApp.catalog[i]
-                if enabled.contains(app.id) {
-                    config.enabledMeetingAppIDs.removeAll { $0 == app.id }
-                } else {
-                    // Preserve catalog order when re-adding.
-                    let next = Set(enabled).union([app.id])
-                    config.enabledMeetingAppIDs = MeetingApp.allIDs.filter { next.contains($0) }
-                }
+            return items
+        }
+
+        Menu.run(title: title, items: buildItems, allowBack: true) { i in
+            if i == 0 {
+                config.captureAllAudio.toggle()
                 persistConfig()
+                return
             }
+            let appIndex = i - 2   // account for All-audio row + separator
+            guard MeetingApp.catalog.indices.contains(appIndex) else { return }
+            let app = MeetingApp.catalog[appIndex]
+            let enabled = Set(config.enabledMeetingAppIDs)
+            if enabled.contains(app.id) {
+                config.enabledMeetingAppIDs.removeAll { $0 == app.id }
+            } else {
+                // Preserve catalog order when re-adding.
+                let next = enabled.union([app.id])
+                config.enabledMeetingAppIDs = MeetingApp.allIDs.filter { next.contains($0) }
+            }
+            persistConfig()
         }
     }
 
@@ -534,7 +551,8 @@ final class Shell {
     private func toggle(_ kp: WritableKeyPath<Config, Bool>, label: String) {
         config[keyPath: kp].toggle()
         persistConfig()
-        print("\(label): \(config[keyPath: kp] ? "on" : "off")")
+        // No confirmation print — the menu's [bracketed] value reflects the
+        // change on its next (in-place) redraw.
     }
 
     private func persistConfig() {

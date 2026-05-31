@@ -46,6 +46,8 @@ After rebuilds the path stays the same so grants persist.
 ```
 main.swift           flag parsing · shell bootstrap · flag-mode pipeline
 Shell.swift          interactive menus (main + settings) · orchestrates the pipeline
+Menu.swift           termios cbreak list picker: Menu.pick (one-shot) + Menu.run (stays open, redraws in place)
+MeetingApps.swift    catalog of conferencing apps for SCStream audio auto-detection
 Config.swift         persisted settings (JSON) · path/api-key helpers
 AudioCapture.swift   SCShareableContent → SCContentFilter → SCStream; owns the WAV writer indirectly
 MicCapture.swift     AVAudioEngine input tap · format conversion to 48 kHz mono
@@ -65,6 +67,7 @@ Defaults (all overridable via Settings menu or flags):
 - Output dir: `~/Documents/MeetingCapture`
 - Duration: 480 min (8h safety cap; Enter to stop, Space+Enter to pause/resume; recordings chunked every 30 min)
 - WAV output: interleaved mono int16 @ 48 kHz (~5.6 MB/min)
+- Audio source: meeting-app auto-detect on (all 5 apps enabled). Settings → Audio source has an explicit "All system audio" toggle (`config.captureAllAudio`) that bypasses auto-detection; equivalent to the `--all-audio` flag.
 
 API key resolution (first hit wins): `--llm-api-key` flag → `QIANFAN_API_KEY` env → `LLM_API_KEY` env → macOS Keychain (service `MeetingCapture`, account `meeting_llm_api_key`). The Keychain entry is set/cleared from Settings → LLM API key; never written to the config JSON.
 
@@ -92,3 +95,5 @@ Likely next rounds: speaker diarization, custom prompt templates, chunked/stream
 When working on the LLM side, check `memory/llm_provider.md` — the user has committed to Baidu Qianfan + Kimi-K2.5 as the default. Don't silently swap it.
 
 When working on the shell, keep the "one keystroke to record" UX principle. If a feature needs a multi-prompt wizard, put it in the Settings menu.
+
+Settings and the audio-source picker use `Menu.run`, not `Menu.pick`: it stays open and redraws the menu **in place** (clears its block, runs the per-selection handler, re-renders) so changing a setting never prints a fresh stacked copy. Consequence: pure toggles must NOT print confirmations (the `[bracketed]` value already updates on redraw); rely on the menu's own redraw for feedback. In-place redraw only happens on a real TTY — piped stdin falls back to a reprinted numbered list.
