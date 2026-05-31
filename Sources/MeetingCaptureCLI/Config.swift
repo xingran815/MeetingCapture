@@ -15,6 +15,10 @@ struct Config: Codable, Equatable {
     var autoTranscribe: Bool            = true
     var autoSummarize: Bool             = true
     var aecEnabled: Bool                = true
+    var micEnabled: Bool                = true
+    /// Meeting-app ids eligible for SCStream auto-detection (see MeetingApp.catalog).
+    /// Empty / none-running → capture falls back to all system audio.
+    var enabledMeetingAppIDs: [String]  = MeetingApp.allIDs
 
     // LLM
     var llmModel: String                = "kimi-k2.5"
@@ -33,6 +37,8 @@ struct Config: Codable, Equatable {
         autoTranscribe: Bool = true,
         autoSummarize: Bool = true,
         aecEnabled: Bool = true,
+        micEnabled: Bool = true,
+        enabledMeetingAppIDs: [String] = MeetingApp.allIDs,
         llmModel: String = "kimi-k2.5",
         llmBaseURL: String = "https://qianfan.baidubce.com/v2/coding",
         kimiThinkingEnabled: Bool = false,
@@ -45,6 +51,8 @@ struct Config: Codable, Equatable {
         self.autoTranscribe = autoTranscribe
         self.autoSummarize = autoSummarize
         self.aecEnabled = aecEnabled
+        self.micEnabled = micEnabled
+        self.enabledMeetingAppIDs = enabledMeetingAppIDs
         self.llmModel = llmModel
         self.llmBaseURL = llmBaseURL
         self.kimiThinkingEnabled = kimiThinkingEnabled
@@ -54,7 +62,7 @@ struct Config: Codable, Equatable {
     // Custom decoder provides defaults for missing keys (backward compat).
     enum CodingKeys: String, CodingKey {
         case whisperModel, whisperLanguage, defaultDurationMinutes, outputDirectory
-        case autoTranscribe, autoSummarize, aecEnabled
+        case autoTranscribe, autoSummarize, aecEnabled, micEnabled, enabledMeetingAppIDs
         case llmModel, llmBaseURL, kimiThinkingEnabled, kimiThinkingBudgetTokens
     }
 
@@ -67,6 +75,8 @@ struct Config: Codable, Equatable {
         autoTranscribe = try c.decodeIfPresent(Bool.self, forKey: .autoTranscribe) ?? true
         autoSummarize = try c.decodeIfPresent(Bool.self, forKey: .autoSummarize) ?? true
         aecEnabled = try c.decodeIfPresent(Bool.self, forKey: .aecEnabled) ?? true
+        micEnabled = try c.decodeIfPresent(Bool.self, forKey: .micEnabled) ?? true
+        enabledMeetingAppIDs = try c.decodeIfPresent([String].self, forKey: .enabledMeetingAppIDs) ?? MeetingApp.allIDs
         llmModel = try c.decodeIfPresent(String.self, forKey: .llmModel) ?? "kimi-k2.5"
         llmBaseURL = try c.decodeIfPresent(String.self, forKey: .llmBaseURL) ?? "https://qianfan.baidubce.com/v2/coding"
         kimiThinkingEnabled = try c.decodeIfPresent(Bool.self, forKey: .kimiThinkingEnabled) ?? false

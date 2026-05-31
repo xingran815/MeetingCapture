@@ -212,6 +212,7 @@ Task {
             duration: duration,
             outputPath: outputPath,
             captureAllAudio: allAudio,
+            meetingApps: allAudio ? [] : MeetingApp.catalog.filter { persistedConfig.enabledMeetingAppIDs.contains($0.id) },
             enableMic: !noMic,
             aecEnabled: !noAec && persistedConfig.aecEnabled
         )

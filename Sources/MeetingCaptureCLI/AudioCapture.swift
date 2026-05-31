@@ -56,7 +56,7 @@ final class AudioCapture: NSObject {
         }
     }
 
-    func run(duration: Double, outputPath: String, captureAllAudio: Bool, enableMic: Bool, aecEnabled: Bool) async throws -> [URL] {
+    func run(duration: Double, outputPath: String, captureAllAudio: Bool, meetingApps: [MeetingApp], enableMic: Bool, aecEnabled: Bool) async throws -> [URL] {
         targetDuration = duration
 
         // 1. Enumerate screen content ─────────────────────────────────────────
@@ -71,39 +71,25 @@ final class AudioCapture: NSObject {
         print("  using display \(display.displayID) \(display.width)x\(display.height)")
 
         // 2. Locate a running meeting app ─────────────────────────────────────
-        //    Ordered by priority; we take the first match.
-        let candidates: [(label: String, bundleIDs: [String])] = [
-            ("Zoom",             ["us.zoom.xos",
-                                  "us.zoom.xos.ZoomMTRunning",
-                                  "us.zoom.xos.ZoomAudio"]),
-            ("Microsoft Teams",  ["com.microsoft.teams",
-                                  "com.microsoft.teams2"]),
-            ("Webex",            ["Cisco-Systems.Spark",
-                                  "com.cisco.webexmeetings"]),
-            // Google Meet runs inside Chrome/Safari – capturing the browser
-            // captures Meet audio as well.
-            ("Google Chrome",    ["com.google.Chrome"]),
-            ("Safari",           ["com.apple.Safari"]),
-        ]
-
+        //    Ordered by priority; we take the first enabled app that is running.
         var targetApps: [SCRunningApplication] = []
         var targetLabel = "all system audio"
 
-        if !captureAllAudio {
-            for (label, ids) in candidates {
-                let found = content.applications.filter { ids.contains($0.bundleIdentifier) }
+        if !captureAllAudio && !meetingApps.isEmpty {
+            for app in meetingApps {
+                let found = content.applications.filter { app.bundleIDs.contains($0.bundleIdentifier) }
                 if !found.isEmpty {
                     targetApps = found
-                    targetLabel = label
-                    print("Found \(label): \(found.map(\.bundleIdentifier).joined(separator: ", "))")
+                    targetLabel = app.label
+                    print("Found \(app.label): \(found.map(\.bundleIdentifier).joined(separator: ", "))")
                     break
                 }
             }
             if targetApps.isEmpty {
                 print("""
-                ⚠  No supported meeting app detected.
+                ⚠  None of the enabled meeting apps are running.
                    Falling back to ALL system audio.
-                   (Tip: open Zoom/Teams/etc. before running, or use --all-audio)
+                   (Enable/disable apps in Settings → Meeting apps, or use --all-audio)
                 """)
             }
         }
