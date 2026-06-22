@@ -255,6 +255,7 @@ final class Shell {
             baseURL: baseURL,
             apiKeyProvider: { apiKey },
             model: active.model,
+            apiStyle: active.apiStyle,
             thinking: thinking
         )
         do {
@@ -651,7 +652,7 @@ final class Shell {
             print("❌  Invalid LLM base URL: \(profile.baseURL)")
             return
         }
-        let summarizer = Summarizer(baseURL: baseURL, apiKeyProvider: { apiKey }, model: profile.model)
+        let summarizer = Summarizer(baseURL: baseURL, apiKeyProvider: { apiKey }, model: profile.model, apiStyle: profile.apiStyle)
         print("⏳  Testing \(profile.model) @ \(baseURL.host ?? profile.baseURL)…")
 
         let sem = DispatchSemaphore(value: 0)

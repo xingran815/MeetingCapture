@@ -193,6 +193,7 @@ func runSummarization(transcript: String, sourcePath: String) async throws {
         baseURL: baseURL,
         apiKeyProvider: { Config.resolveApiKey(profileID: llmProfile.id, flag: llmApiKeyFlag) },
         model: llmModel,
+        apiStyle: LLMProvider.apiStyle(baseURL: llmBaseURL, providerID: llmProfile.providerID),
         thinking: thinking
     )
     let summary = try await summarizer.summarize(transcript: transcript)

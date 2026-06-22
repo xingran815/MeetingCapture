@@ -1,12 +1,23 @@
 import Foundation
 
+// The wire protocol a provider speaks. Almost everything is OpenAI-compatible
+// `/chat/completions`; Anthropic is the exception — it has its own `/messages`
+// shape (x-api-key header, required max_tokens, top-level `system`, and a
+// `content[].text` response). `Summarizer` branches on this.
+enum LLMAPIStyle: String, Codable {
+    case openAIChat          // POST {base}/chat/completions, Bearer auth
+    case anthropicMessages   // POST {base}/messages, x-api-key + anthropic-version
+}
+
 // Catalog of selectable LLM providers for summarization.
 //
-// All entries speak the OpenAI-compatible `/chat/completions` protocol; a
-// provider is just a base URL + a sensible default model + whether it accepts
-// the Kimi-style `thinking` reasoning parameter. Picking a preset in Settings
-// pre-fills the base URL and model (both still individually editable). The
-// "Custom" entry leaves them blank for a fully user-supplied endpoint.
+// Most entries speak the OpenAI-compatible `/chat/completions` protocol; the
+// Anthropic entry is the exception (`apiStyle == .anthropicMessages`). A
+// provider is a base URL + a sensible default model + whether it accepts the
+// Kimi-style `thinking` reasoning parameter + which wire protocol it speaks.
+// Picking a preset in Settings pre-fills the base URL and model (both still
+// individually editable). The "Custom" entry leaves them blank for a fully
+// user-supplied endpoint.
 //
 // A provider here is just a template: picking one pre-fills an LLMProfile's
 // providerID/baseURL/model (see below). The persisted, switchable state lives
@@ -16,11 +27,14 @@ import Foundation
 struct LLMProvider: Identifiable {
     let id: String              // stable key persisted in config
     let label: String           // human-readable name shown in Settings
-    let baseURL: String         // OpenAI-compatible base; "" for custom
+    let baseURL: String         // base endpoint; "" for custom
     let defaultModel: String    // model to pre-fill on selection; "" for custom
     /// Whether the provider accepts the Kimi-style `thinking` body param.
     /// Reasoning mode is only offered / sent for providers where this is true.
     let supportsReasoning: Bool
+    /// Which wire protocol this provider speaks. Defaults to OpenAI-compatible;
+    /// only Anthropic opts into `.anthropicMessages`.
+    var apiStyle: LLMAPIStyle = .openAIChat
 }
 
 extension LLMProvider {
@@ -34,6 +48,10 @@ extension LLMProvider {
         LLMProvider(id: "ollama", label: "Ollama (local)",
                     baseURL: "http://localhost:11434/v1",
                     defaultModel: "llama3.1", supportsReasoning: false),
+        LLMProvider(id: "anthropic", label: "Anthropic (Claude)",
+                    baseURL: "https://api.anthropic.com/v1",
+                    defaultModel: "claude-sonnet-4-6", supportsReasoning: false,
+                    apiStyle: .anthropicMessages),
         LLMProvider(id: "custom", label: "Custom…",
                     baseURL: "", defaultModel: "", supportsReasoning: false),
     ]
@@ -50,6 +68,24 @@ extension LLMProvider {
     /// Unknown ids (e.g. stale config) are treated as non-reasoning.
     static func supportsReasoning(_ id: String) -> Bool {
         byID(id)?.supportsReasoning ?? false
+    }
+
+    /// The wire protocol declared by the provider `id`. Unknown ids (e.g. a
+    /// stale config) fall back to OpenAI-compatible.
+    static func apiStyle(_ id: String) -> LLMAPIStyle {
+        byID(id)?.apiStyle ?? .openAIChat
+    }
+
+    /// Resolve the wire protocol for an effective base URL + provider id. The
+    /// endpoint host is what actually determines the protocol, so an Anthropic
+    /// base URL wins (even on a `custom` profile or a `--llm-base-url`
+    /// override); otherwise the provider's declared style applies.
+    static func apiStyle(baseURL: String, providerID: String) -> LLMAPIStyle {
+        if let host = URL(string: baseURL)?.host?.lowercased(),
+           host.contains("anthropic") {
+            return .anthropicMessages
+        }
+        return apiStyle(providerID)
     }
 }
 
@@ -86,6 +122,11 @@ struct LLMProfile: Codable, Equatable, Identifiable {
 
     /// Whether this profile's provider accepts the reasoning/thinking parameter.
     var supportsReasoning: Bool { LLMProvider.supportsReasoning(providerID) }
+
+    /// Which wire protocol `Summarizer` should speak for this profile.
+    var apiStyle: LLMAPIStyle {
+        LLMProvider.apiStyle(baseURL: baseURL, providerID: providerID)
+    }
 
     /// Display name: the user's label if set, else the preset's label, else the raw id.
     var displayName: String {

@@ -2,19 +2,28 @@ import Foundation
 
 // LLM-backed meeting summarizer.
 //
-// Talks to any OpenAI-compatible `/chat/completions` endpoint. The provider is
-// user-selected from a catalog of presets (see LLMProvider) — OpenAI, a local
-// Ollama, Qianfan/Kimi (the default), or a fully custom base URL + model. The
+// Talks to either of two wire protocols (see `LLMAPIStyle`), user-selected via a
+// catalog of presets (see LLMProvider) — OpenAI, a local Ollama, Qianfan/Kimi
+// (the default), Anthropic/Claude, or a fully custom base URL + model. The
 // transcript fits any provider we target in a single request — no chunking.
 //
-// Endpoint contract expected:
+// OpenAI-compatible (`.openAIChat`) — the default for every provider but Anthropic:
 //   POST {baseURL}/chat/completions
 //   Authorization: Bearer <apiKey>
-//   body: { model, messages: [{role, content}], temperature }
+//   body: { model, temperature, messages: [{role, content}] }
 //   200 → { choices: [{ message: { content: "…markdown…" } }] }
 //
+// Anthropic Messages (`.anthropicMessages`):
+//   POST {baseURL}/messages
+//   x-api-key: <apiKey> · anthropic-version: 2023-06-01   (NOT Bearer)
+//   body: { model, max_tokens (required), system, messages: [{role, content}] }
+//         — no `temperature` (rejected on current Claude models)
+//   200 → { content: [{ type: "text", text: "…markdown…" }] }
+//
 // `thinking` is a provider-specific reasoning parameter (Kimi-style). The caller
-// only enables it for providers known to accept it; others get a plain body.
+// only enables it for providers known to accept it; it's only ever sent on the
+// OpenAI path. Anthropic's own reasoning param is shaped differently and is not
+// sent here (the Anthropic preset gates reasoning off).
 enum ThinkingMode: Equatable {
     case enabled(budget: Int)
     case disabled
@@ -31,16 +40,25 @@ final class Summarizer {
     let model:   String
     let timeout: TimeInterval
     let thinking: ThinkingMode
+    /// Which wire protocol to speak. Defaults to OpenAI-compatible so existing
+    /// callers and the flag-mode path are unchanged.
+    let apiStyle: LLMAPIStyle
+
+    /// Anthropic's Messages API requires `max_tokens`; a structured meeting
+    /// summary fits comfortably here. Non-streaming, well under `timeout`.
+    private static let anthropicMaxTokens = 8192
 
     init(baseURL: URL,
          apiKeyProvider: @escaping () -> String?,
          model: String,
+         apiStyle: LLMAPIStyle = .openAIChat,
          thinking: ThinkingMode = .unspecified,
          timeout: TimeInterval = 180)
     {
         self.baseURL        = baseURL
         self.apiKeyProvider = apiKeyProvider
         self.model          = model
+        self.apiStyle       = apiStyle
         self.thinking       = thinking
         self.timeout        = timeout
     }
@@ -52,23 +70,34 @@ final class Summarizer {
             )
         }
 
-        var body: [String: Any] = [
-            "model": model,
-            "temperature": 0.3,
-            "messages": [
-                ["role": "system", "content": Self.systemPrompt],
-                ["role": "user",   "content": transcript]
+        let body: [String: Any]
+        switch apiStyle {
+        case .anthropicMessages:
+            // System prompt is a top-level field (not a message); max_tokens is
+            // required; no temperature (sampling params 400 on current Claude).
+            body = [
+                "model": model,
+                "max_tokens": Self.anthropicMaxTokens,
+                "system": Self.systemPrompt,
+                "messages": [["role": "user", "content": transcript]],
             ]
-        ]
-        switch thinking {
-        case .enabled(let budget):
-            body["thinking"] = ["type": "enabled", "budget_tokens": budget]
-        case .disabled:
-            body["thinking"] = ["type": "disabled"]
-        case .unspecified:
-            break
+        case .openAIChat:
+            var b: [String: Any] = [
+                "model": model,
+                "temperature": 0.3,
+                "messages": [
+                    ["role": "system", "content": Self.systemPrompt],
+                    ["role": "user",   "content": transcript]
+                ]
+            ]
+            switch thinking {
+            case .enabled(let budget): b["thinking"] = ["type": "enabled", "budget_tokens": budget]
+            case .disabled:            b["thinking"] = ["type": "disabled"]
+            case .unspecified:         break
+            }
+            body = b
         }
-        let endpoint = baseURL.appendingPathComponent("chat/completions")
+        let endpoint = baseURL.appendingPathComponent(endpointPath)
         let req = try buildRequest(apiKey: apiKey, body: body, timeout: timeout)
 
         let t0 = Date()
@@ -86,19 +115,40 @@ final class Summarizer {
             )
         }
 
-        guard
-            let json    = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let choices = json["choices"] as? [[String: Any]],
-            let first   = choices.first,
-            let message = first["message"] as? [String: Any],
-            let content = message["content"] as? String
-        else {
+        let content = try parseContent(from: data)
+        print(String(format: "   done in %.1fs (%d chars)", dt, content.count))
+        return content
+    }
+
+    /// Extract the assistant's text from a 2xx response, per wire protocol.
+    /// Throws `badResponse` (echoing the raw body) on an unexpected shape — for
+    /// Anthropic this also surfaces a `stop_reason: "refusal"` body with empty
+    /// content, which is what we want to show the user.
+    private func parseContent(from data: Data) throws -> String {
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             let raw = String(data: data, encoding: .utf8) ?? "<non-utf8 body>"
             throw SummarizerError.badResponse("Unexpected response shape:\n\(raw)")
         }
-
-        print(String(format: "   done in %.1fs (%d chars)", dt, content.count))
-        return content
+        switch apiStyle {
+        case .anthropicMessages:
+            // { content: [ { type: "text", text: "…" }, … ] }
+            if let blocks = json["content"] as? [[String: Any]] {
+                let text = blocks
+                    .filter { ($0["type"] as? String) == "text" }
+                    .compactMap { $0["text"] as? String }
+                    .joined()
+                if !text.isEmpty { return text }
+            }
+        case .openAIChat:
+            // { choices: [ { message: { content: "…" } } ] }
+            if let choices = json["choices"] as? [[String: Any]],
+               let message = choices.first?["message"] as? [String: Any],
+               let content = message["content"] as? String {
+                return content
+            }
+        }
+        let raw = String(data: data, encoding: .utf8) ?? "<non-utf8 body>"
+        throw SummarizerError.badResponse("Unexpected response shape:\n\(raw)")
     }
 
     /// Lightweight connectivity check: a minimal one-token completion that
@@ -115,12 +165,22 @@ final class Summarizer {
             completion(.failure(SummarizerError.badResponse("No LLM API key available.")))
             return
         }
-        let body: [String: Any] = [
-            "model": model,
-            "temperature": 0,
-            "max_tokens": 1,
-            "messages": [["role": "user", "content": "ping"]],
-        ]
+        let body: [String: Any]
+        switch apiStyle {
+        case .anthropicMessages:
+            body = [
+                "model": model,
+                "max_tokens": 1,
+                "messages": [["role": "user", "content": "ping"]],
+            ]
+        case .openAIChat:
+            body = [
+                "model": model,
+                "temperature": 0,
+                "max_tokens": 1,
+                "messages": [["role": "user", "content": "ping"]],
+            ]
+        }
         let req: URLRequest
         do { req = try buildRequest(apiKey: apiKey, body: body, timeout: timeout) }
         catch { completion(.failure(error)); return }
@@ -155,15 +215,26 @@ final class Summarizer {
         task.resume()
     }
 
-    /// Build a POST request to `{baseURL}/chat/completions` with auth + JSON body.
-    /// Shared by summarize() and ping().
+    /// The provider-specific endpoint path appended to `baseURL`.
+    private var endpointPath: String {
+        apiStyle == .anthropicMessages ? "messages" : "chat/completions"
+    }
+
+    /// Build a POST request to the provider's endpoint with the right auth
+    /// headers + JSON body. Shared by summarize() and ping().
     private func buildRequest(apiKey: String, body: [String: Any], timeout: TimeInterval) throws -> URLRequest {
-        let endpoint = baseURL.appendingPathComponent("chat/completions")
+        let endpoint = baseURL.appendingPathComponent(endpointPath)
         var req = URLRequest(url: endpoint)
         req.httpMethod = "POST"
         req.timeoutInterval = timeout
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        switch apiStyle {
+        case .anthropicMessages:
+            req.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+            req.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        case .openAIChat:
+            req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        }
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
         return req
     }
