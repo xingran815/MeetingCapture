@@ -2,16 +2,19 @@ import Foundation
 
 // LLM-backed meeting summarizer.
 //
-// Talks to any OpenAI-compatible `/chat/completions` endpoint. Default
-// configuration targets Baidu Qianfan's coding plan + Kimi-K2.5 (256k
-// context, 65k output), which is plenty for any meeting transcript we'll
-// hit — no chunking needed.
+// Talks to any OpenAI-compatible `/chat/completions` endpoint. The provider is
+// user-selected from a catalog of presets (see LLMProvider) — OpenAI, a local
+// Ollama, Qianfan/Kimi (the default), or a fully custom base URL + model. The
+// transcript fits any provider we target in a single request — no chunking.
 //
 // Endpoint contract expected:
 //   POST {baseURL}/chat/completions
 //   Authorization: Bearer <apiKey>
 //   body: { model, messages: [{role, content}], temperature }
 //   200 → { choices: [{ message: { content: "…markdown…" } }] }
+//
+// `thinking` is a provider-specific reasoning parameter (Kimi-style). The caller
+// only enables it for providers known to accept it; others get a plain body.
 enum ThinkingMode: Equatable {
     case enabled(budget: Int)
     case disabled
@@ -49,13 +52,6 @@ final class Summarizer {
             )
         }
 
-        let endpoint = baseURL.appendingPathComponent("chat/completions")
-        var req = URLRequest(url: endpoint)
-        req.httpMethod = "POST"
-        req.timeoutInterval = timeout
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-
         var body: [String: Any] = [
             "model": model,
             "temperature": 0.3,
@@ -72,7 +68,8 @@ final class Summarizer {
         case .unspecified:
             break
         }
-        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let endpoint = baseURL.appendingPathComponent("chat/completions")
+        let req = try buildRequest(apiKey: apiKey, body: body, timeout: timeout)
 
         let t0 = Date()
         print("🧩  Summarizing via \(model) @ \(baseURL.host ?? baseURL.absoluteString)…")
@@ -102,6 +99,73 @@ final class Summarizer {
 
         print(String(format: "   done in %.1fs (%d chars)", dt, content.count))
         return content
+    }
+
+    /// Lightweight connectivity check: a minimal one-token completion that
+    /// validates endpoint + API key + model name together. Calls `completion`
+    /// with a short success descriptor (e.g. "HTTP 200 in 0.8s") or a
+    /// categorized SummarizerError.
+    ///
+    /// Callback-based (not async) on purpose: the only caller is the synchronous
+    /// Settings menu handler, which blocks on a semaphore until this returns.
+    /// URLSession runs the completion on its own queue, so that bridge can't
+    /// starve the Swift-concurrency cooperative pool.
+    func ping(timeout: TimeInterval = 20, completion: @escaping (Result<String, Error>) -> Void) {
+        guard let apiKey = apiKeyProvider(), !apiKey.isEmpty else {
+            completion(.failure(SummarizerError.badResponse("No LLM API key available.")))
+            return
+        }
+        let body: [String: Any] = [
+            "model": model,
+            "temperature": 0,
+            "max_tokens": 1,
+            "messages": [["role": "user", "content": "ping"]],
+        ]
+        let req: URLRequest
+        do { req = try buildRequest(apiKey: apiKey, body: body, timeout: timeout) }
+        catch { completion(.failure(error)); return }
+
+        let t0 = Date()
+        let task = URLSession.shared.dataTask(with: req) { data, response, error in
+            if let error = error {
+                let host = self.baseURL.host ?? self.baseURL.absoluteString
+                completion(.failure(SummarizerError.badResponse(
+                    "could not reach \(host) — \(error.localizedDescription)")))
+                return
+            }
+            let dt = Date().timeIntervalSince(t0)
+            guard let http = response as? HTTPURLResponse else {
+                completion(.failure(SummarizerError.badResponse("not an HTTP response")))
+                return
+            }
+            switch http.statusCode {
+            case 200..<300:
+                completion(.success(String(format: "HTTP %d in %.1fs", http.statusCode, dt)))
+            case 401, 403:
+                completion(.failure(SummarizerError.badResponse(
+                    "HTTP \(http.statusCode) — invalid or unauthorized API key")))
+            case 404:
+                completion(.failure(SummarizerError.badResponse(
+                    "HTTP 404 — model not found or wrong base URL")))
+            default:
+                let snippet = (data.flatMap { String(data: $0, encoding: .utf8) } ?? "").prefix(300)
+                completion(.failure(SummarizerError.badResponse("HTTP \(http.statusCode): \(snippet)")))
+            }
+        }
+        task.resume()
+    }
+
+    /// Build a POST request to `{baseURL}/chat/completions` with auth + JSON body.
+    /// Shared by summarize() and ping().
+    private func buildRequest(apiKey: String, body: [String: Any], timeout: TimeInterval) throws -> URLRequest {
+        let endpoint = baseURL.appendingPathComponent("chat/completions")
+        var req = URLRequest(url: endpoint)
+        req.httpMethod = "POST"
+        req.timeoutInterval = timeout
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+        return req
     }
 
     enum SummarizerError: Error, LocalizedError {

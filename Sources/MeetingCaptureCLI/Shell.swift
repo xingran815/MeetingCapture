@@ -59,13 +59,13 @@ final class Shell {
     }
 
     private func mainHeader() -> String {
-        let thinking = config.kimiThinkingEnabled ? "on" : "off"
+        let provider = config.llmProviderDisplayName
         let autoTS   = config.autoTranscribe ? "on" : "off"
         let autoSum  = config.autoSummarize  ? "on" : "off"
         let mic      = config.micEnabled ? "on" : "off"
         return """
 
-          whisper: \(config.whisperModel)   ·  kimi thinking: \(thinking)   ·  auto-ts: \(autoTS), auto-sum: \(autoSum)
+          whisper: \(config.whisperModel)   ·  llm: \(provider) / \(config.llmModel)   ·  auto-ts: \(autoTS), auto-sum: \(autoSum)
           output:  \(config.outputDirectory)          safety cap: \(config.defaultDurationMinutes) min   ·  mic: \(mic)
 
         """
@@ -236,7 +236,7 @@ final class Shell {
         guard let apiKey = sessionApiKey else {
             print("""
             ❌  Summarization skipped: no API key.
-               Store one with Settings → LLM API key, or export QIANFAN_API_KEY.
+               Store one with Settings → LLM API key, or export LLM_API_KEY.
                Transcript is still on disk.
             """)
             return
@@ -246,9 +246,16 @@ final class Shell {
             return
         }
 
-        let thinking: ThinkingMode = config.kimiThinkingEnabled
-            ? .enabled(budget: config.kimiThinkingBudgetTokens)
-            : .disabled
+        // Reasoning/thinking is provider-specific: send enabled/disabled only for
+        // providers that accept it; omit the field entirely for the rest.
+        let thinking: ThinkingMode
+        if LLMProvider.supportsReasoning(config.llmProviderID) {
+            thinking = config.reasoningEnabled
+                ? .enabled(budget: config.reasoningBudgetTokens)
+                : .disabled
+        } else {
+            thinking = .unspecified
+        }
 
         let summarizer = Summarizer(
             baseURL: baseURL,
@@ -281,12 +288,15 @@ final class Shell {
     private func settingsFlow() async {
         // Rebuilt before every redraw so the [bracketed] values reflect the
         // latest config; Menu.run keeps the menu in place across changes.
+        // Grouped with dimmed separator headers. Each selectable row keeps a
+        // stable shortcut key; the handler dispatches on that key (not the row
+        // index) so separators can be inserted without re-numbering anything.
         func buildItems() -> [MenuItem] {
             let c = config
             let keyStatus = Config.apiKeySourceDescription
-            let thinkingDesc = c.kimiThinkingEnabled
-                ? "on, budget \(c.kimiThinkingBudgetTokens) tokens"
-                : "off"
+            let reasoningDesc = LLMProvider.supportsReasoning(c.llmProviderID)
+                ? (c.reasoningEnabled ? "on, budget \(c.reasoningBudgetTokens) tokens" : "off")
+                : "n/a — provider has no reasoning mode"
             let aecDesc = c.micEnabled
                 ? (c.aecEnabled ? "on" : "off")
                 : "n/a — mic off"
@@ -294,42 +304,57 @@ final class Shell {
                 ? "all system audio"
                 : "\(c.enabledMeetingAppIDs.count) of \(MeetingApp.catalog.count) on"
             return [
+                .separator("── Capture & transcription ──────────"),
                 MenuItem(key: "1", label: "Whisper model           [\(c.whisperModel)]"),
                 MenuItem(key: "2", label: "Safety cap (minutes)    [\(c.defaultDurationMinutes)]"),
                 MenuItem(key: "3", label: "Output directory        [\(c.outputDirectory)]"),
                 MenuItem(key: "4", label: "Auto-transcribe         [\(c.autoTranscribe ? "on" : "off")]"),
+                .separator("── LLM (summarization) ──────────────"),
                 MenuItem(key: "5", label: "Auto-summarize          [\(c.autoSummarize ? "on" : "off")]"),
-                MenuItem(key: "6", label: "LLM model               [\(c.llmModel)]"),
-                MenuItem(key: "7", label: "LLM base URL            [\(c.llmBaseURL)]"),
-                MenuItem(key: "8", label: "Kimi thinking           [\(thinkingDesc)]"),
-                MenuItem(key: "9", label: "LLM API key             [\(keyStatus)]"),
+                MenuItem(key: "6", label: "LLM provider            [\(c.llmProviderDisplayName)]"),
+                MenuItem(key: "7", label: "LLM model               [\(c.llmModel)]"),
+                MenuItem(key: "8", label: "LLM base URL            [\(c.llmBaseURL)]"),
+                MenuItem(key: "9", label: "Reasoning mode          [\(reasoningDesc)]"),
+                MenuItem(key: "l", label: "LLM API key             [\(keyStatus)]"),
+                MenuItem(key: "t", label: "Test connection"),
+                .separator("── Audio ────────────────────────────"),
                 MenuItem(key: "a", label: "AEC (echo cancel)       [\(aecDesc)]"),
                 MenuItem(key: "m", label: "Mic capture             [\(c.micEnabled ? "on" : "off")]"),
                 MenuItem(key: "s", label: "Audio source            [\(appsDesc)]"),
+                .separator("─────────────────────────────────────"),
                 MenuItem(key: "r", label: "Reset to defaults"),
             ]
         }
 
         Menu.run(title: "\nSettings\n", items: buildItems, allowBack: true) { i in
-            switch i {
-            case 0:  promptWhisperModel()
-            case 1:  promptInt(\.defaultDurationMinutes, label: "safety cap (minutes)", min: 1, max: 600)
-            case 2:  promptString(\.outputDirectory, label: "output directory")
-            case 3:  toggle(\.autoTranscribe, label: "Auto-transcribe")
-            case 4:  toggle(\.autoSummarize,  label: "Auto-summarize")
-            case 5:  promptString(\.llmModel, label: "LLM model")
-            case 6:  promptString(\.llmBaseURL, label: "LLM base URL")
-            case 7:  promptKimiThinking()
-            case 8:  promptApiKey()
-            case 9:
+            let items = buildItems()
+            guard items.indices.contains(i) else { return }
+            switch items[i].key {
+            case "1": promptWhisperModel()
+            case "2": promptInt(\.defaultDurationMinutes, label: "safety cap (minutes)", min: 1, max: 600)
+            case "3": promptString(\.outputDirectory, label: "output directory")
+            case "4": toggle(\.autoTranscribe, label: "Auto-transcribe")
+            case "5": toggle(\.autoSummarize,  label: "Auto-summarize")
+            case "6": promptLLMProvider()
+            case "7": promptString(\.llmModel, label: "LLM model")
+            case "8": promptString(\.llmBaseURL, label: "LLM base URL")
+            case "9":
+                if LLMProvider.supportsReasoning(config.llmProviderID) {
+                    promptReasoning()
+                } else {
+                    print("This provider has no reasoning mode — switch to one that does (e.g. Qianfan / Kimi).")
+                }
+            case "l": promptApiKey()
+            case "t": testConnection()
+            case "a":
                 if config.micEnabled {
                     toggle(\.aecEnabled, label: "AEC")
                 } else {
                     print("AEC has no effect while mic is off — enable mic first.")
                 }
-            case 10: toggle(\.micEnabled, label: "Mic capture")
-            case 11: promptMeetingApps()
-            case 12:
+            case "m": toggle(\.micEnabled, label: "Mic capture")
+            case "s": promptMeetingApps()
+            case "r":
                 config = Config()
                 persistConfig()
                 print("✓  Reset to defaults.")
@@ -401,23 +426,101 @@ final class Shell {
         print("✓  Whisper language: \(config.whisperLanguage ?? "auto-detect")")
     }
 
-    private func promptKimiThinking() {
-        let cur = config.kimiThinkingEnabled ? "on" : "off"
-        guard let v = askLine("Thinking on/off [\(cur)]") else { return }
+    private func promptReasoning() {
+        let cur = config.reasoningEnabled ? "on" : "off"
+        guard let v = askLine("Reasoning on/off [\(cur)]") else { return }
         let s = v.lowercased()
-        if s == "on" || s == "y" || s == "yes" || s == "true" { config.kimiThinkingEnabled = true }
-        else if s == "off" || s == "n" || s == "no" || s == "false" { config.kimiThinkingEnabled = false }
+        if s == "on" || s == "y" || s == "yes" || s == "true" { config.reasoningEnabled = true }
+        else if s == "off" || s == "n" || s == "no" || s == "false" { config.reasoningEnabled = false }
         else if s.isEmpty { /* keep */ }
         else { print("Expected on/off."); return }
 
-        if config.kimiThinkingEnabled {
-            let curBudget = config.kimiThinkingBudgetTokens
-            if let b = askLine("Thinking budget tokens [\(curBudget)]"), !b.isEmpty,
+        if config.reasoningEnabled {
+            let curBudget = config.reasoningBudgetTokens
+            if let b = askLine("Reasoning budget tokens [\(curBudget)]"), !b.isEmpty,
                let n = Int(b), n > 0 {
-                config.kimiThinkingBudgetTokens = n
+                config.reasoningBudgetTokens = n
             }
         }
         persistConfig()
+    }
+
+    /// Choose an LLM provider preset. Selecting a preset pre-fills the base URL
+    /// and default model (both still editable via their own settings rows);
+    /// "Custom" prompts for a free-form base URL + model. Switching to a provider
+    /// without a reasoning mode clears the reasoning toggle.
+    private func promptLLMProvider() {
+        let items = LLMProvider.catalog.enumerated().map { (i, p) -> MenuItem in
+            let marker = (p.id == config.llmProviderID) ? "●" : " "
+            // Show the user's saved name on the Custom row if they've set one.
+            let label: String
+            if p.id == "custom" {
+                let named = config.llmCustomName.trimmingCharacters(in: .whitespaces)
+                label = named.isEmpty ? p.label : "\(p.label)  (\(named))"
+            } else {
+                label = "\(p.label)   (\(p.baseURL))"
+            }
+            return MenuItem(key: Character("\(i + 1)"), label: "\(marker) \(label)")
+        }
+        let initial = LLMProvider.catalog.firstIndex { $0.id == config.llmProviderID } ?? 0
+        let pick = Menu.pick(
+            title: "\nLLM provider  (current: \(config.llmProviderDisplayName))\n",
+            items: items,
+            initialIndex: initial,
+            allowBack: true
+        )
+        switch pick {
+        case .back:
+            return
+        case .selected(let i):
+            let provider = LLMProvider.catalog[i]
+            config.llmProviderID = provider.id
+            if provider.id == "custom" {
+                let curName = config.llmCustomName.isEmpty ? "Custom" : config.llmCustomName
+                if let name = askLine("Provider name [\(curName)]"), !name.isEmpty {
+                    config.llmCustomName = name
+                }
+                if let url = askLine("Base URL [\(config.llmBaseURL)]"), !url.isEmpty {
+                    config.llmBaseURL = url
+                }
+                if let model = askLine("Model [\(config.llmModel)]"), !model.isEmpty {
+                    config.llmModel = model
+                }
+            } else {
+                config.llmBaseURL = provider.baseURL
+                config.llmModel = provider.defaultModel
+            }
+            if !provider.supportsReasoning { config.reasoningEnabled = false }
+            persistConfig()
+        }
+    }
+
+    /// Verify the current provider/model/key actually work with a one-token
+    /// /chat/completions ping. Bridges the callback-based Summarizer.ping from
+    /// this synchronous menu handler via a semaphore — safe because URLSession
+    /// runs the completion on its own queue, not the concurrency pool.
+    private func testConnection() {
+        guard let apiKey = Config.resolveApiKey(), !apiKey.isEmpty else {
+            print("❌  No API key. Set one with Settings → LLM API key, or export LLM_API_KEY.")
+            return
+        }
+        guard let baseURL = URL(string: config.llmBaseURL) else {
+            print("❌  Invalid LLM base URL: \(config.llmBaseURL)")
+            return
+        }
+        let summarizer = Summarizer(baseURL: baseURL, apiKeyProvider: { apiKey }, model: config.llmModel)
+        print("⏳  Testing \(config.llmModel) @ \(baseURL.host ?? config.llmBaseURL)…")
+
+        let sem = DispatchSemaphore(value: 0)
+        var result: Result<String, Error>?
+        summarizer.ping { r in result = r; sem.signal() }
+        sem.wait()
+
+        switch result {
+        case .success(let s): print("✓  Connected — \(s)")
+        case .failure(let e): print("✗  \(e.localizedDescription)")
+        case .none:           print("✗  No result.")
+        }
     }
 
     /// Choose the capture audio source. "All system audio" (item 0) forces
@@ -471,13 +574,14 @@ final class Shell {
 
     private func promptApiKey() {
         let env = ProcessInfo.processInfo.environment
-        if env["QIANFAN_API_KEY"] != nil || env["LLM_API_KEY"] != nil {
-            print("ℹ  An env-var key is set in this shell; it takes precedence over the keychain while present.")
+        if env["LLM_API_KEY"] != nil || env["QIANFAN_API_KEY"] != nil {
+            print("ℹ  An env-var key is set in this shell; it takes precedence over the stored file while present.")
         }
 
-        let stored = Keychain.isStored
+        // A stored key may live in the new file or a legacy keychain entry.
+        let stored = APIKeyStore.isStored || Keychain.isStored
         var items: [MenuItem] = [
-            MenuItem(key: "s", label: stored ? "Replace stored key" : "Set new key  (stored in macOS Keychain)"),
+            MenuItem(key: "s", label: stored ? "Replace stored key" : "Set new key  (stored in ~/.config/MeetingCapture)"),
         ]
         if stored {
             items.append(MenuItem(key: "c", label: "Clear stored key"))
@@ -488,8 +592,10 @@ final class Shell {
             return
         case .selected(let i):
             if items[i].key == "c" {
-                if Keychain.delete() { print("✓  Cleared stored key.") }
-                else                 { print("⚠  Failed to clear key from keychain.") }
+                let okFile = APIKeyStore.delete()
+                Keychain.delete()   // also purge any legacy keychain entry
+                if okFile { print("✓  Cleared stored key.") }
+                else      { print("⚠  Failed to clear key file.") }
                 return
             }
             guard let key = readSecret("Paste API key (input hidden)"),
@@ -497,8 +603,8 @@ final class Shell {
                 print("↩  No change.")
                 return
             }
-            if Keychain.write(key) { print("✓  Stored in keychain.") }
-            else                   { print("⚠  Failed to store key in keychain.") }
+            if APIKeyStore.write(key) { print("✓  Stored in ~/.config/MeetingCapture/llm_api_key (mode 0600).") }
+            else                      { print("⚠  Failed to write key file.") }
         }
     }
 

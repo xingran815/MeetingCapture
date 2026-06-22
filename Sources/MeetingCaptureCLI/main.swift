@@ -53,9 +53,12 @@ if flag("--help") || flag("-h") {
     Summarization options (OpenAI-compatible /chat/completions):
       --summarize           Generate an LLM summary after transcription
       --summarize-only P    Skip everything; summarize existing .txt at path P
-      --llm-model <name>    LLM model name                    (default: kimi-k2.5)
-      --llm-base-url <url>  OpenAI-compatible base URL        (default: https://qianfan.baidubce.com/v2/coding)
-      --llm-api-key <key>   API key (also: $QIANFAN_API_KEY, $LLM_API_KEY)
+      --llm-model <name>    LLM model name                    (default: from Settings, e.g. kimi-k2.5)
+      --llm-base-url <url>  OpenAI-compatible base URL        (default: from Settings, e.g. https://qianfan.baidubce.com/v2/coding)
+      --llm-api-key <key>   API key (also: $LLM_API_KEY, legacy $QIANFAN_API_KEY)
+
+      Pick a provider preset (OpenAI / Ollama / Qianfan-Kimi / custom) and run a
+      connectivity check in the interactive shell: Settings → LLM provider / Test connection.
 
     Misc:
       --list                List running applications and exit
@@ -155,7 +158,7 @@ func runSummarization(transcript: String, sourcePath: String) async throws {
     guard Config.resolveApiKey(flag: llmApiKeyFlag) != nil else {
         throw NSError(domain: "Summarize", code: -1, userInfo: [
             NSLocalizedDescriptionKey:
-                "No LLM API key. Store one in the keychain via the interactive shell, export QIANFAN_API_KEY, or pass --llm-api-key <key>."
+                "No LLM API key. Store one via the interactive shell (Settings → LLM API key), export LLM_API_KEY, or pass --llm-api-key <key>."
         ])
     }
     guard let baseURL = URL(string: llmBaseURL) else {
@@ -164,10 +167,22 @@ func runSummarization(transcript: String, sourcePath: String) async throws {
         ])
     }
 
+    // Reasoning/thinking is provider-specific; mirror the shell and only send it
+    // for providers (per the persisted preset) that accept it.
+    let thinking: ThinkingMode
+    if LLMProvider.supportsReasoning(persistedConfig.llmProviderID) {
+        thinking = persistedConfig.reasoningEnabled
+            ? .enabled(budget: persistedConfig.reasoningBudgetTokens)
+            : .disabled
+    } else {
+        thinking = .unspecified
+    }
+
     let summarizer = Summarizer(
         baseURL: baseURL,
         apiKeyProvider: { Config.resolveApiKey(flag: llmApiKeyFlag) },
-        model: llmModel
+        model: llmModel,
+        thinking: thinking
     )
     let summary = try await summarizer.summarize(transcript: transcript)
 

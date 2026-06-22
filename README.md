@@ -7,10 +7,12 @@ summarizes the transcript with a bring-your-own LLM. Audio and transcripts
 never leave your machine; only the final text is sent to the LLM endpoint you
 configure.
 
-Default LLM is [Kimi-K2.5](https://platform.moonshot.ai/) served through
-[Baidu Qianfan](https://qianfan.cloud.baidu.com/)'s OpenAI-compatible
-`/v2/coding` endpoint — swap in any other OpenAI-compatible endpoint if you
-prefer.
+Pick your LLM provider in **Settings → LLM provider**: presets for OpenAI, a
+local [Ollama](https://ollama.com/), or [Kimi-K2.5](https://platform.moonshot.ai/)
+via [Baidu Qianfan](https://qianfan.cloud.baidu.com/) (the default), plus a
+**Custom** option for any other OpenAI-compatible `/chat/completions` endpoint.
+A built-in **Test connection** check verifies the endpoint, key, and model
+before you rely on them.
 
 ---
 
@@ -21,7 +23,7 @@ prefer.
 | macOS | 14.0+ (WhisperKit floor) |
 | Hardware | Apple Silicon recommended — Whisper runs on the Neural Engine. Intel works but is slow. |
 | Toolchain | Xcode 15+ / Swift 5.9 |
-| LLM | An API key for Baidu Qianfan Kimi-K2.5, **or** any other OpenAI-compatible `/chat/completions` endpoint |
+| LLM | An API key for any OpenAI-compatible `/chat/completions` provider (OpenAI, Qianfan/Kimi, a local Ollama, etc.) |
 
 ---
 
@@ -86,15 +88,27 @@ both are pinned to the binary path and persist across rebuilds.
 
 ## LLM setup
 
-### Get a Kimi-K2.5 API key (default provider)
+### Choose a provider
 
-1. Sign up at [qianfan.cloud.baidu.com](https://qianfan.cloud.baidu.com/).
-2. Subscribe to the coding plan (Kimi-K2.5 lives there).
-3. Create an API key in the Qianfan console.
+Open the interactive shell → **Settings → LLM provider** and pick a preset:
 
-> Qianfan is a China-hosted service. If that's not workable for you, point
-> the tool at any other OpenAI-compatible endpoint via **Settings → LLM base
-> URL** in the interactive shell, or `--llm-base-url` on the command line.
+| Preset | Base URL | Default model |
+|---|---|---|
+| **Qianfan / Kimi** (default) | `https://qianfan.baidubce.com/v2/coding` | `kimi-k2.5` |
+| **OpenAI** | `https://api.openai.com/v1` | `gpt-4o-mini` |
+| **Ollama (local)** | `http://localhost:11434/v1` | `llama3.1` |
+| **Custom…** | *(you supply)* | *(you supply)* |
+
+Selecting a preset pre-fills the base URL and model; both stay editable under
+**LLM model** / **LLM base URL** (or via `--llm-model` / `--llm-base-url`).
+**Custom…** prompts for a name (e.g. "DeepSeek" — DeepSeek, Together, Groq, and
+most hosted LLMs expose an OpenAI-compatible endpoint), a base URL, and a model.
+Use **Settings → Test connection** to verify the endpoint, key, and model with a
+one-token request before recording.
+
+> The default, Qianfan, is a China-hosted service. To use it, sign up at
+> [qianfan.cloud.baidu.com](https://qianfan.cloud.baidu.com/), subscribe to the
+> coding plan (Kimi-K2.5 lives there), and create an API key in the console.
 
 ### Store the key
 
@@ -103,8 +117,8 @@ In resolution order (first hit wins):
 | Method | How | Notes |
 |---|---|---|
 | `--llm-api-key <key>` flag | On the command line | Visible in `ps`; use only for one-off scripting. |
-| `QIANFAN_API_KEY` env var | `export QIANFAN_API_KEY=…` | Also accepts `LLM_API_KEY`. |
-| macOS Keychain | Interactive shell → **Settings** → **LLM API key** | **Recommended.** Stored under service `MeetingCapture`, account `meeting_llm_api_key`. Never written to any config file. |
+| `LLM_API_KEY` env var | `export LLM_API_KEY=…` | Legacy `QIANFAN_API_KEY` also accepted. |
+| Key file | Interactive shell → **Settings** → **LLM API key** | **Recommended.** Written to `~/.config/MeetingCapture/llm_api_key` (mode `0600`) — kept out of `config.json`. A key from an older version's Keychain entry is migrated here automatically. |
 
 ---
 
@@ -118,7 +132,8 @@ In resolution order (first hit wins):
 
 Menu-driven: **Record → Transcribe → Summarize**. Press Enter during a
 recording to stop early. All settings (Whisper model, LLM endpoint, output
-directory, default duration, thinking-mode toggle) live under **Settings**.
+directory, default duration, LLM provider, reasoning-mode toggle) live under
+**Settings**.
 
 ### Flag mode (scripting)
 
@@ -160,7 +175,7 @@ Outputs default to `~/Documents/MeetingCapture/` — a `.wav`, a timestamped
 | No microphone prompt appeared | macOS silently denied. Grant manually under Privacy & Security → Microphone. |
 | `No display found` | ScreenCaptureKit needs an attached display. It does not work over SSH or on headless hardware. |
 | Zoom not detected | Run `--list`; look for `us.zoom.xos`. If absent, Zoom isn't running. Falls back to `--all-audio`. |
-| HTTP 401 from the LLM endpoint | API key unset or wrong. Re-enter under Settings → LLM API key. |
+| HTTP 401 from the LLM endpoint | API key unset or wrong. Re-enter under Settings → LLM API key, then Settings → Test connection. |
 | Echo of the other person's voice in the recording | Software AEC is on by default (Speex, 150 ms tail). If still audible, the mic may be too close to speakers or volume is very high — try headphones for critical recordings. Disable with `--no-aec` or Settings → AEC if you prefer. |
 
 ---
@@ -171,8 +186,10 @@ Outputs default to `~/Documents/MeetingCapture/` — a `.wav`, a timestamped
 main.swift           flag parsing · shell bootstrap · flag-mode pipeline
 Shell.swift          interactive menus · orchestrates record → transcribe → summarize
 Menu.swift           arrow-key cbreak picker (+ piped-stdin fallback)
-Config.swift         persisted settings (JSON at ~/Library/Application Support/MeetingCapture/)
-Keychain.swift       LLM API key read/write via Security framework
+Config.swift         persisted settings (JSON at ~/.config/MeetingCapture/)
+LLMProvider.swift    catalog of LLM provider presets (OpenAI, Ollama, Qianfan/Kimi, custom)
+APIKeyStore.swift    LLM API key file (~/.config/MeetingCapture/llm_api_key, mode 0600)
+Keychain.swift       legacy keychain read path (migrated to APIKeyStore on first use)
 AudioCapture.swift   ScreenCaptureKit stream (system audio)
 MicCapture.swift     AVAudioEngine input tap (mono, 48 kHz)
 EchoCanceller.swift  Speex-based acoustic echo cancellation (software AEC)
