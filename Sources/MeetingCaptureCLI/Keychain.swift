@@ -1,13 +1,16 @@
 import Foundation
 import Security
 
-// Thin macOS Keychain wrapper for storing the LLM API key. We use a generic
-// password item under service "MeetingCapture" / account "llm_api_key", so a
-// single stored key serves whichever LLM endpoint is configured.
+// Thin macOS Keychain wrapper for the LLM API key. Generic password item under
+// service "MeetingCapture" / account "meeting_llm_api_key".
 //
-// The first read after install triggers a system prompt: "MeetingCaptureCLI
-// wants to access your keychain". Allow once (or Always Allow) to skip future
-// prompts. Re-installs to a different binary path will re-prompt.
+// LEGACY: new keys are written to the file-based APIKeyStore (~/.config/
+// MeetingCapture/llm_api_key), not here. This type is kept only as a read path
+// so keys stored by older versions are migrated forward (Config.resolveApiKey),
+// and delete() so the settings "Clear key" action can purge a stale entry.
+//
+// The first read triggers a system prompt: "MeetingCaptureCLI wants to access
+// your keychain". Allow once (or Always Allow) to skip future prompts.
 
 enum Keychain {
 
