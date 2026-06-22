@@ -53,12 +53,14 @@ if flag("--help") || flag("-h") {
     Summarization options (OpenAI-compatible /chat/completions):
       --summarize           Generate an LLM summary after transcription
       --summarize-only P    Skip everything; summarize existing .txt at path P
-      --llm-model <name>    LLM model name                    (default: from Settings, e.g. kimi-k2.5)
-      --llm-base-url <url>  OpenAI-compatible base URL        (default: from Settings, e.g. https://qianfan.baidubce.com/v2/coding)
-      --llm-api-key <key>   API key (also: $LLM_API_KEY, legacy $QIANFAN_API_KEY)
+      --llm-profile <name>  Saved LLM configuration to use   (default: the active one from Settings)
+      --llm-model <name>    Override the chosen config's model
+      --llm-base-url <url>  Override the chosen config's base URL
+      --llm-api-key <key>   Override the chosen config's API key (also: $LLM_API_KEY, legacy $QIANFAN_API_KEY)
 
-      Pick a provider preset (OpenAI / Ollama / Qianfan-Kimi / custom) and run a
-      connectivity check in the interactive shell: Settings → LLM provider / Test connection.
+      Manage saved configurations (add/edit/delete, each with its own provider,
+      model, base URL, and API key) and run a connectivity check in the
+      interactive shell: Settings → LLM configurations.
 
     Misc:
       --list                List running applications and exit
@@ -106,9 +108,18 @@ let whisperModel   = option("--model") ?? persistedConfig.whisperModel
 let whisperLang    = option("--language") ?? persistedConfig.whisperLanguage
 let summarizeFlag  = flag("--summarize")
 let summarizeOnly  = option("--summarize-only")
-let llmModel       = option("--llm-model") ?? persistedConfig.llmModel
-let llmBaseURL     = option("--llm-base-url") ?? persistedConfig.llmBaseURL
+let llmProfileFlag = option("--llm-profile")
+let llmProfile     = llmProfileFlag.flatMap { name in
+    persistedConfig.llmProfiles.first { $0.displayName.caseInsensitiveCompare(name) == .orderedSame }
+} ?? persistedConfig.activeLLMProfile
+let llmModel       = option("--llm-model") ?? llmProfile.model
+let llmBaseURL     = option("--llm-base-url") ?? llmProfile.baseURL
 let llmApiKeyFlag  = option("--llm-api-key")
+
+if let name = llmProfileFlag,
+   !persistedConfig.llmProfiles.contains(where: { $0.displayName.caseInsensitiveCompare(name) == .orderedSame }) {
+    fputs("⚠  No saved LLM configuration named \"\(name)\" — using the active one (\(llmProfile.displayName)).\n", stderr)
+}
 
 // ─── Banner ───────────────────────────────────────────────────────────────────
 
@@ -155,10 +166,10 @@ func runTranscription(wavPaths: [String], model: String, language: String?) asyn
 /// to a sibling `.md` next to `sourcePath` (which is typically the .wav or
 /// .txt that produced the transcript).
 func runSummarization(transcript: String, sourcePath: String) async throws {
-    guard Config.resolveApiKey(flag: llmApiKeyFlag) != nil else {
+    guard Config.resolveApiKey(profileID: llmProfile.id, flag: llmApiKeyFlag) != nil else {
         throw NSError(domain: "Summarize", code: -1, userInfo: [
             NSLocalizedDescriptionKey:
-                "No LLM API key. Store one via the interactive shell (Settings → LLM API key), export LLM_API_KEY, or pass --llm-api-key <key>."
+                "No LLM API key for \"\(llmProfile.displayName)\". Store one via the interactive shell (Settings → LLM configurations), export LLM_API_KEY, or pass --llm-api-key <key>."
         ])
     }
     guard let baseURL = URL(string: llmBaseURL) else {
@@ -168,11 +179,11 @@ func runSummarization(transcript: String, sourcePath: String) async throws {
     }
 
     // Reasoning/thinking is provider-specific; mirror the shell and only send it
-    // for providers (per the persisted preset) that accept it.
+    // for providers (per the chosen profile's provider) that accept it.
     let thinking: ThinkingMode
-    if LLMProvider.supportsReasoning(persistedConfig.llmProviderID) {
-        thinking = persistedConfig.reasoningEnabled
-            ? .enabled(budget: persistedConfig.reasoningBudgetTokens)
+    if llmProfile.supportsReasoning {
+        thinking = llmProfile.reasoningEnabled
+            ? .enabled(budget: llmProfile.reasoningBudgetTokens)
             : .disabled
     } else {
         thinking = .unspecified
@@ -180,7 +191,7 @@ func runSummarization(transcript: String, sourcePath: String) async throws {
 
     let summarizer = Summarizer(
         baseURL: baseURL,
-        apiKeyProvider: { Config.resolveApiKey(flag: llmApiKeyFlag) },
+        apiKeyProvider: { Config.resolveApiKey(profileID: llmProfile.id, flag: llmApiKeyFlag) },
         model: llmModel,
         thinking: thinking
     )

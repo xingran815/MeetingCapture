@@ -14,7 +14,6 @@ import Foundation
 final class Shell {
 
     private var config: Config
-    private var sessionApiKey: String? = nil
 
     init() {
         self.config = Config.load()
@@ -59,13 +58,13 @@ final class Shell {
     }
 
     private func mainHeader() -> String {
-        let provider = config.llmProviderDisplayName
-        let autoTS   = config.autoTranscribe ? "on" : "off"
-        let autoSum  = config.autoSummarize  ? "on" : "off"
-        let mic      = config.micEnabled ? "on" : "off"
+        let active  = config.activeLLMProfile
+        let autoTS  = config.autoTranscribe ? "on" : "off"
+        let autoSum = config.autoSummarize  ? "on" : "off"
+        let mic     = config.micEnabled ? "on" : "off"
         return """
 
-          whisper: \(config.whisperModel)   ·  llm: \(provider) / \(config.llmModel)   ·  auto-ts: \(autoTS), auto-sum: \(autoSum)
+          whisper: \(config.whisperModel)   ·  llm: \(active.displayName) / \(active.model)   ·  auto-ts: \(autoTS), auto-sum: \(autoSum)
           output:  \(config.outputDirectory)          safety cap: \(config.defaultDurationMinutes) min   ·  mic: \(mic)
 
         """
@@ -232,35 +231,30 @@ final class Shell {
     }
 
     private func runSummarize(transcript: String, sourcePath: String) async {
-        if sessionApiKey == nil { sessionApiKey = Config.resolveApiKey() }
-        guard let apiKey = sessionApiKey else {
+        let active = config.activeLLMProfile
+        guard let apiKey = Config.resolveApiKey(profileID: active.id) else {
             print("""
-            ❌  Summarization skipped: no API key.
-               Store one with Settings → LLM API key, or export LLM_API_KEY.
+            ❌  Summarization skipped: no API key for "\(active.displayName)".
+               Store one with Settings → LLM configurations → Edit → API key, or export LLM_API_KEY.
                Transcript is still on disk.
             """)
             return
         }
-        guard let baseURL = URL(string: config.llmBaseURL) else {
-            print("❌  Invalid LLM base URL: \(config.llmBaseURL)")
+        guard let baseURL = URL(string: active.baseURL) else {
+            print("❌  Invalid LLM base URL: \(active.baseURL)")
             return
         }
 
         // Reasoning/thinking is provider-specific: send enabled/disabled only for
         // providers that accept it; omit the field entirely for the rest.
-        let thinking: ThinkingMode
-        if LLMProvider.supportsReasoning(config.llmProviderID) {
-            thinking = config.reasoningEnabled
-                ? .enabled(budget: config.reasoningBudgetTokens)
-                : .disabled
-        } else {
-            thinking = .unspecified
-        }
+        let thinking: ThinkingMode = active.supportsReasoning
+            ? (active.reasoningEnabled ? .enabled(budget: active.reasoningBudgetTokens) : .disabled)
+            : .unspecified
 
         let summarizer = Summarizer(
             baseURL: baseURL,
             apiKeyProvider: { apiKey },
-            model: config.llmModel,
+            model: active.model,
             thinking: thinking
         )
         do {
@@ -293,10 +287,7 @@ final class Shell {
         // index) so separators can be inserted without re-numbering anything.
         func buildItems() -> [MenuItem] {
             let c = config
-            let keyStatus = Config.apiKeySourceDescription
-            let reasoningDesc = LLMProvider.supportsReasoning(c.llmProviderID)
-                ? (c.reasoningEnabled ? "on, budget \(c.reasoningBudgetTokens) tokens" : "off")
-                : "n/a — provider has no reasoning mode"
+            let active = c.activeLLMProfile
             let aecDesc = c.micEnabled
                 ? (c.aecEnabled ? "on" : "off")
                 : "n/a — mic off"
@@ -311,12 +302,7 @@ final class Shell {
                 MenuItem(key: "4", label: "Auto-transcribe         [\(c.autoTranscribe ? "on" : "off")]"),
                 .separator("── LLM (summarization) ──────────────"),
                 MenuItem(key: "5", label: "Auto-summarize          [\(c.autoSummarize ? "on" : "off")]"),
-                MenuItem(key: "6", label: "LLM provider            [\(c.llmProviderDisplayName)]"),
-                MenuItem(key: "7", label: "LLM model               [\(c.llmModel)]"),
-                MenuItem(key: "8", label: "LLM base URL            [\(c.llmBaseURL)]"),
-                MenuItem(key: "9", label: "Reasoning mode          [\(reasoningDesc)]"),
-                MenuItem(key: "l", label: "LLM API key             [\(keyStatus)]"),
-                MenuItem(key: "t", label: "Test connection"),
+                MenuItem(key: "6", label: "LLM configurations      [\(active.displayName) · \(active.model)]"),
                 .separator("── Audio ────────────────────────────"),
                 MenuItem(key: "a", label: "AEC (echo cancel)       [\(aecDesc)]"),
                 MenuItem(key: "m", label: "Mic capture             [\(c.micEnabled ? "on" : "off")]"),
@@ -335,17 +321,7 @@ final class Shell {
             case "3": promptString(\.outputDirectory, label: "output directory")
             case "4": toggle(\.autoTranscribe, label: "Auto-transcribe")
             case "5": toggle(\.autoSummarize,  label: "Auto-summarize")
-            case "6": promptLLMProvider()
-            case "7": promptString(\.llmModel, label: "LLM model")
-            case "8": promptString(\.llmBaseURL, label: "LLM base URL")
-            case "9":
-                if LLMProvider.supportsReasoning(config.llmProviderID) {
-                    promptReasoning()
-                } else {
-                    print("This provider has no reasoning mode — switch to one that does (e.g. Qianfan / Kimi).")
-                }
-            case "l": promptApiKey()
-            case "t": testConnection()
+            case "6": llmConfigsFlow()
             case "a":
                 if config.micEnabled {
                     toggle(\.aecEnabled, label: "AEC")
@@ -359,6 +335,241 @@ final class Shell {
                 persistConfig()
                 print("✓  Reset to defaults.")
             default: break
+            }
+        }
+    }
+
+    // MARK: - LLM configurations (tree)
+
+    /// Lists every saved LLM configuration. Enter on a row makes it the active
+    /// one (instant switch, ● marker moves); n/e/d add, edit, and delete. Each
+    /// configuration owns its own provider/model/base URL/reasoning + API key.
+    private func llmConfigsFlow() {
+        func buildItems() -> [MenuItem] {
+            var items: [MenuItem] = []
+            for p in config.llmProfiles {
+                let marker = (p.id == config.selectedLLMProfileID) ? "●" : " "
+                items.append(MenuItem(label: "\(marker) \(p.displayName)   (\(p.providerID) · \(p.model))"))
+            }
+            items.append(.separator("──────────────────────────────"))
+            items.append(MenuItem(key: "n", label: "New configuration  (preset or custom)"))
+            items.append(MenuItem(key: "e", label: "Edit a configuration"))
+            items.append(MenuItem(key: "d", label: "Delete a configuration", enabled: config.llmProfiles.count > 1))
+            return items
+        }
+
+        Menu.run(title: "\nLLM configurations\n", items: buildItems, allowBack: true) { i in
+            let profileCount = config.llmProfiles.count
+            if i < profileCount {
+                config.selectedLLMProfileID = config.llmProfiles[i].id
+                persistConfig()
+                return
+            }
+            let items = buildItems()
+            guard items.indices.contains(i) else { return }
+            switch items[i].key {
+            case "n": newLLMProfileFlow()
+            case "e": pickProfile(title: "\nEdit which configuration?\n") { id in self.editProfileFlow(profileID: id) }
+            case "d": pickProfile(title: "\nDelete which configuration?\n") { id in self.deleteProfile(id) }
+            default: break
+            }
+        }
+    }
+
+    /// One-shot picker over the saved profiles; calls `handler` with the chosen
+    /// profile's id, or does nothing on back/empty.
+    private func pickProfile(title: String, handler: (String) -> Void) {
+        let profiles = config.llmProfiles
+        guard !profiles.isEmpty else { return }
+        let items = profiles.map { MenuItem(label: "\($0.displayName)   (\($0.providerID) · \($0.model))") }
+        switch Menu.pick(title: title, items: items, allowBack: true) {
+        case .back: return
+        case .selected(let i):
+            guard profiles.indices.contains(i) else { return }
+            handler(profiles[i].id)
+        }
+    }
+
+    /// Walks through provider selection (preset or custom), then optionally the
+    /// API key, and appends a new profile that immediately becomes active.
+    private func newLLMProfileFlow() {
+        guard let provider = pickProviderPreset(current: nil) else { return }
+        var profile: LLMProfile
+        if provider.id == "custom" {
+            let name = askLine("Configuration name") ?? "Custom"
+            let url  = askLine("Base URL") ?? ""
+            let model = askLine("Model") ?? ""
+            profile = LLMProfile(name: name.isEmpty ? "Custom" : name, providerID: "custom",
+                                  model: model, baseURL: url)
+        } else {
+            let defaultName = provider.label
+            let name = askLine("Configuration name [\(defaultName)]") ?? ""
+            profile = LLMProfile(
+                name: name.isEmpty ? defaultName : name,
+                providerID: provider.id,
+                model: provider.defaultModel,
+                baseURL: provider.baseURL
+            )
+        }
+        config.llmProfiles.append(profile)
+        config.selectedLLMProfileID = profile.id
+        persistConfig()
+        print("✓  Added \"\(profile.displayName)\" and made it active.")
+
+        if let key = readSecret("API key for \"\(profile.displayName)\" (input hidden, blank to skip)"),
+           !key.isEmpty {
+            if APIKeyStore.write(key, forProfile: profile.id) {
+                print("✓  Stored key for \"\(profile.displayName)\".")
+            } else {
+                print("⚠  Failed to write key file.")
+            }
+        }
+    }
+
+    /// Edit one saved configuration's fields. Mirrors the old flat Settings rows,
+    /// scoped to a single profile.
+    private func editProfileFlow(profileID: String) {
+        func index() -> Int? { config.llmProfiles.firstIndex { $0.id == profileID } }
+        guard index() != nil else { return }
+
+        func buildItems() -> [MenuItem] {
+            guard let idx = index() else { return [] }
+            let p = config.llmProfiles[idx]
+            let keyStatus = Config.apiKeySource(profileID: p.id)
+            let reasoningDesc = p.supportsReasoning
+                ? (p.reasoningEnabled ? "on, budget \(p.reasoningBudgetTokens) tokens" : "off")
+                : "n/a — provider has no reasoning mode"
+            return [
+                MenuItem(key: "1", label: "Name              [\(p.name.isEmpty ? p.displayName : p.name)]"),
+                MenuItem(key: "2", label: "Provider          [\(p.providerID)]"),
+                MenuItem(key: "3", label: "Model             [\(p.model)]"),
+                MenuItem(key: "4", label: "Base URL          [\(p.baseURL)]"),
+                MenuItem(key: "5", label: "Reasoning mode    [\(reasoningDesc)]"),
+                MenuItem(key: "l", label: "API key           [\(keyStatus)]"),
+                MenuItem(key: "t", label: "Test connection"),
+            ]
+        }
+
+        Menu.run(title: "\nEdit configuration\n", items: buildItems, allowBack: true) { i in
+            guard let idx = index() else { return }
+            let items = buildItems()
+            guard items.indices.contains(i) else { return }
+            switch items[i].key {
+            case "1":
+                guard let v = askLine("Name [\(config.llmProfiles[idx].name)]"), !v.isEmpty else { return }
+                config.llmProfiles[idx].name = v
+                persistConfig()
+            case "2":
+                guard let provider = pickProviderPreset(current: config.llmProfiles[idx].providerID) else { return }
+                config.llmProfiles[idx].providerID = provider.id
+                if provider.id != "custom" {
+                    config.llmProfiles[idx].baseURL = provider.baseURL
+                    config.llmProfiles[idx].model = provider.defaultModel
+                }
+                if !provider.supportsReasoning { config.llmProfiles[idx].reasoningEnabled = false }
+                persistConfig()
+            case "3":
+                guard let v = askLine("Model [\(config.llmProfiles[idx].model)]"), !v.isEmpty else { return }
+                config.llmProfiles[idx].model = v
+                persistConfig()
+            case "4":
+                guard let v = askLine("Base URL [\(config.llmProfiles[idx].baseURL)]"), !v.isEmpty else { return }
+                config.llmProfiles[idx].baseURL = v
+                persistConfig()
+            case "5":
+                if config.llmProfiles[idx].supportsReasoning {
+                    promptProfileReasoning(profileID: profileID)
+                } else {
+                    print("This provider has no reasoning mode — switch to one that does (e.g. Qianfan / Kimi).")
+                }
+            case "l": promptProfileApiKey(profileID: profileID)
+            case "t": testConnection(profile: config.llmProfiles[idx])
+            default: break
+            }
+        }
+    }
+
+    private func deleteProfile(_ profileID: String) {
+        guard config.llmProfiles.count > 1 else {
+            print("⚠  Can't delete the last configuration.")
+            return
+        }
+        guard let idx = config.llmProfiles.firstIndex(where: { $0.id == profileID }) else { return }
+        let removed = config.llmProfiles.remove(at: idx)
+        if config.selectedLLMProfileID == removed.id {
+            config.selectedLLMProfileID = config.llmProfiles[0].id
+        }
+        APIKeyStore.delete(profileID: removed.id)
+        persistConfig()
+        print("✓  Deleted \"\(removed.displayName)\".")
+    }
+
+    /// Shared preset picker used by both "new configuration" and "edit → provider".
+    /// `current` (a providerID), if given, is pre-selected.
+    private func pickProviderPreset(current: String?) -> LLMProvider? {
+        let items = LLMProvider.catalog.enumerated().map { (i, p) -> MenuItem in
+            let marker = (p.id == current) ? "●" : " "
+            let label = p.id == "custom" ? p.label : "\(p.label)   (\(p.baseURL))"
+            return MenuItem(key: Character("\(i + 1)"), label: "\(marker) \(label)")
+        }
+        let initial = LLMProvider.catalog.firstIndex { $0.id == current } ?? 0
+        switch Menu.pick(title: "\nProvider\n", items: items, initialIndex: initial, allowBack: true) {
+        case .back: return nil
+        case .selected(let i):
+            guard LLMProvider.catalog.indices.contains(i) else { return nil }
+            return LLMProvider.catalog[i]
+        }
+    }
+
+    private func promptProfileReasoning(profileID: String) {
+        guard let idx = config.llmProfiles.firstIndex(where: { $0.id == profileID }) else { return }
+        let cur = config.llmProfiles[idx].reasoningEnabled ? "on" : "off"
+        guard let v = askLine("Reasoning on/off [\(cur)]") else { return }
+        let s = v.lowercased()
+        if s == "on" || s == "y" || s == "yes" || s == "true" { config.llmProfiles[idx].reasoningEnabled = true }
+        else if s == "off" || s == "n" || s == "no" || s == "false" { config.llmProfiles[idx].reasoningEnabled = false }
+        else if s.isEmpty { /* keep */ }
+        else { print("Expected on/off."); return }
+
+        if config.llmProfiles[idx].reasoningEnabled {
+            let curBudget = config.llmProfiles[idx].reasoningBudgetTokens
+            if let b = askLine("Reasoning budget tokens [\(curBudget)]"), !b.isEmpty,
+               let n = Int(b), n > 0 {
+                config.llmProfiles[idx].reasoningBudgetTokens = n
+            }
+        }
+        persistConfig()
+    }
+
+    private func promptProfileApiKey(profileID: String) {
+        let env = ProcessInfo.processInfo.environment
+        if env["LLM_API_KEY"] != nil || env["QIANFAN_API_KEY"] != nil {
+            print("ℹ  An env-var key is set in this shell; it takes precedence over the stored file while present.")
+        }
+        let stored = APIKeyStore.isStored(profileID: profileID)
+        var items: [MenuItem] = [
+            MenuItem(key: "s", label: stored ? "Replace stored key" : "Set new key  (stored in ~/.config/MeetingCapture)"),
+        ]
+        if stored {
+            items.append(MenuItem(key: "c", label: "Clear stored key"))
+        }
+        switch Menu.pick(title: "\nAPI key\n", items: items, allowBack: true) {
+        case .back:
+            return
+        case .selected(let i):
+            if items[i].key == "c" {
+                if APIKeyStore.delete(profileID: profileID) { print("✓  Cleared stored key.") }
+                else { print("⚠  Failed to clear key file.") }
+                return
+            }
+            guard let key = readSecret("Paste API key (input hidden)"), !key.isEmpty else {
+                print("↩  No change.")
+                return
+            }
+            if APIKeyStore.write(key, forProfile: profileID) {
+                print("✓  Stored in ~/.config/MeetingCapture/llm_api_keys.json (mode 0600).")
+            } else {
+                print("⚠  Failed to write key file.")
             }
         }
     }
@@ -426,90 +637,22 @@ final class Shell {
         print("✓  Whisper language: \(config.whisperLanguage ?? "auto-detect")")
     }
 
-    private func promptReasoning() {
-        let cur = config.reasoningEnabled ? "on" : "off"
-        guard let v = askLine("Reasoning on/off [\(cur)]") else { return }
-        let s = v.lowercased()
-        if s == "on" || s == "y" || s == "yes" || s == "true" { config.reasoningEnabled = true }
-        else if s == "off" || s == "n" || s == "no" || s == "false" { config.reasoningEnabled = false }
-        else if s.isEmpty { /* keep */ }
-        else { print("Expected on/off."); return }
-
-        if config.reasoningEnabled {
-            let curBudget = config.reasoningBudgetTokens
-            if let b = askLine("Reasoning budget tokens [\(curBudget)]"), !b.isEmpty,
-               let n = Int(b), n > 0 {
-                config.reasoningBudgetTokens = n
-            }
-        }
-        persistConfig()
-    }
-
-    /// Choose an LLM provider preset. Selecting a preset pre-fills the base URL
-    /// and default model (both still editable via their own settings rows);
-    /// "Custom" prompts for a free-form base URL + model. Switching to a provider
-    /// without a reasoning mode clears the reasoning toggle.
-    private func promptLLMProvider() {
-        let items = LLMProvider.catalog.enumerated().map { (i, p) -> MenuItem in
-            let marker = (p.id == config.llmProviderID) ? "●" : " "
-            // Show the user's saved name on the Custom row if they've set one.
-            let label: String
-            if p.id == "custom" {
-                let named = config.llmCustomName.trimmingCharacters(in: .whitespaces)
-                label = named.isEmpty ? p.label : "\(p.label)  (\(named))"
-            } else {
-                label = "\(p.label)   (\(p.baseURL))"
-            }
-            return MenuItem(key: Character("\(i + 1)"), label: "\(marker) \(label)")
-        }
-        let initial = LLMProvider.catalog.firstIndex { $0.id == config.llmProviderID } ?? 0
-        let pick = Menu.pick(
-            title: "\nLLM provider  (current: \(config.llmProviderDisplayName))\n",
-            items: items,
-            initialIndex: initial,
-            allowBack: true
-        )
-        switch pick {
-        case .back:
-            return
-        case .selected(let i):
-            let provider = LLMProvider.catalog[i]
-            config.llmProviderID = provider.id
-            if provider.id == "custom" {
-                let curName = config.llmCustomName.isEmpty ? "Custom" : config.llmCustomName
-                if let name = askLine("Provider name [\(curName)]"), !name.isEmpty {
-                    config.llmCustomName = name
-                }
-                if let url = askLine("Base URL [\(config.llmBaseURL)]"), !url.isEmpty {
-                    config.llmBaseURL = url
-                }
-                if let model = askLine("Model [\(config.llmModel)]"), !model.isEmpty {
-                    config.llmModel = model
-                }
-            } else {
-                config.llmBaseURL = provider.baseURL
-                config.llmModel = provider.defaultModel
-            }
-            if !provider.supportsReasoning { config.reasoningEnabled = false }
-            persistConfig()
-        }
-    }
-
-    /// Verify the current provider/model/key actually work with a one-token
-    /// /chat/completions ping. Bridges the callback-based Summarizer.ping from
-    /// this synchronous menu handler via a semaphore — safe because URLSession
-    /// runs the completion on its own queue, not the concurrency pool.
-    private func testConnection() {
-        guard let apiKey = Config.resolveApiKey(), !apiKey.isEmpty else {
-            print("❌  No API key. Set one with Settings → LLM API key, or export LLM_API_KEY.")
+    /// Verify one configuration's provider/model/key actually work with a
+    /// one-token /chat/completions ping. Bridges the callback-based
+    /// Summarizer.ping from this synchronous menu handler via a semaphore —
+    /// safe because URLSession runs the completion on its own queue, not the
+    /// concurrency pool.
+    private func testConnection(profile: LLMProfile) {
+        guard let apiKey = Config.resolveApiKey(profileID: profile.id), !apiKey.isEmpty else {
+            print("❌  No API key for \"\(profile.displayName)\". Set one in this configuration's editor, or export LLM_API_KEY.")
             return
         }
-        guard let baseURL = URL(string: config.llmBaseURL) else {
-            print("❌  Invalid LLM base URL: \(config.llmBaseURL)")
+        guard let baseURL = URL(string: profile.baseURL) else {
+            print("❌  Invalid LLM base URL: \(profile.baseURL)")
             return
         }
-        let summarizer = Summarizer(baseURL: baseURL, apiKeyProvider: { apiKey }, model: config.llmModel)
-        print("⏳  Testing \(config.llmModel) @ \(baseURL.host ?? config.llmBaseURL)…")
+        let summarizer = Summarizer(baseURL: baseURL, apiKeyProvider: { apiKey }, model: profile.model)
+        print("⏳  Testing \(profile.model) @ \(baseURL.host ?? profile.baseURL)…")
 
         let sem = DispatchSemaphore(value: 0)
         var result: Result<String, Error>?
@@ -569,42 +712,6 @@ final class Shell {
                 config.enabledMeetingAppIDs = MeetingApp.allIDs.filter { next.contains($0) }
             }
             persistConfig()
-        }
-    }
-
-    private func promptApiKey() {
-        let env = ProcessInfo.processInfo.environment
-        if env["LLM_API_KEY"] != nil || env["QIANFAN_API_KEY"] != nil {
-            print("ℹ  An env-var key is set in this shell; it takes precedence over the stored file while present.")
-        }
-
-        // A stored key may live in the new file or a legacy keychain entry.
-        let stored = APIKeyStore.isStored || Keychain.isStored
-        var items: [MenuItem] = [
-            MenuItem(key: "s", label: stored ? "Replace stored key" : "Set new key  (stored in ~/.config/MeetingCapture)"),
-        ]
-        if stored {
-            items.append(MenuItem(key: "c", label: "Clear stored key"))
-        }
-        let pick = Menu.pick(title: "\nLLM API key\n", items: items, allowBack: true)
-        switch pick {
-        case .back:
-            return
-        case .selected(let i):
-            if items[i].key == "c" {
-                let okFile = APIKeyStore.delete()
-                Keychain.delete()   // also purge any legacy keychain entry
-                if okFile { print("✓  Cleared stored key.") }
-                else      { print("⚠  Failed to clear key file.") }
-                return
-            }
-            guard let key = readSecret("Paste API key (input hidden)"),
-                  !key.isEmpty else {
-                print("↩  No change.")
-                return
-            }
-            if APIKeyStore.write(key) { print("✓  Stored in ~/.config/MeetingCapture/llm_api_key (mode 0600).") }
-            else                      { print("⚠  Failed to write key file.") }
         }
     }
 

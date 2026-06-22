@@ -25,17 +25,12 @@ struct Config: Codable, Equatable {
     /// running — the app auto-detection is bypassed entirely.
     var captureAllAudio: Bool           = false
 
-    // LLM
-    /// Selected provider preset id (see LLMProvider.catalog). "custom" = free-form.
-    var llmProviderID: String           = "qianfan"
-    /// User-given label for the custom provider (shown instead of "Custom" when set).
-    var llmCustomName: String           = ""
-    var llmModel: String                = "kimi-k2.5"
-    var llmBaseURL: String              = "https://qianfan.baidubce.com/v2/coding"
-    /// Provider-specific reasoning/thinking toggle. Only sent to providers whose
-    /// preset has supportsReasoning == true (e.g. Kimi-style `thinking` param).
-    var reasoningEnabled: Bool          = false
-    var reasoningBudgetTokens: Int      = 32_000
+    // LLM — a tree of named, switchable configurations. Each profile carries its
+    // own provider/model/base URL/reasoning settings; its API key lives in
+    // APIKeyStore keyed by profile.id. Exactly one profile is "active" at a time
+    // (selectedLLMProfileID); Settings → LLM configurations switches between them.
+    var llmProfiles: [LLMProfile]       = [.defaultProfile()]
+    var selectedLLMProfileID: String    = LLMProfile.defaultProfile().id
 
     static let `default` = Config()
 
@@ -51,12 +46,8 @@ struct Config: Codable, Equatable {
         micEnabled: Bool = true,
         enabledMeetingAppIDs: [String] = MeetingApp.allIDs,
         captureAllAudio: Bool = false,
-        llmProviderID: String = "qianfan",
-        llmCustomName: String = "",
-        llmModel: String = "kimi-k2.5",
-        llmBaseURL: String = "https://qianfan.baidubce.com/v2/coding",
-        reasoningEnabled: Bool = false,
-        reasoningBudgetTokens: Int = 32_000
+        llmProfiles: [LLMProfile] = [.defaultProfile()],
+        selectedLLMProfileID: String = LLMProfile.defaultProfile().id
     ) {
         self.whisperModel = whisperModel
         self.whisperLanguage = whisperLanguage
@@ -68,12 +59,8 @@ struct Config: Codable, Equatable {
         self.micEnabled = micEnabled
         self.enabledMeetingAppIDs = enabledMeetingAppIDs
         self.captureAllAudio = captureAllAudio
-        self.llmProviderID = llmProviderID
-        self.llmCustomName = llmCustomName
-        self.llmModel = llmModel
-        self.llmBaseURL = llmBaseURL
-        self.reasoningEnabled = reasoningEnabled
-        self.reasoningBudgetTokens = reasoningBudgetTokens
+        self.llmProfiles = llmProfiles
+        self.selectedLLMProfileID = selectedLLMProfileID
     }
 
     // Custom decoder provides defaults for missing keys (backward compat).
@@ -81,14 +68,22 @@ struct Config: Codable, Equatable {
         case whisperModel, whisperLanguage, defaultDurationMinutes, outputDirectory
         case autoTranscribe, autoSummarize, aecEnabled, micEnabled, enabledMeetingAppIDs
         case captureAllAudio
-        case llmProviderID, llmCustomName, llmModel, llmBaseURL, reasoningEnabled, reasoningBudgetTokens
+        case llmProfiles, selectedLLMProfileID
     }
 
-    /// Legacy (pre-generalization) keys, decoded as a fallback so older configs
-    /// migrate transparently. Kept out of CodingKeys so they're never re-encoded.
+    /// Pre-multi-profile keys, decoded as a fallback so older configs migrate
+    /// transparently into a single LLMProfile. Kept out of CodingKeys so
+    /// they're never re-encoded.
     private enum LegacyKeys: String, CodingKey {
+        case llmProviderID, llmCustomName, llmModel, llmBaseURL
+        case reasoningEnabled, reasoningBudgetTokens
         case kimiThinkingEnabled, kimiThinkingBudgetTokens
     }
+
+    /// Fixed id assigned to the single profile synthesized from a pre-multi-
+    /// profile config, so the one legacy API key can be migrated into the new
+    /// per-profile keystore under a predictable id (see Config.load()).
+    static let migratedLegacyProfileID = "migrated-legacy"
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -102,23 +97,44 @@ struct Config: Codable, Equatable {
         micEnabled = try c.decodeIfPresent(Bool.self, forKey: .micEnabled) ?? true
         enabledMeetingAppIDs = try c.decodeIfPresent([String].self, forKey: .enabledMeetingAppIDs) ?? MeetingApp.allIDs
         captureAllAudio = try c.decodeIfPresent(Bool.self, forKey: .captureAllAudio) ?? false
-        llmProviderID = try c.decodeIfPresent(String.self, forKey: .llmProviderID) ?? "qianfan"
-        llmCustomName = try c.decodeIfPresent(String.self, forKey: .llmCustomName) ?? ""
-        llmModel = try c.decodeIfPresent(String.self, forKey: .llmModel) ?? "kimi-k2.5"
-        llmBaseURL = try c.decodeIfPresent(String.self, forKey: .llmBaseURL) ?? "https://qianfan.baidubce.com/v2/coding"
-        // New keys, falling back to the legacy kimiThinking* keys, then defaults.
-        var reasoning = try c.decodeIfPresent(Bool.self, forKey: .reasoningEnabled)
-        var reasoningBudget = try c.decodeIfPresent(Int.self, forKey: .reasoningBudgetTokens)
-        if let legacy = try? decoder.container(keyedBy: LegacyKeys.self) {
+
+        if let profiles = try c.decodeIfPresent([LLMProfile].self, forKey: .llmProfiles), !profiles.isEmpty {
+            llmProfiles = profiles
+            selectedLLMProfileID = try c.decodeIfPresent(String.self, forKey: .selectedLLMProfileID)
+                ?? profiles[0].id
+        } else if let legacy = try? decoder.container(keyedBy: LegacyKeys.self) {
+            // Pre-multi-profile config: synthesize one profile from the old flat fields.
+            let providerID = try legacy.decodeIfPresent(String.self, forKey: .llmProviderID) ?? "qianfan"
+            let customName = try legacy.decodeIfPresent(String.self, forKey: .llmCustomName) ?? ""
+            let model = try legacy.decodeIfPresent(String.self, forKey: .llmModel) ?? "kimi-k2.5"
+            let baseURL = try legacy.decodeIfPresent(String.self, forKey: .llmBaseURL)
+                ?? "https://qianfan.baidubce.com/v2/coding"
+            var reasoning = try legacy.decodeIfPresent(Bool.self, forKey: .reasoningEnabled)
+            var reasoningBudget = try legacy.decodeIfPresent(Int.self, forKey: .reasoningBudgetTokens)
             if reasoning == nil {
                 reasoning = try? legacy.decodeIfPresent(Bool.self, forKey: .kimiThinkingEnabled)
             }
             if reasoningBudget == nil {
                 reasoningBudget = try? legacy.decodeIfPresent(Int.self, forKey: .kimiThinkingBudgetTokens)
             }
+            let name = providerID == "custom"
+                ? (customName.trimmingCharacters(in: .whitespaces).isEmpty ? "Custom" : customName)
+                : (LLMProvider.byID(providerID)?.label ?? providerID)
+            let profile = LLMProfile(
+                id: Self.migratedLegacyProfileID,
+                name: name,
+                providerID: providerID,
+                model: model,
+                baseURL: baseURL,
+                reasoningEnabled: reasoning ?? false,
+                reasoningBudgetTokens: reasoningBudget ?? 32_000
+            )
+            llmProfiles = [profile]
+            selectedLLMProfileID = profile.id
+        } else {
+            llmProfiles = [.defaultProfile()]
+            selectedLLMProfileID = llmProfiles[0].id
         }
-        reasoningEnabled = reasoning ?? false
-        reasoningBudgetTokens = reasoningBudget ?? 32_000
     }
 
     static var path: URL {
@@ -135,7 +151,8 @@ struct Config: Codable, Equatable {
     /// Load from disk. Missing file → defaults (silent), unless a legacy config
     /// exists at the old Application Support path, in which case it's loaded and
     /// migrated to the new path. Corrupt file → defaults (warn, don't overwrite —
-    /// the user may want to fix it by hand).
+    /// the user may want to fix it by hand). Also migrates a pre-multi-profile
+    /// single API key into the new per-profile keystore (see migrateLegacyApiKey).
     static func load() -> Config {
         let url = Self.path
         let fm = FileManager.default
@@ -145,6 +162,7 @@ struct Config: Codable, Equatable {
             if let data = try? Data(contentsOf: legacyPath),
                let migrated = try? JSONDecoder().decode(Config.self, from: data) {
                 try? migrated.save()  // best-effort; original is left in place
+                migrateLegacyApiKey(into: migrated)
                 return migrated
             }
         }
@@ -152,10 +170,33 @@ struct Config: Codable, Equatable {
         guard fm.fileExists(atPath: url.path) else { return Config() }
         do {
             let data = try Data(contentsOf: url)
-            return try JSONDecoder().decode(Config.self, from: data)
+            let config = try JSONDecoder().decode(Config.self, from: data)
+            migrateLegacyApiKey(into: config)
+            // A pre-multi-profile file has no "llmProfiles" key; init(from:) just
+            // synthesized one in memory. Rewrite the file now so the on-disk
+            // schema is upgraded even if the user changes nothing this run.
+            let raw = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            if raw?["llmProfiles"] == nil {
+                try? config.save()
+            }
+            return config
         } catch {
             fputs("⚠  Config at \(url.path) is unreadable (\(error.localizedDescription)); using defaults.\n", stderr)
             return Config()
+        }
+    }
+
+    /// If the loaded config came from a pre-multi-profile install, its one
+    /// profile is synthesized with id `migratedLegacyProfileID`. On first load,
+    /// migrate the old singular key (file, then legacy Keychain) into the new
+    /// per-profile keystore under that id — a no-op once it's already there.
+    private static func migrateLegacyApiKey(into config: Config) {
+        guard !APIKeyStore.isStored(profileID: migratedLegacyProfileID) else { return }
+        guard config.llmProfiles.contains(where: { $0.id == migratedLegacyProfileID }) else { return }
+        if let k = APIKeyStore.legacyRead(), !k.isEmpty {
+            APIKeyStore.write(k, forProfile: migratedLegacyProfileID)
+        } else if let k = Keychain.read(), !k.isEmpty {
+            APIKeyStore.write(k, forProfile: migratedLegacyProfileID)
         }
     }
 
@@ -172,14 +213,13 @@ struct Config: Codable, Equatable {
 
     // MARK: - Derived helpers
 
-    /// Display name for the selected LLM provider: the user's custom label when
-    /// on a custom provider (falling back to "Custom"), else the preset's label.
-    var llmProviderDisplayName: String {
-        if llmProviderID == "custom" {
-            let n = llmCustomName.trimmingCharacters(in: .whitespaces)
-            return n.isEmpty ? "Custom" : n
-        }
-        return LLMProvider.byID(llmProviderID)?.label ?? llmProviderID
+    /// The currently-active LLM configuration. Falls back to the first profile
+    /// if the selected id is stale, and to a synthesized default if the list is
+    /// somehow empty — callers can always rely on getting a usable profile.
+    var activeLLMProfile: LLMProfile {
+        llmProfiles.first { $0.id == selectedLLMProfileID }
+            ?? llmProfiles.first
+            ?? .defaultProfile()
     }
 
     /// Expand `~/` and resolve to an absolute path. Creates the directory if missing.
@@ -204,30 +244,26 @@ struct Config: Codable, Equatable {
         return dir.appendingPathComponent("meeting_\(f.string(from: timestamp))")
     }
 
-    /// Returns the API key from flag → env → file → legacy keychain, or nil.
-    /// `LLM_API_KEY` is the primary env var; `QIANFAN_API_KEY` is kept for
-    /// backward compatibility. A key found only in the legacy keychain is
-    /// migrated into the file store so later launches read it from there.
-    static func resolveApiKey(flag: String? = nil) -> String? {
+    /// Returns the API key for one LLM profile, from flag → env → that
+    /// profile's stored key, or nil. `LLM_API_KEY` is the primary env var;
+    /// `QIANFAN_API_KEY` is kept for backward compatibility. Note the env vars
+    /// are global, not per-profile — they're an escape hatch, not how multiple
+    /// configs normally get their keys.
+    static func resolveApiKey(profileID: String, flag: String? = nil) -> String? {
         if let k = flag, !k.isEmpty { return k }
         let env = ProcessInfo.processInfo.environment
         if let k = env["LLM_API_KEY"],     !k.isEmpty { return k }
         if let k = env["QIANFAN_API_KEY"], !k.isEmpty { return k }
-        if let k = APIKeyStore.read(),     !k.isEmpty { return k }
-        if let k = Keychain.read(),        !k.isEmpty {
-            APIKeyStore.write(k)   // best-effort migration out of the keychain
-            return k
-        }
+        if let k = APIKeyStore.read(profileID: profileID), !k.isEmpty { return k }
         return nil
     }
 
-    /// Human-readable source of the API key for the settings screen.
-    static var apiKeySourceDescription: String {
+    /// Human-readable source of one profile's API key, for the settings screen.
+    static func apiKeySource(profileID: String) -> String {
         let env = ProcessInfo.processInfo.environment
         if env["LLM_API_KEY"]     != nil { return "set via LLM_API_KEY" }
         if env["QIANFAN_API_KEY"] != nil { return "set via QIANFAN_API_KEY" }
-        if APIKeyStore.isStored           { return "stored in ~/.config/MeetingCapture" }
-        if Keychain.isStored              { return "stored in keychain (legacy)" }
+        if APIKeyStore.isStored(profileID: profileID) { return "stored in ~/.config/MeetingCapture" }
         return "not set"
     }
 }

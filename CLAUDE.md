@@ -48,8 +48,8 @@ main.swift           flag parsing · shell bootstrap · flag-mode pipeline
 Shell.swift          interactive menus (main + settings) · orchestrates the pipeline
 Menu.swift           termios cbreak list picker: Menu.pick (one-shot) + Menu.run (stays open, redraws in place)
 MeetingApps.swift    catalog of conferencing apps for SCStream audio auto-detection
-LLMProvider.swift    catalog of LLM provider presets (qianfan/openai/ollama/custom) · supportsReasoning flag
-Config.swift         persisted settings (JSON) · path/api-key helpers · legacy-path + legacy-key migration
+LLMProvider.swift    catalog of LLM provider presets (qianfan/openai/ollama/custom) · supportsReasoning flag · LLMProfile (one saved, switchable LLM configuration)
+Config.swift         persisted settings (JSON) · llmProfiles tree + active-profile helpers · path/api-key helpers · legacy-path + legacy-schema migration
 AudioCapture.swift   SCShareableContent → SCContentFilter → SCStream; owns the WAV writer indirectly
 MicCapture.swift     AVAudioEngine input tap · format conversion to 48 kHz mono
 EchoCanceller.swift  Speex-based acoustic echo cancellation (software AEC)
@@ -57,7 +57,7 @@ MixingWriter.swift   sums mic + system, downmixes to mono, writes int16 WAV; 30-
 CMSampleBuffer+PCM.swift  CMSampleBuffer → AVAudioPCMBuffer (handles non-interleaved ABL)
 Transcribe.swift     WhisperKit wrapper · VAD chunking · timestamped .txt
 Summarize.swift      POST to OpenAI-compatible /chat/completions · provider-specific reasoning toggle · ping() connectivity check
-APIKeyStore.swift    file-based LLM API key (~/.config/MeetingCapture/llm_api_key, mode 0600)
+APIKeyStore.swift    file-based LLM API keys, one per profile (~/.config/MeetingCapture/llm_api_keys.json, mode 0600)
 Keychain.swift       LEGACY API-key read/delete only — new keys go to APIKeyStore; kept for migration
 Sources/Speexdsp/    Vendored xiph/speexdsp (BSD-3) — MDF echo canceller + preprocessor
 install.sh           build (release) → install to ~/.local/bin → trigger TCC prompts
@@ -65,14 +65,16 @@ install.sh           build (release) → install to ~/.local/bin → trigger TCC
 
 Defaults (all overridable via Settings menu or flags):
 - Whisper: `openai_whisper-small.en`, VAD chunking on
-- LLM: provider preset `qianfan` (`kimi-k2.5` at `https://qianfan.baidubce.com/v2/coding`, Baidu Qianfan coding plan). Other presets: `openai`, `ollama`, `custom` — see `LLMProvider.catalog`. Selecting a preset prefills `llmBaseURL`/`llmModel`; both stay editable. The `custom` provider is user-nameable (`config.llmCustomName`, surfaced via `config.llmProviderDisplayName`). Settings → Test connection runs a one-token `/chat/completions` ping (`Summarizer.ping`).
-- Reasoning mode: off (budget 32 000 tokens when enabled). Provider-specific — only sent (and only offered in Settings) when the selected provider's `supportsReasoning` is true (currently just Qianfan/Kimi, via the Kimi-style `thinking` body param). `config.reasoningEnabled` / `reasoningBudgetTokens` (renamed from `kimiThinking*`; old keys still decoded for migration).
+- LLM: a **tree of named configurations** (`config.llmProfiles: [LLMProfile]`, one of them active via `config.selectedLLMProfileID`; `config.activeLLMProfile` resolves it, falling back to `.first` then a synthesized default). Each `LLMProfile` is self-contained — `name`, `providerID`, `model`, `baseURL`, `reasoningEnabled`/`reasoningBudgetTokens` — and has its own API key (see APIKeyStore below). The seeded default profile is `qianfan` (`kimi-k2.5` at `https://qianfan.baidubce.com/v2/coding`, Baidu Qianfan coding plan). Other presets: `openai`, `ollama`, `custom` — see `LLMProvider.catalog`. Settings → LLM configurations lists all profiles (Enter on one makes it active instantly — `n`/`e`/`d` rows add/edit/delete); picking a preset prefills `baseURL`/`model` (still editable); `custom` lets you type your own. You can add any number of custom profiles. Settings → (per profile) Test connection runs a one-token `/chat/completions` ping (`Summarizer.ping`).
+- Reasoning mode: off per profile (budget 32 000 tokens when enabled). Provider-specific — only sent (and only offered in the profile editor) when that profile's provider has `supportsReasoning == true` (currently just Qianfan/Kimi, via the Kimi-style `thinking` body param).
 - Output dir: `~/Documents/MeetingCapture`
 - Duration: 480 min (8h safety cap; Enter to stop, Space+Enter to pause/resume; recordings chunked every 30 min)
 - WAV output: interleaved mono int16 @ 48 kHz (~5.6 MB/min)
 - Audio source: meeting-app auto-detect on (all 5 apps enabled). Settings → Audio source has an explicit "All system audio" toggle (`config.captureAllAudio`) that bypasses auto-detection; equivalent to the `--all-audio` flag.
 
-API key resolution (first hit wins): `--llm-api-key` flag → `LLM_API_KEY` env → `QIANFAN_API_KEY` env (legacy) → `APIKeyStore` file (`~/.config/MeetingCapture/llm_api_key`, mode 0600) → macOS Keychain (legacy). A key found only in the Keychain is copied into the file on read (one-time migration). The key file is set/cleared from Settings → LLM API key; it is kept OUT of `config.json` so the JSON stays safe to share. Note: a plaintext 0600 file is the user's explicit choice over the Keychain.
+API key resolution is **per profile** (first hit wins): `--llm-api-key` flag → `LLM_API_KEY` env → `QIANFAN_API_KEY` env (legacy; both env vars are global, not per-profile — an escape hatch, not the normal path) → that profile's entry in the `APIKeyStore` JSON map (`~/.config/MeetingCapture/llm_api_keys.json`, mode 0600, keyed by `LLMProfile.id`). `Config.resolveApiKey(profileID:flag:)` / `Config.apiKeySource(profileID:)` take the profile id explicitly — callers always resolve against `config.activeLLMProfile.id` (shell) or the `--llm-profile`-selected profile (flag mode). The key file is set/cleared from Settings → LLM configurations → Edit → API key; it is kept OUT of `config.json` so the JSON stays safe to share. Note: a plaintext 0600 file is the user's explicit choice over the Keychain.
+
+A pre-multi-profile config (flat `llmProviderID`/`llmModel`/`llmBaseURL`/... keys, no `llmProfiles`) is migrated on first load into a single `LLMProfile` with the fixed id `Config.migratedLegacyProfileID` ("migrated-legacy") so its one legacy key (old `~/.config/MeetingCapture/llm_api_key` file, then legacy Keychain) can be migrated into the new keystore under a predictable id; `Config.load()` then rewrites `config.json` to the new schema even if the user changes nothing that run.
 
 Settings JSON: `~/.config/MeetingCapture/config.json` (moved from `~/Library/Application Support/MeetingCapture/`; the old path is read once and migrated forward on first load, non-destructively). Corrupt file → defaults + warning, never overwritten.
 
