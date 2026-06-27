@@ -245,18 +245,13 @@ final class Shell {
             return
         }
 
-        // Reasoning/thinking is provider-specific: send enabled/disabled only for
-        // providers that accept it; omit the field entirely for the rest.
-        let thinking: ThinkingMode = active.supportsReasoning
-            ? (active.reasoningEnabled ? .enabled(budget: active.reasoningBudgetTokens) : .disabled)
-            : .unspecified
-
         let summarizer = Summarizer(
             baseURL: baseURL,
             apiKeyProvider: { apiKey },
             model: active.model,
             apiStyle: active.apiStyle,
-            thinking: thinking
+            reasoningStyle: active.effectiveReasoningStyle,
+            reasoningEffort: active.reasoningEffort
         )
         do {
             let summary = try await summarizer.summarize(transcript: transcript)
@@ -437,15 +432,20 @@ final class Shell {
             guard let idx = index() else { return [] }
             let p = config.llmProfiles[idx]
             let keyStatus = Config.apiKeySource(profileID: p.id)
-            let reasoningDesc = p.supportsReasoning
-                ? (p.reasoningEnabled ? "on, budget \(p.reasoningBudgetTokens) tokens" : "off")
-                : "n/a — provider has no reasoning mode"
+            let style = p.effectiveReasoningStyle
+            let reasoningDesc = style == .none
+                ? "n/a — no reasoning format"
+                : "\(p.reasoningEffort.isOn ? p.reasoningEffort.rawValue : "off") · \(style.label)"
+            let detected = LLMProvider.reasoningStyle(baseURL: p.baseURL, providerID: p.providerID)
+            let formatDesc = p.reasoningStyleOverride.map { "\($0.label) (override)" }
+                ?? "auto · \(detected.label)"
             return [
                 MenuItem(key: "1", label: "Name              [\(p.name.isEmpty ? p.displayName : p.name)]"),
                 MenuItem(key: "2", label: "Provider          [\(p.providerID)]"),
                 MenuItem(key: "3", label: "Model             [\(p.model)]"),
                 MenuItem(key: "4", label: "Base URL          [\(p.baseURL)]"),
-                MenuItem(key: "5", label: "Reasoning mode    [\(reasoningDesc)]"),
+                MenuItem(key: "5", label: "Reasoning effort  [\(reasoningDesc)]"),
+                MenuItem(key: "f", label: "Reasoning format  [\(formatDesc)]"),
                 MenuItem(key: "l", label: "API key           [\(keyStatus)]"),
                 MenuItem(key: "t", label: "Test connection"),
             ]
@@ -467,7 +467,12 @@ final class Shell {
                     config.llmProfiles[idx].baseURL = provider.baseURL
                     config.llmProfiles[idx].model = provider.defaultModel
                 }
-                if !provider.supportsReasoning { config.llmProfiles[idx].reasoningEnabled = false }
+                // Re-detect the reasoning format for the new provider; drop the
+                // effort if the new endpoint has no reasoning mode.
+                config.llmProfiles[idx].reasoningStyleOverride = nil
+                if !config.llmProfiles[idx].supportsReasoning {
+                    config.llmProfiles[idx].reasoningEffort = .off
+                }
                 persistConfig()
             case "3":
                 guard let v = askLine("Model [\(config.llmProfiles[idx].model)]"), !v.isEmpty else { return }
@@ -481,8 +486,9 @@ final class Shell {
                 if config.llmProfiles[idx].supportsReasoning {
                     promptProfileReasoning(profileID: profileID)
                 } else {
-                    print("This provider has no reasoning mode — switch to one that does (e.g. Qianfan / Kimi).")
+                    print("This endpoint has no reasoning format — set \"Reasoning format\" to enable it, or pick a provider that has one (e.g. Qianfan / Kimi, OpenAI, Anthropic).")
                 }
+            case "f": promptProfileReasoningFormat(profileID: profileID)
             case "l": promptProfileApiKey(profileID: profileID)
             case "t": testConnection(profile: config.llmProfiles[idx])
             default: break
@@ -522,24 +528,53 @@ final class Shell {
         }
     }
 
+    /// Pick the unified reasoning depth (off/low/medium/high). The active provider
+    /// maps the level to its own param (budget tokens for Kimi, effort otherwise).
     private func promptProfileReasoning(profileID: String) {
         guard let idx = config.llmProfiles.firstIndex(where: { $0.id == profileID }) else { return }
-        let cur = config.llmProfiles[idx].reasoningEnabled ? "on" : "off"
-        guard let v = askLine("Reasoning on/off [\(cur)]") else { return }
-        let s = v.lowercased()
-        if s == "on" || s == "y" || s == "yes" || s == "true" { config.llmProfiles[idx].reasoningEnabled = true }
-        else if s == "off" || s == "n" || s == "no" || s == "false" { config.llmProfiles[idx].reasoningEnabled = false }
-        else if s.isEmpty { /* keep */ }
-        else { print("Expected on/off."); return }
-
-        if config.llmProfiles[idx].reasoningEnabled {
-            let curBudget = config.llmProfiles[idx].reasoningBudgetTokens
-            if let b = askLine("Reasoning budget tokens [\(curBudget)]"), !b.isEmpty,
-               let n = Int(b), n > 0 {
-                config.llmProfiles[idx].reasoningBudgetTokens = n
-            }
+        let levels = ReasoningEffort.allCases
+        let current = config.llmProfiles[idx].reasoningEffort
+        let items = levels.enumerated().map { (i, e) -> MenuItem in
+            let marker = (e == current) ? "●" : " "
+            return MenuItem(key: Character("\(i + 1)"), label: "\(marker) \(e.rawValue)")
         }
-        persistConfig()
+        let initial = levels.firstIndex(of: current) ?? 0
+        switch Menu.pick(title: "\nReasoning effort\n", items: items, initialIndex: initial, allowBack: true) {
+        case .back: return
+        case .selected(let i):
+            guard levels.indices.contains(i) else { return }
+            config.llmProfiles[idx].reasoningEffort = levels[i]
+            persistConfig()
+        }
+    }
+
+    /// Override the auto-detected reasoning format. "Auto" (nil) resolves from the
+    /// base URL host / preset; the explicit choices force a format on an
+    /// unrecognized custom endpoint.
+    private func promptProfileReasoningFormat(profileID: String) {
+        guard let idx = config.llmProfiles.firstIndex(where: { $0.id == profileID }) else { return }
+        let p = config.llmProfiles[idx]
+        let detected = LLMProvider.reasoningStyle(baseURL: p.baseURL, providerID: p.providerID)
+        let options: [(label: String, value: ReasoningStyle?)] = [
+            ("auto (detected: \(detected.label))", nil),
+            ("kimi", .kimi),
+            ("openai", .openai),
+            ("anthropic", .anthropic),
+            ("none (disable)", ReasoningStyle.none),
+        ]
+        let current = p.reasoningStyleOverride
+        let items = options.enumerated().map { (i, o) -> MenuItem in
+            let marker = (o.value == current) ? "●" : " "
+            return MenuItem(key: Character("\(i + 1)"), label: "\(marker) \(o.label)")
+        }
+        let initial = options.firstIndex { $0.value == current } ?? 0
+        switch Menu.pick(title: "\nReasoning format\n", items: items, initialIndex: initial, allowBack: true) {
+        case .back: return
+        case .selected(let i):
+            guard options.indices.contains(i) else { return }
+            config.llmProfiles[idx].reasoningStyleOverride = options[i].value
+            persistConfig()
+        }
     }
 
     private func promptProfileApiKey(profileID: String) {

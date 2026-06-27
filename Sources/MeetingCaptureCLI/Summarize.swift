@@ -20,15 +20,13 @@ import Foundation
 //         — no `temperature` (rejected on current Claude models)
 //   200 → { content: [{ type: "text", text: "…markdown…" }] }
 //
-// `thinking` is a provider-specific reasoning parameter (Kimi-style). The caller
-// only enables it for providers known to accept it; it's only ever sent on the
-// OpenAI path. Anthropic's own reasoning param is shaped differently and is not
-// sent here (the Anthropic preset gates reasoning off).
-enum ThinkingMode: Equatable {
-    case enabled(budget: Int)
-    case disabled
-    case unspecified
-}
+// Reasoning is provider-specific (see `ReasoningStyle`): the caller passes the
+// resolved style + a unified effort level, and `summarize()` serializes whichever
+// wire shape that provider uses —
+//   .kimi      → `thinking: {type:"enabled", budget_tokens:N}` (off → `{type:"disabled"}`)
+//   .openai    → `reasoning_effort: "low"|"medium"|"high"`     (off → omitted)
+//   .anthropic → `thinking: {type:"adaptive"}` + `output_config:{effort:…}` (off → omitted)
+// `.none` / `.off` send nothing.
 
 final class Summarizer {
 
@@ -39,28 +37,36 @@ final class Summarizer {
     let apiKeyProvider: () -> String?
     let model:   String
     let timeout: TimeInterval
-    let thinking: ThinkingMode
+    /// Which reasoning wire format to emit, and how deep. Defaults to no reasoning
+    /// so existing/other callers are unaffected.
+    let reasoningStyle: ReasoningStyle
+    let reasoningEffort: ReasoningEffort
     /// Which wire protocol to speak. Defaults to OpenAI-compatible so existing
     /// callers and the flag-mode path are unchanged.
     let apiStyle: LLMAPIStyle
 
-    /// Anthropic's Messages API requires `max_tokens`; a structured meeting
-    /// summary fits comfortably here. Non-streaming, well under `timeout`.
+    /// Anthropic's Messages API requires `max_tokens`. A structured summary fits
+    /// in `anthropicMaxTokens`; when adaptive thinking is on we raise the cap to
+    /// `anthropicMaxTokensReasoning` so reasoning tokens have room. Both are
+    /// non-streaming and well under `timeout`.
     private static let anthropicMaxTokens = 8192
+    private static let anthropicMaxTokensReasoning = 16_000
 
     init(baseURL: URL,
          apiKeyProvider: @escaping () -> String?,
          model: String,
          apiStyle: LLMAPIStyle = .openAIChat,
-         thinking: ThinkingMode = .unspecified,
+         reasoningStyle: ReasoningStyle = .none,
+         reasoningEffort: ReasoningEffort = .off,
          timeout: TimeInterval = 180)
     {
-        self.baseURL        = baseURL
-        self.apiKeyProvider = apiKeyProvider
-        self.model          = model
-        self.apiStyle       = apiStyle
-        self.thinking       = thinking
-        self.timeout        = timeout
+        self.baseURL         = baseURL
+        self.apiKeyProvider  = apiKeyProvider
+        self.model           = model
+        self.apiStyle        = apiStyle
+        self.reasoningStyle  = reasoningStyle
+        self.reasoningEffort = reasoningEffort
+        self.timeout         = timeout
     }
 
     func summarize(transcript: String) async throws -> String {
@@ -70,17 +76,26 @@ final class Summarizer {
             )
         }
 
+        // Whether the resolved style matches this wire protocol (a mismatched
+        // style — e.g. .kimi on the Anthropic protocol — is simply not sent).
+        let reasoningOn = reasoningEffort.isOn
         let body: [String: Any]
         switch apiStyle {
         case .anthropicMessages:
             // System prompt is a top-level field (not a message); max_tokens is
             // required; no temperature (sampling params 400 on current Claude).
-            body = [
+            let anthropicReasoning = reasoningOn && reasoningStyle == .anthropic
+            var b: [String: Any] = [
                 "model": model,
-                "max_tokens": Self.anthropicMaxTokens,
+                "max_tokens": anthropicReasoning ? Self.anthropicMaxTokensReasoning : Self.anthropicMaxTokens,
                 "system": Self.systemPrompt,
                 "messages": [["role": "user", "content": transcript]],
             ]
+            if anthropicReasoning {
+                b["thinking"] = ["type": "adaptive"]
+                b["output_config"] = ["effort": reasoningEffort.rawValue]
+            }
+            body = b
         case .openAIChat:
             var b: [String: Any] = [
                 "model": model,
@@ -90,10 +105,15 @@ final class Summarizer {
                     ["role": "user",   "content": transcript]
                 ]
             ]
-            switch thinking {
-            case .enabled(let budget): b["thinking"] = ["type": "enabled", "budget_tokens": budget]
-            case .disabled:            b["thinking"] = ["type": "disabled"]
-            case .unspecified:         break
+            switch reasoningStyle {
+            case .kimi:
+                b["thinking"] = reasoningOn
+                    ? ["type": "enabled", "budget_tokens": reasoningEffort.budgetTokens]
+                    : ["type": "disabled"]
+            case .openai:
+                if reasoningOn { b["reasoning_effort"] = reasoningEffort.rawValue }
+            case .anthropic, .none:
+                break   // not an OpenAI-chat reasoning format
             }
             body = b
         }

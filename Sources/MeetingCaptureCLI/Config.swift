@@ -126,8 +126,8 @@ struct Config: Codable, Equatable {
                 providerID: providerID,
                 model: model,
                 baseURL: baseURL,
-                reasoningEnabled: reasoning ?? false,
-                reasoningBudgetTokens: reasoningBudget ?? 32_000
+                reasoningEffort: LLMProfile.effort(fromLegacyEnabled: reasoning ?? false,
+                                                   budget: reasoningBudget ?? 32_000)
             )
             llmProfiles = [profile]
             selectedLLMProfileID = profile.id

@@ -178,23 +178,19 @@ func runSummarization(transcript: String, sourcePath: String) async throws {
         ])
     }
 
-    // Reasoning/thinking is provider-specific; mirror the shell and only send it
-    // for providers (per the chosen profile's provider) that accept it.
-    let thinking: ThinkingMode
-    if llmProfile.supportsReasoning {
-        thinking = llmProfile.reasoningEnabled
-            ? .enabled(budget: llmProfile.reasoningBudgetTokens)
-            : .disabled
-    } else {
-        thinking = .unspecified
-    }
-
+    // Reasoning is provider-specific; mirror the shell and let the resolved style
+    // + unified effort drive whatever wire shape (if any) the provider uses. A
+    // manual per-profile override wins, else auto-detect from the effective base
+    // URL (which `--llm-base-url` may have overridden).
+    let reasoningStyle = llmProfile.reasoningStyleOverride
+        ?? LLMProvider.reasoningStyle(baseURL: llmBaseURL, providerID: llmProfile.providerID)
     let summarizer = Summarizer(
         baseURL: baseURL,
         apiKeyProvider: { Config.resolveApiKey(profileID: llmProfile.id, flag: llmApiKeyFlag) },
         model: llmModel,
         apiStyle: LLMProvider.apiStyle(baseURL: llmBaseURL, providerID: llmProfile.providerID),
-        thinking: thinking
+        reasoningStyle: reasoningStyle,
+        reasoningEffort: llmProfile.reasoningEffort
     )
     let summary = try await summarizer.summarize(transcript: transcript)
 
