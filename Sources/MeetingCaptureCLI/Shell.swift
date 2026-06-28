@@ -453,7 +453,7 @@ final class Shell {
                 MenuItem(key: "5", label: "Reasoning effort  [\(reasoningDesc)]"),
                 MenuItem(key: "f", label: "Reasoning format  [\(formatDesc)]"),
                 MenuItem(key: "l", label: "API key           [\(keyStatus)]"),
-                MenuItem(key: "t", label: "Test connection"),
+                MenuItem(key: "t", label: "Test connection & detect reasoning"),
             ]
         }
 
@@ -563,9 +563,9 @@ final class Shell {
         let detected = LLMProvider.reasoningStyle(baseURL: p.baseURL, providerID: p.providerID)
         let options: [(label: String, value: ReasoningStyle?)] = [
             ("auto (detected: \(detected.label))", nil),
-            ("kimi", .kimi),
-            ("openai", .openai),
-            ("anthropic", .anthropic),
+            (ReasoningStyle.kimi.label, .kimi),
+            (ReasoningStyle.openai.label, .openai),
+            (ReasoningStyle.anthropic.label, .anthropic),
             ("none (disable)", ReasoningStyle.none),
         ]
         let current = p.reasoningStyleOverride
@@ -703,8 +703,54 @@ final class Shell {
 
         switch result {
         case .success(let s): print("✓  Connected — \(s)")
-        case .failure(let e): print("✗  \(e.localizedDescription)")
-        case .none:           print("✗  No result.")
+        case .failure(let e): print("✗  \(e.localizedDescription)"); return
+        case .none:           print("✗  No result."); return
+        }
+
+        // Connection is good — probe whether this endpoint actually reasons.
+        probeAndApplyReasoning(profileID: profile.id, summarizer: summarizer)
+    }
+
+    /// Second half of Test connection: actively probe whether the endpoint
+    /// supports reasoning (and in which wire format) by sending a tiny
+    /// reasoning-inducing request and inspecting the response. Applies a positive
+    /// result only when the profile has no explicit Reasoning format override, so
+    /// a "test" never clobbers a deliberate choice.
+    private func probeAndApplyReasoning(profileID: String, summarizer: Summarizer) {
+        guard let idx = config.llmProfiles.firstIndex(where: { $0.id == profileID }) else { return }
+        let p = config.llmProfiles[idx]
+        let detected = LLMProvider.reasoningStyle(baseURL: p.baseURL, providerID: p.providerID)
+
+        print("⏳  Probing reasoning support…")
+        let sem = DispatchSemaphore(value: 0)
+        var outcome: Summarizer.ReasoningProbeOutcome?
+        summarizer.probeReasoning(hostDetected: detected) { o in outcome = o; sem.signal() }
+        sem.wait()
+
+        switch outcome {
+        case .supported(let style, let detail):
+            print("✓  Reasoning detected: \(style.label) (\(detail))")
+            if p.reasoningStyleOverride == nil {
+                // Keep "auto" when host detection already agrees, else pin the format.
+                config.llmProfiles[idx].reasoningStyleOverride = (style == detected) ? nil : style
+                persistConfig()
+                print(style == detected
+                      ? "   Reasoning format stays auto · \(style.label)."
+                      : "   Set Reasoning format → \(style.label).")
+                if !config.llmProfiles[idx].reasoningEffort.isOn {
+                    print("   Tip: Reasoning effort is off — set it to actually send reasoning.")
+                }
+            } else if p.reasoningStyleOverride != style {
+                print("   Your manual Reasoning format is \(p.effectiveReasoningStyle.label) — left unchanged.")
+            }
+        case .noneDetected(let inconclusive):
+            print(inconclusive
+                  ? "•  Endpoint accepted the parameter but returned no reasoning output — your model is probably not a reasoning model. You can still force a format via Reasoning format."
+                  : "•  No reasoning support detected — the endpoint rejected every reasoning parameter.")
+        case .failed(let msg):
+            print("✗  Reasoning probe failed: \(msg)")
+        case .none:
+            print("✗  Reasoning probe: no result.")
         }
     }
 

@@ -19,13 +19,17 @@ enum LLMAPIStyle: String, Codable {
 enum ReasoningStyle: String, Codable {
     case none, kimi, openai, anthropic
 
-    /// Short label for the Settings editor.
+    /// Short label for the Settings editor. Names the *wire format*, not a vendor:
+    /// these conventions are shared across providers (e.g. `.kimi` — the
+    /// `thinking` request param + `reasoning_content` response field — is what
+    /// Kimi/Moonshot, DeepSeek and Qianfan all speak). The persisted value is the
+    /// raw case name (`kimi`/`openai`/`anthropic`), so relabeling is display-only.
     var label: String {
         switch self {
         case .none:      return "none"
-        case .kimi:      return "kimi"
-        case .openai:    return "openai"
-        case .anthropic: return "anthropic"
+        case .kimi:      return "thinking (reasoning_content)"
+        case .openai:    return "reasoning_effort"
+        case .anthropic: return "adaptive thinking"
         }
     }
 }

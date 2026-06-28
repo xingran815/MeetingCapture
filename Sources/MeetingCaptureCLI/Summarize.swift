@@ -292,6 +292,137 @@ final class Summarizer {
         task.resume()
     }
 
+    /// Active reasoning-capability probe. For this profile's wire protocol, sends
+    /// a tiny reasoning-*inducing* request per candidate reasoning format and
+    /// inspects the response for actual reasoning output. A plain HTTP 200 is not
+    /// enough — many OpenAI-compatible gateways silently ignore unknown fields —
+    /// so a positive verdict requires reasoning content in the body.
+    ///
+    /// `hostDetected` (the URL/preset-based guess) only orders the candidates so a
+    /// recognized host confirms first and avoids a spurious 400.
+    func probeReasoning(hostDetected: ReasoningStyle, timeout: TimeInterval = 30) async -> ReasoningProbeOutcome {
+        guard let apiKey = apiKeyProvider(), !apiKey.isEmpty else {
+            return .failed("No LLM API key available.")
+        }
+        // Reasoning formats that are valid for this wire protocol, host-detected
+        // first (then the others), so a known endpoint settles in one request.
+        var candidates: [ReasoningStyle]
+        switch apiStyle {
+        case .anthropicMessages: candidates = [.anthropic]
+        case .openAIChat:        candidates = [.kimi, .openai]
+        }
+        if let i = candidates.firstIndex(of: hostDetected), i != 0 {
+            candidates.remove(at: i)
+            candidates.insert(hostDetected, at: 0)
+        }
+
+        var sawInconclusive = false
+        var reachedEndpoint = false
+        for style in candidates {
+            guard let req = try? buildRequest(apiKey: apiKey, body: probeBody(for: style), timeout: timeout),
+                  let (data, response) = try? await URLSession.shared.data(for: req),
+                  let http = response as? HTTPURLResponse else {
+                continue   // network/build error — let another candidate try
+            }
+            reachedEndpoint = true
+            guard (200..<300).contains(http.statusCode) else {
+                continue   // this format's parameter was rejected; try the next
+            }
+            if let detail = reasoningSignal(in: data, style: style) {
+                return .supported(style, detail: detail)
+            }
+            sawInconclusive = true   // accepted, but produced no reasoning output
+        }
+        guard reachedEndpoint else { return .failed("could not reach the endpoint") }
+        return .noneDetected(inconclusive: sawInconclusive)
+    }
+
+    /// Callback bridge to `probeReasoning`, for the synchronous Settings menu
+    /// (mirrors `ping`: the caller blocks on a semaphore until `completion` fires).
+    func probeReasoning(hostDetected: ReasoningStyle,
+                        timeout: TimeInterval = 30,
+                        completion: @escaping (ReasoningProbeOutcome) -> Void) {
+        Task {
+            completion(await probeReasoning(hostDetected: hostDetected, timeout: timeout))
+        }
+    }
+
+    /// A minimal reasoning-inducing request body for one candidate format. The
+    /// arithmetic prompt is small but enough to make a reasoning model think;
+    /// caps/budgets are kept low to keep the probe cheap.
+    private func probeBody(for style: ReasoningStyle) -> [String: Any] {
+        let prompt = "What is 23 + 19? Reason briefly, then reply with just the number."
+        switch apiStyle {
+        case .anthropicMessages:
+            var b: [String: Any] = [
+                "model": model,
+                "max_tokens": 2048,
+                "messages": [["role": "user", "content": prompt]],
+            ]
+            if style == .anthropic {
+                b["thinking"] = ["type": "adaptive"]
+                b["output_config"] = ["effort": "low"]
+            }
+            return b
+        case .openAIChat:
+            var b: [String: Any] = [
+                "model": model,
+                "temperature": 0,
+                "max_tokens": 512,
+                "messages": [["role": "user", "content": prompt]],
+            ]
+            switch style {
+            case .kimi:
+                b["thinking"] = ["type": "enabled", "budget_tokens": ReasoningEffort.low.budgetTokens]
+            case .openai:
+                b["reasoning_effort"] = "low"
+            case .anthropic, .none:
+                break
+            }
+            return b
+        }
+    }
+
+    /// Inspect a 2xx probe response for evidence the model actually reasoned under
+    /// `style`. Returns a short description of the matched marker, or nil if no
+    /// reasoning output is present (the parameter was likely ignored).
+    private func reasoningSignal(in data: Data, style: ReasoningStyle) -> String? {
+        guard let obj = try? JSONSerialization.jsonObject(with: data),
+              let json = obj as? [String: Any] else { return nil }
+        switch style {
+        case .anthropic:
+            // { content: [ { type: "thinking", thinking: "…" }, … ] }
+            if let blocks = json["content"] as? [[String: Any]],
+               blocks.contains(where: { ($0["type"] as? String)?.contains("thinking") == true }) {
+                return "thinking block present"
+            }
+        case .kimi:
+            // { choices: [ { message: { reasoning_content: "…" } } ] }
+            if let choices = json["choices"] as? [[String: Any]],
+               let message = choices.first?["message"] as? [String: Any] {
+                if let rc = message["reasoning_content"] as? String, !rc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    return "reasoning_content present"
+                }
+                if let rc = message["reasoning"] as? String, !rc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    return "reasoning field present"
+                }
+                if let content = message["content"] as? String, content.contains("<think>") {
+                    return "<think> block present"
+                }
+            }
+        case .openai:
+            // { usage: { completion_tokens_details: { reasoning_tokens: N } } }
+            if let usage = json["usage"] as? [String: Any],
+               let details = usage["completion_tokens_details"] as? [String: Any],
+               let rt = details["reasoning_tokens"] as? Int, rt > 0 {
+                return "\(rt) reasoning tokens"
+            }
+        case .none:
+            break
+        }
+        return nil
+    }
+
     /// The provider-specific endpoint path appended to `baseURL`.
     private var endpointPath: String {
         apiStyle == .anthropicMessages ? "messages" : "chat/completions"
@@ -323,6 +454,20 @@ final class Summarizer {
             case .badResponse(let s): return s
             }
         }
+    }
+
+    /// Verdict of an active reasoning-capability probe (see `probeReasoning`).
+    enum ReasoningProbeOutcome {
+        /// The endpoint accepted a reasoning parameter and returned reasoning
+        /// output in this wire format. `detail` names the matched marker.
+        case supported(ReasoningStyle, detail: String)
+        /// No reasoning detected. `inconclusive == true`: the endpoint accepted the
+        /// parameter (HTTP 2xx) but produced no reasoning output — likely a
+        /// non-reasoning model or a gateway that drops the field. `false`: every
+        /// candidate parameter was rejected outright.
+        case noneDetected(inconclusive: Bool)
+        /// The probe could not run (no key, endpoint unreachable, …).
+        case failed(String)
     }
 
     /// The system prompt for one summary style. Auto-detected per transcript.
