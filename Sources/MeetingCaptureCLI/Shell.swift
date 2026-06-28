@@ -254,7 +254,13 @@ final class Shell {
             reasoningEffort: active.reasoningEffort
         )
         do {
-            let summary = try await summarizer.summarize(transcript: transcript)
+            // Auto-detect the summary style from the transcript, then summarize.
+            // A classifier failure is non-fatal — fall back to a meeting summary.
+            let style = (try? await summarizer.detectStyle(transcript: transcript)) ?? .meeting
+            print(style == .therapy
+                  ? "🧭  Detected a therapy session — writing Practice Notes…"
+                  : "🧭  Detected a meeting — writing summary…")
+            let summary = try await summarizer.summarize(transcript: transcript, style: style)
 
             let totalWidth = 50
             let labelPart  = "──── summary "

@@ -53,6 +53,8 @@ if flag("--help") || flag("-h") {
     Summarization options (OpenAI-compatible /chat/completions):
       --summarize           Generate an LLM summary after transcription
       --summarize-only P    Skip everything; summarize existing .txt at path P
+      --summary-style <s>   Force style: meeting | therapy      (default: auto-detected per transcript)
+      --therapy             Alias for --summary-style therapy
       --llm-profile <name>  Saved LLM configuration to use   (default: the active one from Settings)
       --llm-model <name>    Override the chosen config's model
       --llm-base-url <url>  Override the chosen config's base URL
@@ -115,6 +117,19 @@ let llmProfile     = llmProfileFlag.flatMap { name in
 let llmModel       = option("--llm-model") ?? llmProfile.model
 let llmBaseURL     = option("--llm-base-url") ?? llmProfile.baseURL
 let llmApiKeyFlag  = option("--llm-api-key")
+// Summary style is auto-detected per transcript; these flags force it (scripting
+// escape hatch). `--therapy` is shorthand for `--summary-style therapy`.
+let summaryStyleFlag: SummaryStyle? = {
+    if flag("--therapy") { return .therapy }
+    guard let v = option("--summary-style") else { return nil }
+    switch v.lowercased() {
+    case "therapy": return .therapy
+    case "meeting": return .meeting
+    default:
+        fputs("⚠  Unknown --summary-style \"\(v)\" — auto-detecting instead.\n", stderr)
+        return nil
+    }
+}()
 
 if let name = llmProfileFlag,
    !persistedConfig.llmProfiles.contains(where: { $0.displayName.caseInsensitiveCompare(name) == .orderedSame }) {
@@ -192,7 +207,18 @@ func runSummarization(transcript: String, sourcePath: String) async throws {
         reasoningStyle: reasoningStyle,
         reasoningEffort: llmProfile.reasoningEffort
     )
-    let summary = try await summarizer.summarize(transcript: transcript)
+    // A forced style (flag) wins; otherwise auto-detect, falling back to a
+    // meeting summary if the classifier call fails.
+    let style: SummaryStyle
+    if let forced = summaryStyleFlag {
+        style = forced
+    } else {
+        style = (try? await summarizer.detectStyle(transcript: transcript)) ?? .meeting
+    }
+    print(style == .therapy
+          ? "🧭  Therapy session — writing Practice Notes…"
+          : "🧭  Meeting — writing summary…")
+    let summary = try await summarizer.summarize(transcript: transcript, style: style)
 
     print("\n──── summary ─────────────────────────────")
     print(summary.trimmingCharacters(in: .whitespacesAndNewlines))
