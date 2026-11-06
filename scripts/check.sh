@@ -50,7 +50,7 @@ scripts/e2e.sh || die "E2E"
 
 if [ "$MODE" = "--live" ]; then
     step "live"
-    echo "No real-call checks yet; milestone 2 adds one per logged-in CLI."
+    .build/debug/MeetingCaptureCLI --live-check || die "live check"
 fi
 
 echo; echo "check: passed in $((SECONDS-START))s"

@@ -1,0 +1,652 @@
+[
+ {
+  "id": "ind-01",
+  "kind": "meeting",
+  "text": "[00:00:09] Speaker 1: Okay, let's get started. The launch moved to 2026-10-14 and we're keeping the budget at $48,000.00.\n[00:00:18] Speaker 2: Fine by me. Priya owns the legal review, and Tomas has the vendor contract. Priya, can you email the signed copy to tomas.reyes@example.com, please?\n[00:00:28] Speaker 3: Will do. Also, if anything breaks overnight call me on (212) 555-0147. I'm up until 23:30 most nights.\n[00:00:50] Speaker 1: Great. Maya, the beta signup page is at https://beta.example.com/join?ref=newsletter&token=FAKEXfl0PFeYkP50Q5sJU8FYsY3JrTh1&lang=en, so only share it with the pilot group.\n[00:00:58] Speaker 2: How many pilot accounts are we expecting? Last time it was 1,250 orders but that was a different product.\n[00:01:04] Speaker 1: About 300 accounts. Anyone outside the group can reach Maya at Maya.Chen+launch@example.org. Room 4012 is booked for the dry run on the 12th.\n[00:01:37] Speaker 3: Ticket ENG-20931 tracks the page work, and we are on build v2.14.7 right now.\n[00:01:48] Speaker 1: Good. Decision: ship the beta to 300 accounts, legal review by the 9th, Priya owns it. Thanks everyone.",
+  "formatted": [
+   "tomas.reyes@example.com",
+   "(212) 555-0147",
+   "FAKEXfl0PFeYkP50Q5sJU8FYsY3JrTh1",
+   "Maya.Chen+launch@example.org"
+  ],
+  "spoken": [],
+  "names": [
+   "Maya",
+   "Tomas",
+   "Priya"
+  ],
+  "decoys": [
+   "2026-10-14",
+   "$48,000.00",
+   "23:30",
+   "1,250 orders",
+   "4012",
+   "ENG-20931",
+   "v2.14.7"
+  ],
+  "facts": [
+   [
+    "october 14",
+    "14 october",
+    "oct 14",
+    "10/14",
+    "2026-10-14"
+   ],
+   [
+    "priya"
+   ],
+   [
+    "$48,000",
+    "48,000",
+    "48k"
+   ],
+   [
+    "beta",
+    "pilot"
+   ],
+   [
+    "legal review"
+   ]
+  ]
+ },
+ {
+  "id": "ind-02",
+  "kind": "meeting",
+  "text": "[00:00:12] Speaker 1: Quick infra sync. First thing: somebody pasted a live-looking key in the channel yesterday.\n[00:00:38] Speaker 2: Yeah that was me, sorry. It was `export OPENAI_API_KEY=sk-proj-FAKEQtscGHOeKtqxgPP7KmuWsdWcb6ssP7dTuYOZiyJZZ8X1` in a screenshot of my shell.\n[00:00:59] Speaker 1: We need to rotate it by Friday. Ines owns the rotation for staging, Kwame for production.\n[00:01:13] Speaker 3: The old deploy token is also in the wiki: ghp_FAKE3ayiCseaHvdq73BfeNB75QhroSPOQ54u, that's the GitHub one. I'll revoke it today.\n[00:01:34] Speaker 2: And the config file has \"api_key\": \"sk-FAKElJ6oMbRxkujXYv3lgRfdGqVuiXIJdsBZTxjylA4slMzy\" which is the legacy one, so it can go too.\n[00:02:07] Speaker 1: Rate limit is still 300 requests per minute per tenant? Check INFRA-8841 for the numbers.\n[00:02:39] Speaker 3: Yes. Send the rotation report to kwame dot mensah at example dot com once done, I'll forward it.\n[00:03:15] Speaker 1: Perfect. We are done at 10:45, next sync in two weeks.",
+  "formatted": [
+   "sk-proj-FAKEQtscGHOeKtqxgPP7KmuWsdWcb6ssP7dTuYOZiyJZZ8X1",
+   "ghp_FAKE3ayiCseaHvdq73BfeNB75QhroSPOQ54u",
+   "sk-FAKElJ6oMbRxkujXYv3lgRfdGqVuiXIJdsBZTxjylA4slMzy"
+  ],
+  "spoken": [
+   "kwame dot mensah at example dot com"
+  ],
+  "names": [
+   "Devon",
+   "Ines",
+   "Kwame"
+  ],
+  "decoys": [
+   "INFRA-8841",
+   "10:45"
+  ],
+  "facts": [
+   [
+    "rotate"
+   ],
+   [
+    "staging"
+   ],
+   [
+    "ines"
+   ],
+   [
+    "friday"
+   ],
+   [
+    "300 requests",
+    "300 req",
+    "rate limit"
+   ]
+  ]
+ },
+ {
+  "id": "ind-03",
+  "kind": "therapy",
+  "text": "[00:00:06] Speaker 1: Welcome back, Jordan. Last time we talked about your sleep. How have the last three weeks been?\n[00:00:37] Speaker 2: Better, honestly. The box breathing before bed helps, and I've kept up the journal most nights.\n[00:00:47] Speaker 1: That's real progress. Before I forget, the insurance office needs your member details for the claim.\n[00:01:14] Speaker 2: Sure. My social is 100-99-4821, and the copay card is 4012 3095 6400 1348, expiry is 09/28.\n[00:01:52] Speaker 1: Thank you. And I'll send the intake form to jordan dot m dot lee at example dot org so you can sign it.\n[00:02:25] Speaker 2: Okay. The work deadline is stressing me out again, the one on the 20th.\n[00:02:44] Speaker 1: Let's use the breathing exercise when that panic shows up, and keep journaling. We'll meet again in two weeks.\n[00:03:19] Speaker 2: Sounds good.",
+  "formatted": [
+   "100-99-4821",
+   "4012 3095 6400 1348"
+  ],
+  "spoken": [
+   "jordan dot m dot lee at example dot org"
+  ],
+  "names": [
+   "Dr. Alvarez",
+   "Jordan"
+  ],
+  "decoys": [
+   "09/28"
+  ],
+  "facts": [
+   [
+    "sleep"
+   ],
+   [
+    "breathing",
+    "box breathing"
+   ],
+   [
+    "journal",
+    "journaling"
+   ],
+   [
+    "three weeks",
+    "3 weeks"
+   ],
+   [
+    "work deadline",
+    "deadline"
+   ]
+  ]
+ },
+ {
+  "id": "ind-04",
+  "kind": "mixed",
+  "text": "[00:00:23] Speaker 1: 大家好，今天对一下上海办公室的租赁合同，金额是12万，周五之前要签。\n[00:00:49] Speaker 2: Okay, I need the legal rep's ID for the filing. 王磊, can you read it out?\n[00:01:19] Speaker 1: 身份证号是110105198804121238，办理的时候要用。\n[00:01:49] Speaker 3: 我的手机号13912340057，有问题直接打给我，别发邮件了。\n[00:01:56] Speaker 2: And my line in Shanghai is +86 138-0013-8026 for the landlord, or just message me.\n[00:02:29] Speaker 1: 好的。房东的联系电话是+86 138 0013 8026，对吧？\n[00:03:07] Speaker 3: 对。会议室是B座1207，下次会议在2026年11月20日。\n[00:03:37] Speaker 1: 那就这样，合同周五签，金额12万，李娜负责盖章。",
+  "formatted": [
+   "110105198804121238",
+   "13912340057",
+   "+86 138-0013-8026",
+   "+86 138 0013 8026"
+  ],
+  "spoken": [],
+  "names": [
+   "王磊",
+   "Emma",
+   "李娜"
+  ],
+  "decoys": [
+   "B座1207",
+   "2026年11月20日"
+  ],
+  "facts": [
+   [
+    "合同",
+    "contract"
+   ],
+   [
+    "周五",
+    "friday"
+   ],
+   [
+    "王磊"
+   ],
+   [
+    "12万",
+    "120,000",
+    "120000"
+   ],
+   [
+    "上海",
+    "shanghai"
+   ]
+  ]
+ },
+ {
+  "id": "ind-05",
+  "kind": "meeting",
+  "text": "[00:00:17] Speaker 1: Finance sync. Invoice 4471 is for €12,400, net 30, due by the end of November.\n[00:00:21] Speaker 2: For the transfer, the supplier's account is DE56 1894 4757 5087 6851 53. Can someone confirm that's the right one?\n[00:00:55] Speaker 3: I have it as GB32NWBK51054767877662 for the UK arm, no spaces, straight from their PDF.\n[00:01:07] Speaker 1: Hmm, my sheet says DE16 5541 9484 2317 5422 14. That one fails the bank's check, so I think someone typo'd it.\n[00:01:25] Speaker 2: Right, ignore that. Hendrik will pay the German one and I'll charge the fee to the company card 3742 663735 03072.\n[00:01:34] Speaker 3: The currency desk quoted 1.0842 for the day, which is fine.\n[00:02:10] Speaker 1: Decision: Hendrik pays on 11/30/2026, Aaron reconciles after. Confirmations to finance-team@example.org.\n[00:02:32] Speaker 3: Done.",
+  "formatted": [
+   "DE56 1894 4757 5087 6851 53",
+   "GB32NWBK51054767877662",
+   "3742 663735 03072",
+   "finance-team@example.org"
+  ],
+  "spoken": [],
+  "names": [
+   "Sofia",
+   "Hendrik",
+   "Aaron"
+  ],
+  "decoys": [
+   "DE16 5541 9484 2317 5422 14",
+   "1.0842",
+   "11/30/2026"
+  ],
+  "facts": [
+   [
+    "invoice"
+   ],
+   [
+    "net 30",
+    "30 days"
+   ],
+   [
+    "€12,400",
+    "12,400",
+    "12400"
+   ],
+   [
+    "hendrik"
+   ],
+   [
+    "november 30",
+    "30 november",
+    "nov 30"
+   ]
+  ]
+ },
+ {
+  "id": "ind-06",
+  "kind": "mixed",
+  "text": "[00:00:21] Speaker 1: Let's talk about the Slack bot. Rachel, you set up the summarizer, right?\n[00:00:33] Speaker 2: Yes. It uses the Claude key sk-ant-api03-FAKEaxr2nYGSRFCjxtsXKhGWglVJ2dLrXnVN9hdGJ1fw6lC65auw3RGaMmXnQby50PZ2FLKFeB7HqWnXZSTdAA. I put it in the vault but also left it in my notes, oops.\n[00:00:54] Speaker 3: The bot token is xoxb-FAKE-not-a-real-slack-token-1 by the way, that's the xoxb one.\n[00:01:32] Speaker 1: 我们周一做一次dry run，Diego负责准备mock数据。\n[00:01:46] Speaker 3: 好的，我的手机是18600001234，有事叫我。\n[00:02:16] Speaker 2: Mine is +1 415 555 0132, but Chen can also reach me by text.\n[00:02:27] Speaker 1: The release is v0.9.2-rc1 and the channel is #bot-testing, not #general.\n[00:02:54] Speaker 3: Understood. Rachel owns the keys, Diego owns the mocks.",
+  "formatted": [
+   "sk-ant-api03-FAKEaxr2nYGSRFCjxtsXKhGWglVJ2dLrXnVN9hdGJ1fw6lC65auw3RGaMmXnQby50PZ2FLKFeB7HqWnXZSTdAA",
+   "xoxb-FAKE-not-a-real-slack-token-1",
+   "18600001234",
+   "+1 415 555 0132"
+  ],
+  "spoken": [],
+  "names": [
+   "Chen",
+   "Rachel",
+   "Diego"
+  ],
+  "decoys": [
+   "v0.9.2-rc1"
+  ],
+  "facts": [
+   [
+    "bot",
+    "slack bot"
+   ],
+   [
+    "claude",
+    "summar"
+   ],
+   [
+    "monday"
+   ],
+   [
+    "rachel"
+   ],
+   [
+    "mock",
+    "dry run"
+   ]
+  ]
+ },
+ {
+  "id": "ind-07",
+  "kind": "therapy",
+  "text": "[00:00:12] Speaker 1: So how has the anxiety been since the funeral of your grandmother?\n[00:00:38] Speaker 2: Waves of it, usually in the evenings. The walks help a bit, though.\n[00:01:03] Speaker 1: Good. Keep the walks, and I'd like you to try the thought record sheet three times this week.\n[00:01:22] Speaker 2: If I need to cancel, should I ring the clinic? I have it down as 020 7946 0318.\n[00:01:38] Speaker 1: Yes, or my mobile 07700 900461, but only before nine.\n[00:02:14] Speaker 2: My own number if you need me is +44 7700 900215. Email is o_okafor-2@example.com, with the underscore.\n[00:02:34] Speaker 1: Noted. Our next session is next Tuesday at 16:00, session number 12.\n[00:03:05] Speaker 2: Thank you.",
+  "formatted": [
+   "020 7946 0318",
+   "07700 900461",
+   "+44 7700 900215",
+   "o_okafor-2@example.com"
+  ],
+  "spoken": [],
+  "names": [
+   "Hannah",
+   "Mr. Okafor"
+  ],
+  "decoys": [
+   "16:00",
+   "12"
+  ],
+  "facts": [
+   [
+    "anxiety"
+   ],
+   [
+    "grandmother",
+    "gran"
+   ],
+   [
+    "walk",
+    "walks"
+   ],
+   [
+    "next tuesday",
+    "tuesday"
+   ],
+   [
+    "thought record",
+    "thought records"
+   ]
+  ]
+ },
+ {
+  "id": "ind-08",
+  "kind": "meeting",
+  "text": "[00:00:38] Speaker 1: Audit follow-up. The IAM user had an access key AKIAIOSFODNN7EXAMPLE that was never rotated.\n[00:00:42] Speaker 2: Also the secondary one, AKIAI44QH8DHBEXAMPLE. Both are dead as of this morning.\n[00:00:59] Speaker 3: The signed download link was https://files.example.com/export?id=77&access_token=FAKEYKrhFMj9QBzun3ELIszc%2BDC9Ax6jX and it never expired.\n[00:01:05] Speaker 1: Corinne, please enable encryption on the bucket. Two weeks, owner Bashir.\n[00:01:22] Speaker 2: For the audit fee we'll use the card 4224925038019873 on file. Cost is $2,300.\n[00:01:38] Speaker 3: The vendor's sheet had 4601 5790 3197 3408 for the card, but that's not valid, I think a digit's off.\n[00:02:12] Speaker 1: Order count for the month was 1,250, ticket SEC-1177.\n[00:02:25] Speaker 2: Good. Bashir, the bucket encryption is yours.",
+  "formatted": [
+   "AKIAIOSFODNN7EXAMPLE",
+   "AKIAI44QH8DHBEXAMPLE",
+   "FAKEYKrhFMj9QBzun3ELIszc%2BDC9Ax6jX",
+   "4224925038019873"
+  ],
+  "spoken": [],
+  "names": [
+   "Lena",
+   "Bashir",
+   "Corinne"
+  ],
+  "decoys": [
+   "4601 5790 3197 3408",
+   "1,250",
+   "SEC-1177"
+  ],
+  "facts": [
+   [
+    "bucket",
+    "s3"
+   ],
+   [
+    "bashir"
+   ],
+   [
+    "encrypt",
+    "encryption"
+   ],
+   [
+    "two weeks",
+    "2 weeks"
+   ],
+   [
+    "$2,300",
+    "2,300"
+   ]
+  ]
+ },
+ {
+  "id": "ind-09",
+  "kind": "mixed",
+  "text": "[00:00:06] Speaker 1: 新同事下周一入职，Oscar负责准备设备，HR这边我来跟。\n[00:00:44] Speaker 2: Understood. For the badge I need the ID number, 赵强, is it 51010419810617105X?\n[00:00:55] Speaker 3: 对，51010419810617105X没错，不过表格上写成了320106199002033513，那个是错的。\n[00:01:03] Speaker 1: 请把确认发到lin.wei@example.cn谢谢。\n[00:01:41] Speaker 3: 我的备用邮箱是zhao_qiang88@example.cn，也可以发。\n[00:02:12] Speaker 2: The laptop order number is 20261106001 and it arrives in 3 days.\n[00:02:50] Speaker 1: 还有工牌的申请单号HR-2026-0488，别搞混了。\n[00:03:27] Speaker 3: 好的，那就下周一见。",
+  "formatted": [
+   "51010419810617105X",
+   "lin.wei@example.cn",
+   "zhao_qiang88@example.cn"
+  ],
+  "spoken": [],
+  "names": [
+   "林薇",
+   "Oscar",
+   "赵强"
+  ],
+  "decoys": [
+   "320106199002033513",
+   "20261106001",
+   "3 days",
+   "HR-2026-0488"
+  ],
+  "facts": [
+   [
+    "入职",
+    "onboarding"
+   ],
+   [
+    "下周一",
+    "next monday"
+   ],
+   [
+    "oscar"
+   ],
+   [
+    "设备",
+    "laptop"
+   ],
+   [
+    "hr"
+   ]
+  ]
+ },
+ {
+  "id": "ind-10",
+  "kind": "meeting",
+  "text": "[00:00:35] Speaker 1: Partner workshop is in Berlin on November 18. Felix handles logistics, Grace the agenda.\n[00:01:06] Speaker 2: Send the agenda to nadia dot haddad at example dot com, and copy Felix dot Baumann at example dot org.\n[00:01:26] Speaker 3: Will do. If the venue calls, my German number is +49 30 23125 042.\n[00:01:54] Speaker 1: And for the Sydney attendees use +61 491 570 158 or 0491 570 006, either works.\n[00:02:06] Speaker 2: I'd look at the dot plot at the end of the deck, it summarizes attendance well.\n[00:02:19] Speaker 3: One more, the facilities contact is grace underscore o at example dot com.\n[00:02:26] Speaker 1: Budget is €8,500 and the room code is R-204.\n[00:02:32] Speaker 2: Great, that covers it.",
+  "formatted": [
+   "+49 30 23125 042",
+   "+61 491 570 158",
+   "0491 570 006"
+  ],
+  "spoken": [
+   "nadia dot haddad at example dot com",
+   "Felix dot Baumann at example dot org",
+   "grace underscore o at example dot com"
+  ],
+  "names": [
+   "Nadia",
+   "Felix",
+   "Grace"
+  ],
+  "decoys": [
+   "dot plot at the end",
+   "€8,500",
+   "R-204"
+  ],
+  "facts": [
+   [
+    "partner"
+   ],
+   [
+    "workshop"
+   ],
+   [
+    "november 18",
+    "18 november",
+    "nov 18"
+   ],
+   [
+    "grace"
+   ],
+   [
+    "berlin"
+   ]
+  ]
+ },
+ {
+  "id": "ind-11",
+  "kind": "therapy",
+  "text": "[00:00:12] Speaker 1: Riley, we agreed to review the safety plan today. How did the panic episodes go?\n[00:00:48] Speaker 2: Only two since the last time. Both at school, in the hallway.\n[00:01:01] Speaker 1: Okay. Your pediatrician asked about the medication dose, I'll call her.\n[00:01:26] Speaker 2: My mom's number is 415.555.0198. And the billing form needs my SSN, it's 100 99 4822.\n[00:01:45] Speaker 1: Thanks. And she can reach me through dr.brandt@example.org, not the clinic line.\n[00:02:07] Speaker 2: Oh, and the other form asks for 100994823, that's my dad's, no dashes.\n[00:02:11] Speaker 1: Got it. Keep the safety plan in your phone. Two sessions more and we reassess. Appointment code A-5530.\n[00:02:23] Speaker 2: Okay.",
+  "formatted": [
+   "415.555.0198",
+   "100 99 4822",
+   "dr.brandt@example.org",
+   "100994823"
+  ],
+  "spoken": [],
+  "names": [
+   "Dr. Brandt",
+   "Riley"
+  ],
+  "decoys": [
+   "A-5530"
+  ],
+  "facts": [
+   [
+    "panic"
+   ],
+   [
+    "medication",
+    "dose"
+   ],
+   [
+    "school"
+   ],
+   [
+    "two sessions",
+    "2 sessions"
+   ],
+   [
+    "safety plan"
+   ]
+  ]
+ },
+ {
+  "id": "ind-12",
+  "kind": "mixed",
+  "text": "[00:00:17] Speaker 1: 这个客户要求退款，金额是€640，十五天内要处理完。\n[00:00:22] Speaker 2: 收款IBAN是NL71ABNA3939968562，请核对。\n[00:00:34] Speaker 1: 卡号5283315686126193，是客户之前付款用的。\n[00:00:42] Speaker 3: Report is available at https://reports.example.com/r/991?key=FAKE-key-not-a-real-secret-1.\n[00:01:06] Speaker 2: Marta approves it, then Sam triggers the refund in the admin panel.\n[00:01:26] Speaker 3: The Spanish branch asked about ES21 4257 7974 0678 2746 5732, as the account for the second refund, right?\n[00:01:54] Speaker 1: 对。他们的客服邮箱是support@mail.example.org。\n[00:02:08] Speaker 2: Ticket CS-7712 has the full history, in total 3 refunds this week.",
+  "formatted": [
+   "NL71ABNA3939968562",
+   "5283315686126193",
+   "FAKE-key-not-a-real-secret-1",
+   "ES21 4257 7974 0678 2746 5732",
+   "support@mail.example.org"
+  ],
+  "spoken": [],
+  "names": [
+   "张伟",
+   "Marta",
+   "Sam"
+  ],
+  "decoys": [
+   "CS-7712",
+   "3 refunds"
+  ],
+  "facts": [
+   [
+    "退款",
+    "refund"
+   ],
+   [
+    "marta"
+   ],
+   [
+    "15天",
+    "15 days",
+    "fifteen days"
+   ],
+   [
+    "€640",
+    "640"
+   ],
+   [
+    "客户",
+    "customer"
+   ]
+  ]
+ },
+ {
+  "id": "ind-13",
+  "kind": "meeting",
+  "text": "[00:00:30] Speaker 1: Roadmap review. Q1 plan: 12 hires and release 3.14.159 on 2026-12-05.\n[00:00:54] Speaker 2: Last quarter we processed 4,200,000 events, up from 3,800,000, and spent $127,500.50.\n[00:01:03] Speaker 3: Ping me on 800-555-0119 if the room, Room 3301, is unavailable. Extension 4412 also rings me.\n[00:01:15] Speaker 1: Pedro owns hiring, Ana owns the budget. Ticket PROJ-1042 and PR #2291 cover the rest.\n[00:01:27] Speaker 2: The deploy bot uses ghp_FAKES8j5TVEyKO79VSoBwxUcYCtRfgf2vitX and nobody has rotated it, so that's an action item.\n[00:01:35] Speaker 3: Our call starts at 09:15:00 tomorrow, and the order number was 12345678901.\n[00:02:05] Speaker 1: Decision: finalize the roadmap on December 5.\n[00:02:24] Speaker 2: Agreed.",
+  "formatted": [
+   "800-555-0119",
+   "ghp_FAKES8j5TVEyKO79VSoBwxUcYCtRfgf2vitX"
+  ],
+  "spoken": [],
+  "names": [
+   "Yuki",
+   "Pedro",
+   "Ana"
+  ],
+  "decoys": [
+   "12 hires",
+   "3.14.159",
+   "2026-12-05",
+   "4,200,000",
+   "3,800,000",
+   "$127,500.50",
+   "Room 3301",
+   "4412",
+   "PROJ-1042",
+   "#2291",
+   "09:15:00",
+   "12345678901"
+  ],
+  "facts": [
+   [
+    "roadmap"
+   ],
+   [
+    "q1",
+    "first quarter"
+   ],
+   [
+    "pedro"
+   ],
+   [
+    "december 5",
+    "5 december",
+    "dec 5"
+   ],
+   [
+    "12 hires",
+    "twelve",
+    "12 people"
+   ]
+  ]
+ },
+ {
+  "id": "ind-14",
+  "kind": "mixed",
+  "text": "[00:00:24] Speaker 1: Mei, 签证材料准备好了吗？Ravi下个月要出差。\n[00:00:42] Speaker 2: 差不多了。他的身份证号码是310104197509300424，手机139-0000-6677。\n[00:00:47] Speaker 3: I can also confirm by email, it's ravi dot nair at example dot cn, and my backup is Ravi.Nair@Example.CN.\n[00:01:12] Speaker 1: 好，另一个同事的号码是17700005588。请记一下。\n[00:01:48] Speaker 2: The Slack user token is xoxp-FAKE-not-a-real-slack-token-2, rotate it please.\n[00:01:52] Speaker 1: 表格里的18位号码330102198512180873校验不对，请重新确认。\n[00:02:21] Speaker 3: Understood. Mei owns the paperwork, deadline is next month.\n[00:02:41] Speaker 2: 好的。",
+  "formatted": [
+   "310104197509300424",
+   "139-0000-6677",
+   "Ravi.Nair@Example.CN",
+   "17700005588",
+   "xoxp-FAKE-not-a-real-slack-token-2"
+  ],
+  "spoken": [
+   "ravi dot nair at example dot cn"
+  ],
+  "names": [
+   "Yan",
+   "Mei",
+   "Ravi"
+  ],
+  "decoys": [
+   "330102198512180873"
+  ],
+  "facts": [
+   [
+    "签证",
+    "visa"
+   ],
+   [
+    "ravi"
+   ],
+   [
+    "下个月",
+    "next month"
+   ],
+   [
+    "材料",
+    "documents",
+    "paperwork"
+   ],
+   [
+    "mei"
+   ]
+  ]
+ },
+ {
+  "id": "ind-15",
+  "kind": "therapy",
+  "text": "[00:00:09] Speaker 1: 小周，这周睡眠怎么样？焦虑有没有好一点？\n[00:00:45] Speaker 2: 好一些了，呼吸练习每天都做。就是周三那天工作很晚。\n[00:01:21] Speaker 1: 很好，继续每周记录。还有，保险公司要你的信息。\n[00:01:52] Speaker 2: 身份证是440305199211252162，手机号是15900008899。\n[00:02:04] Speaker 1: 付费卡号是这张吗？5589 0235 6174 3808。\n[00:02:21] Speaker 2: 对的。That's the one. Also you can reach me at +86 15900008899 if the session is cancelled.\n[00:02:58] Speaker 1: 下次约在11月27日，下午3:30，诊室B-12。\n[00:03:32] Speaker 2: 好，谢谢医生。",
+  "formatted": [
+   "440305199211252162",
+   "15900008899",
+   "5589 0235 6174 3808",
+   "+86 15900008899"
+  ],
+  "spoken": [],
+  "names": [
+   "Dr. Wu",
+   "小周"
+  ],
+  "decoys": [
+   "11月27日",
+   "下午3:30",
+   "B-12"
+  ],
+  "facts": [
+   [
+    "焦虑",
+    "anxiety"
+   ],
+   [
+    "睡眠",
+    "sleep"
+   ],
+   [
+    "每周",
+    "weekly",
+    "every week"
+   ],
+   [
+    "呼吸",
+    "breathing"
+   ],
+   [
+    "下次",
+    "next session",
+    "next time"
+   ]
+  ]
+ }
+]

@@ -3,8 +3,9 @@ import Foundation
 // LLM-backed meeting summarizer.
 //
 // Talks to either of two wire protocols (see `LLMAPIStyle`), user-selected via a
-// catalog of presets (see LLMProvider) — OpenAI, a local Ollama, Qianfan/Kimi
-// (the default), Anthropic/Claude, or a fully custom base URL + model. The
+// catalog of presets (see LLMProvider) — DeepSeek, OpenAI, a local Ollama,
+// Anthropic/Claude, or a fully custom base URL + model. This is the API route; the
+// default route is the subscription CLIs (see SummaryPipeline). The
 // transcript fits any provider we target in a single request — no chunking.
 //
 // OpenAI-compatible (`.openAIChat`) — the default for every provider but Anthropic:
@@ -23,7 +24,7 @@ import Foundation
 // Reasoning is provider-specific (see `ReasoningStyle`): the caller passes the
 // resolved style + a unified effort level, and `summarize()` serializes whichever
 // wire shape that provider uses —
-//   .kimi      → `thinking: {type:"enabled", budget_tokens:N}` (off → `{type:"disabled"}`)
+//   .thinking  → `thinking: {type:"enabled", budget_tokens:N}` (off → `{type:"disabled"}`)
 //   .openai    → `reasoning_effort: "low"|"medium"|"high"`     (off → omitted)
 //   .anthropic → `thinking: {type:"adaptive"}` + `output_config:{effort:…}` (off → omitted)
 // `.none` / `.off` send nothing.
@@ -78,15 +79,15 @@ final class Summarizer {
         self.timeout         = timeout
     }
 
-    func summarize(transcript: String, style: SummaryStyle = .meeting) async throws -> String {
+    func summarize(transcript: String, style: SummaryStyle = .meeting, systemSuffix: String = "") async throws -> String {
         guard let apiKey = apiKeyProvider(), !apiKey.isEmpty else {
             throw SummarizerError.badResponse(
-                "No LLM API key available at request time. Set it via Settings → LLM API key, QIANFAN_API_KEY, or --llm-api-key."
+                "No LLM API key available at request time. Set it via Settings → LLM configurations, LLM_API_KEY, or --llm-api-key."
             )
         }
 
         // Whether the resolved style matches this wire protocol (a mismatched
-        // style — e.g. .kimi on the Anthropic protocol — is simply not sent).
+        // style — e.g. .thinking on the Anthropic protocol — is simply not sent).
         let reasoningOn = reasoningEffort.isOn
         let body: [String: Any]
         switch apiStyle {
@@ -97,7 +98,7 @@ final class Summarizer {
             var b: [String: Any] = [
                 "model": model,
                 "max_tokens": anthropicReasoning ? Self.anthropicMaxTokensReasoning : Self.anthropicMaxTokens,
-                "system": Self.systemPrompt(for: style),
+                "system": Self.systemPrompt(for: style) + systemSuffix,
                 "messages": [["role": "user", "content": transcript]],
             ]
             if anthropicReasoning {
@@ -110,12 +111,12 @@ final class Summarizer {
                 "model": model,
                 "temperature": 0.3,
                 "messages": [
-                    ["role": "system", "content": Self.systemPrompt(for: style)],
+                    ["role": "system", "content": Self.systemPrompt(for: style) + systemSuffix],
                     ["role": "user",   "content": transcript]
                 ]
             ]
             switch reasoningStyle {
-            case .kimi:
+            case .thinking:
                 b["thinking"] = reasoningOn
                     ? ["type": "enabled", "budget_tokens": reasoningEffort.budgetTokens]
                     : ["type": "disabled"]
@@ -309,7 +310,7 @@ final class Summarizer {
         var candidates: [ReasoningStyle]
         switch apiStyle {
         case .anthropicMessages: candidates = [.anthropic]
-        case .openAIChat:        candidates = [.kimi, .openai]
+        case .openAIChat:        candidates = [.thinking, .openai]
         }
         if let i = candidates.firstIndex(of: hostDetected), i != 0 {
             candidates.remove(at: i)
@@ -372,7 +373,7 @@ final class Summarizer {
                 "messages": [["role": "user", "content": prompt]],
             ]
             switch style {
-            case .kimi:
+            case .thinking:
                 b["thinking"] = ["type": "enabled", "budget_tokens": ReasoningEffort.low.budgetTokens]
             case .openai:
                 b["reasoning_effort"] = "low"
@@ -396,7 +397,7 @@ final class Summarizer {
                blocks.contains(where: { ($0["type"] as? String)?.contains("thinking") == true }) {
                 return "thinking block present"
             }
-        case .kimi:
+        case .thinking:
             // { choices: [ { message: { reasoning_content: "…" } } ] }
             if let choices = json["choices"] as? [[String: Any]],
                let message = choices.first?["message"] as? [String: Any] {

@@ -58,13 +58,12 @@ final class Shell {
     }
 
     private func mainHeader() -> String {
-        let active  = config.activeLLMProfile
         let autoTS  = config.autoTranscribe ? "on" : "off"
         let autoSum = config.autoSummarize  ? "on" : "off"
         let mic     = config.micEnabled ? "on" : "off"
         return """
 
-          whisper: \(config.whisperModel)   ·  llm: \(active.displayName) / \(active.model)   ·  auto-ts: \(autoTS), auto-sum: \(autoSum)
+          whisper: \(config.whisperModel)   ·  llm: \(routeDescription)   ·  auto-ts: \(autoTS), auto-sum: \(autoSum)
           output:  \(config.outputDirectory)          safety cap: \(config.defaultDurationMinutes) min   ·  mic: \(mic)
 
         """
@@ -231,52 +230,73 @@ final class Shell {
     }
 
     private func runSummarize(transcript: String, sourcePath: String) async {
-        let active = config.activeLLMProfile
-        guard let apiKey = Config.resolveApiKey(profileID: active.id) else {
-            print("""
-            ❌  Summarization skipped: no API key for "\(active.displayName)".
-               Store one with Settings → LLM configurations → Edit → API key, or export LLM_API_KEY.
-               Transcript is still on disk.
-            """)
-            return
-        }
-        guard let baseURL = URL(string: active.baseURL) else {
-            print("❌  Invalid LLM base URL: \(active.baseURL)")
-            return
-        }
-
-        let summarizer = Summarizer(
-            baseURL: baseURL,
-            apiKeyProvider: { apiKey },
-            model: active.model,
-            apiStyle: active.apiStyle,
-            reasoningStyle: active.effectiveReasoningStyle,
-            reasoningEffort: active.reasoningEffort
-        )
         do {
-            // Auto-detect the summary style from the transcript, then summarize.
-            // A classifier failure is non-fatal — fall back to a meeting summary.
-            let style = (try? await summarizer.detectStyle(transcript: transcript)) ?? .meeting
-            print(style == .therapy
-                  ? "🧭  Detected a therapy session — writing Practice Notes…"
-                  : "🧭  Detected a meeting — writing summary…")
-            let summary = try await summarizer.summarize(transcript: transcript, style: style)
+            let backend = try await SummaryRoute.backend(config: config)
+            print("🧩  Summarizing via \(backend.label)…")
+            let outcome = try await SummaryPipeline(backend: backend, redaction: config.redactionEnabled)
+                .run(transcript: transcript)
+            print(outcome.style == .therapy
+                  ? "🧭  Detected a therapy session — wrote Practice Notes."
+                  : "🧭  Detected a meeting — wrote a summary.")
+            if outcome.redactedValues > 0 {
+                print("🔒  \(outcome.redactedValues) formatted values were kept out of the request. Spoken names aren't caught.")
+            }
 
             let totalWidth = 50
             let labelPart  = "──── summary "
             let fill = String(repeating: "─", count: max(0, totalWidth - labelPart.count))
             print("\n" + labelPart + fill)
-            print(renderMarkdown(summary.trimmingCharacters(in: .whitespacesAndNewlines)))
+            print(renderMarkdown(outcome.report.trimmingCharacters(in: .whitespacesAndNewlines)))
             print(String(repeating: "─", count: totalWidth))
 
             let mdURL = URL(fileURLWithPath: sourcePath)
                 .deletingPathExtension()
                 .appendingPathExtension("md")
-            try (summary + "\n").write(to: mdURL, atomically: true, encoding: .utf8)
+            try (outcome.report + "\n").write(to: mdURL, atomically: true, encoding: .utf8)
             print("   md:   \(mdURL.path)")
         } catch {
-            print("❌  Summarization failed: \(error.localizedDescription)")
+            print("❌  Summarization failed: \(error.localizedDescription)\n   Transcript is still on disk.")
         }
+    }
+
+    /// The route in a few words, for the header and Settings.
+    private var routeDescription: String {
+        switch config.llmRoute {
+        case .subscription: return "\(config.primaryCLI.label) CLI first"
+        case .apiProfile:
+            let active = config.activeLLMProfile
+            return "API · \(active.displayName) / \(active.model)"
+        }
+    }
+
+    /// Cycles: Claude first → Codex first → API profile.
+    private func cycleRoute() {
+        switch (config.llmRoute, config.primaryCLI) {
+        case (.subscription, .claude): config.primaryCLI = .codex
+        case (.subscription, .codex): config.llmRoute = .apiProfile
+        case (.apiProfile, _):
+            config.llmRoute = .subscription
+            config.primaryCLI = .claude
+        }
+        persistConfig()
+    }
+
+    /// Model names change, so they're plain text. Enter keeps the current one.
+    private func promptTierModels() {
+        func ask(_ kp: WritableKeyPath<Config, CLITierModels>, _ name: String) {
+            for (tier, field) in [("cheap", \CLITierModels.cheap), ("normal", \CLITierModels.normal), ("frontier", \CLITierModels.frontier)] as [(String, WritableKeyPath<CLITierModels, String>)] {
+                let current = config[keyPath: kp][keyPath: field]
+                guard let v = askLine("\(name) \(tier) model [\(current)]"), !v.isEmpty else { continue }
+                guard CLIArguments.isSafeModelName(v) else {
+                    print("That isn't a valid model name; keeping \(current).")
+                    continue
+                }
+                config[keyPath: kp][keyPath: field] = v
+            }
+        }
+        ask(\.claudeModels, "Claude")
+        ask(\.codexModels, "Codex")
+        persistConfig()
     }
 
     // MARK: - Settings
@@ -289,7 +309,7 @@ final class Shell {
         // index) so separators can be inserted without re-numbering anything.
         func buildItems() -> [MenuItem] {
             let c = config
-            let active = c.activeLLMProfile
+            let ledger = UsageLedger()
             let aecDesc = c.micEnabled
                 ? (c.aecEnabled ? "on" : "off")
                 : "n/a — mic off"
@@ -304,7 +324,13 @@ final class Shell {
                 MenuItem(key: "4", label: "Auto-transcribe         [\(c.autoTranscribe ? "on" : "off")]"),
                 .separator("── LLM (summarization) ──────────────"),
                 MenuItem(key: "5", label: "Auto-summarize          [\(c.autoSummarize ? "on" : "off")]"),
-                MenuItem(key: "6", label: "LLM configurations      [\(active.displayName) · \(active.model)]"),
+                MenuItem(key: "c", label: "LLM route               [\(routeDescription)]"),
+                MenuItem(key: "t", label: "CLI tier models         [\(c.claudeModels.normal) · \(c.codexModels.normal)]"),
+                MenuItem(key: "l", label: "Daily CLI call cap      [\(c.dailyCLICallCap) per CLI]"),
+                MenuItem(key: "x", label: "Redaction               [\(c.redactionEnabled ? "on" : "off")]"),
+                MenuItem(key: "6", label: "API configurations      [\(c.llmProfiles.count) saved]"),
+                .separator("   \(ledger.summaryLine(.claude, cap: c.dailyCLICallCap))"),
+                .separator("   \(ledger.summaryLine(.codex, cap: c.dailyCLICallCap))"),
                 .separator("── Audio ────────────────────────────"),
                 MenuItem(key: "a", label: "AEC (echo cancel)       [\(aecDesc)]"),
                 MenuItem(key: "m", label: "Mic capture             [\(c.micEnabled ? "on" : "off")]"),
@@ -324,6 +350,10 @@ final class Shell {
             case "4": toggle(\.autoTranscribe, label: "Auto-transcribe")
             case "5": toggle(\.autoSummarize,  label: "Auto-summarize")
             case "6": llmConfigsFlow()
+            case "c": cycleRoute()
+            case "t": promptTierModels()
+            case "l": promptInt(\.dailyCLICallCap, label: "daily calls per CLI", min: 1, max: 10_000)
+            case "x": toggle(\.redactionEnabled, label: "Redaction")
             case "a":
                 if config.micEnabled {
                     toggle(\.aecEnabled, label: "AEC")
@@ -356,11 +386,11 @@ final class Shell {
             items.append(.separator("──────────────────────────────"))
             items.append(MenuItem(key: "n", label: "New configuration  (preset or custom)"))
             items.append(MenuItem(key: "e", label: "Edit a configuration"))
-            items.append(MenuItem(key: "d", label: "Delete a configuration", enabled: config.llmProfiles.count > 1))
+            items.append(MenuItem(key: "d", label: "Delete a configuration", enabled: !config.llmProfiles.isEmpty))
             return items
         }
 
-        Menu.run(title: "\nLLM configurations\n", items: buildItems, allowBack: true) { i in
+        Menu.run(title: "\nAPI configurations (used on the API route, or when no CLI is ready)\n", items: buildItems, allowBack: true) { i in
             let profileCount = config.llmProfiles.count
             if i < profileCount {
                 config.selectedLLMProfileID = config.llmProfiles[i].id
@@ -492,7 +522,7 @@ final class Shell {
                 if config.llmProfiles[idx].supportsReasoning {
                     promptProfileReasoning(profileID: profileID)
                 } else {
-                    print("This endpoint has no reasoning format — set \"Reasoning format\" to enable it, or pick a provider that has one (e.g. Qianfan / Kimi, OpenAI, Anthropic).")
+                    print("This endpoint has no reasoning format — set \"Reasoning format\" to enable it, or pick a provider that has one (e.g. DeepSeek, OpenAI, Anthropic).")
                 }
             case "f": promptProfileReasoningFormat(profileID: profileID)
             case "l": promptProfileApiKey(profileID: profileID)
@@ -503,14 +533,10 @@ final class Shell {
     }
 
     private func deleteProfile(_ profileID: String) {
-        guard config.llmProfiles.count > 1 else {
-            print("⚠  Can't delete the last configuration.")
-            return
-        }
         guard let idx = config.llmProfiles.firstIndex(where: { $0.id == profileID }) else { return }
         let removed = config.llmProfiles.remove(at: idx)
         if config.selectedLLMProfileID == removed.id {
-            config.selectedLLMProfileID = config.llmProfiles[0].id
+            config.selectedLLMProfileID = config.llmProfiles.first?.id ?? ""
         }
         APIKeyStore.delete(profileID: removed.id)
         persistConfig()
@@ -535,7 +561,7 @@ final class Shell {
     }
 
     /// Pick the unified reasoning depth (off/low/medium/high). The active provider
-    /// maps the level to its own param (budget tokens for Kimi, effort otherwise).
+    /// maps the level to its own param (budget tokens for `.thinking`, effort otherwise).
     private func promptProfileReasoning(profileID: String) {
         guard let idx = config.llmProfiles.firstIndex(where: { $0.id == profileID }) else { return }
         let levels = ReasoningEffort.allCases
@@ -563,7 +589,7 @@ final class Shell {
         let detected = LLMProvider.reasoningStyle(baseURL: p.baseURL, providerID: p.providerID)
         let options: [(label: String, value: ReasoningStyle?)] = [
             ("auto (detected: \(detected.label))", nil),
-            (ReasoningStyle.kimi.label, .kimi),
+            (ReasoningStyle.thinking.label, .thinking),
             (ReasoningStyle.openai.label, .openai),
             (ReasoningStyle.anthropic.label, .anthropic),
             ("none (disable)", ReasoningStyle.none),
@@ -584,8 +610,7 @@ final class Shell {
     }
 
     private func promptProfileApiKey(profileID: String) {
-        let env = ProcessInfo.processInfo.environment
-        if env["LLM_API_KEY"] != nil || env["QIANFAN_API_KEY"] != nil {
+        if ProcessInfo.processInfo.environment["LLM_API_KEY"] != nil {
             print("ℹ  An env-var key is set in this shell; it takes precedence over the stored file while present.")
         }
         let stored = APIKeyStore.isStored(profileID: profileID)

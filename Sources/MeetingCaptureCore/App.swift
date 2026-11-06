@@ -38,6 +38,25 @@ public enum MeetingCaptureApp {
             }
         }
 
+        // Not in --help: support for checks, not for regular use.
+        if let path = args.option("--usage-ledger-stress") {
+            UsageLedgerStress.run(path: path, calls: args.option("--calls").flatMap(Int.init) ?? 100)
+            exit(0)
+        }
+        if args.flag("--live-check") {
+            Task { exit(await LiveCheck.run(config: Config.load()) ? 0 : 1) }
+            keepRunLoopAlive()
+        }
+        if let fixtures = args.option("--quality-compare-redaction") {
+            let out = args.option("--out") ?? "dev/tmp/quality.md"
+            let primary = args.option("--llm-cli").flatMap(CLIKind.init(rawValue:))
+            Task {
+                exit(await QualityCompare.run(
+                    fixturesDirectory: fixtures, outputPath: out, config: Config.load(), primary: primary) ? 0 : 1)
+            }
+            keepRunLoopAlive()
+        }
+
         if args.flag("--help") || args.flag("-h") {
             print("""
             MeetingCaptureCLI  —  capture, transcribe, summarize meetings, all local
@@ -60,15 +79,17 @@ public enum MeetingCaptureApp {
               --language <code>     Pin language (en, zh, …)           (multilingual models auto-detect if omitted)
               --model-folder <dir>  Load the Whisper model from this folder, no download
 
-            Summarization options (OpenAI-compatible /chat/completions):
+            Summarization options (subscription CLIs by default; API flags pick an API profile):
               --summarize           Generate an LLM summary after transcription
               --summarize-only P    Skip everything; summarize existing .txt at path P
               --summary-style <s>   Force style: meeting | therapy      (default: auto-detected per transcript)
               --therapy             Alias for --summary-style therapy
-              --llm-profile <name>  Saved LLM configuration to use   (default: the active one from Settings)
+              --llm-cli <name>      CLI to try first: claude | codex  (default: from Settings)
+              --no-redact           Send formatted values as they are (default: replaced with tokens)
+              --llm-profile <name>  Saved API configuration to use
               --llm-model <name>    Override the chosen config's model
               --llm-base-url <url>  Override the chosen config's base URL
-              --llm-api-key <key>   Override the chosen config's API key (also: $LLM_API_KEY, legacy $QIANFAN_API_KEY)
+              --llm-api-key <key>   Override the chosen config's API key (also: $LLM_API_KEY)
 
               Manage saved configurations (add/edit/delete, each with its own provider,
               model, base URL, and API key) and run a connectivity check in the
@@ -119,9 +140,13 @@ public enum MeetingCaptureApp {
         let llmProfile     = llmProfileFlag.flatMap { name in
             persistedConfig.llmProfiles.first { $0.displayName.caseInsensitiveCompare(name) == .orderedSame }
         } ?? persistedConfig.activeLLMProfile
-        let llmModel       = args.option("--llm-model") ?? llmProfile.model
-        let llmBaseURL     = args.option("--llm-base-url") ?? llmProfile.baseURL
-        let llmApiKeyFlag  = args.option("--llm-api-key")
+        let llmCLI         = args.option("--llm-cli").flatMap(CLIKind.init(rawValue:))
+        let redaction      = persistedConfig.redactionEnabled && !args.flag("--no-redact")
+        let apiOverrides   = SummaryRoute.APIOverrides(
+            profile: llmProfileFlag == nil ? nil : llmProfile,
+            model: args.option("--llm-model"),
+            baseURL: args.option("--llm-base-url"),
+            apiKeyFlag: args.option("--llm-api-key"))
         // Summary style is auto-detected per transcript; these flags force it (scripting
         // escape hatch). `--therapy` is shorthand for `--summary-style therapy`.
         let summaryStyleFlag: SummaryStyle? = {
@@ -150,60 +175,31 @@ public enum MeetingCaptureApp {
         """)
 
 
-        /// Run the LLM summarizer on `transcript`, print the markdown, and write it
-        /// to a sibling `.md` next to `sourcePath` (which is typically the .wav or
-        /// .txt that produced the transcript).
+        /// Summarize `transcript`, print it, and write it to a sibling `.md` next
+        /// to `sourcePath` (typically the .wav or .txt that produced the transcript).
         func runSummarization(transcript: String, sourcePath: String) async throws {
-            guard Config.resolveApiKey(profileID: llmProfile.id, flag: llmApiKeyFlag) != nil else {
-                throw NSError(domain: "Summarize", code: -1, userInfo: [
-                    NSLocalizedDescriptionKey:
-                        "No LLM API key for \"\(llmProfile.displayName)\". Store one via the interactive shell (Settings → LLM configurations), export LLM_API_KEY, or pass --llm-api-key <key>."
-                ])
+            let backend = try await SummaryRoute.backend(
+                config: persistedConfig, primary: llmCLI, overrides: apiOverrides)
+            print("🧩  Summarizing via \(backend.label)…")
+            let outcome = try await SummaryPipeline(backend: backend, redaction: redaction)
+                .run(transcript: transcript, forcedStyle: summaryStyleFlag)
+            print(outcome.style == .therapy
+                  ? "🧭  Therapy session — wrote Practice Notes."
+                  : "🧭  Meeting — wrote a summary.")
+            if outcome.redactedValues > 0 {
+                print("🔒  \(outcome.redactedValues) formatted values were kept out of the request. Spoken names aren't caught.")
             }
-            guard let baseURL = URL(string: llmBaseURL) else {
-                throw NSError(domain: "Summarize", code: -2, userInfo: [
-                    NSLocalizedDescriptionKey: "Invalid --llm-base-url: \(llmBaseURL)"
-                ])
-            }
-
-            // Reasoning is provider-specific; mirror the shell and let the resolved style
-            // + unified effort drive whatever wire shape (if any) the provider uses. A
-            // manual per-profile override wins, else auto-detect from the effective base
-            // URL (which `--llm-base-url` may have overridden).
-            let reasoningStyle = llmProfile.reasoningStyleOverride
-                ?? LLMProvider.reasoningStyle(baseURL: llmBaseURL, providerID: llmProfile.providerID)
-            let summarizer = Summarizer(
-                baseURL: baseURL,
-                apiKeyProvider: { Config.resolveApiKey(profileID: llmProfile.id, flag: llmApiKeyFlag) },
-                model: llmModel,
-                apiStyle: LLMProvider.apiStyle(baseURL: llmBaseURL, providerID: llmProfile.providerID),
-                reasoningStyle: reasoningStyle,
-                reasoningEffort: llmProfile.reasoningEffort
-            )
-            // A forced style (flag) wins; otherwise auto-detect, falling back to a
-            // meeting summary if the classifier call fails.
-            let style: SummaryStyle
-            if let forced = summaryStyleFlag {
-                style = forced
-            } else {
-                style = (try? await summarizer.detectStyle(transcript: transcript)) ?? .meeting
-            }
-            print(style == .therapy
-                  ? "🧭  Therapy session — writing Practice Notes…"
-                  : "🧭  Meeting — writing summary…")
-            let summary = try await summarizer.summarize(transcript: transcript, style: style)
 
             print("\n──── summary ─────────────────────────────")
-            print(summary.trimmingCharacters(in: .whitespacesAndNewlines))
+            print(outcome.report.trimmingCharacters(in: .whitespacesAndNewlines))
             print("──────────────────────────────────────────")
 
             let mdURL = URL(fileURLWithPath: sourcePath)
                 .deletingPathExtension()
                 .appendingPathExtension("md")
-            try (summary + "\n").write(to: mdURL, atomically: true, encoding: .utf8)
+            try (outcome.report + "\n").write(to: mdURL, atomically: true, encoding: .utf8)
             print("📝  Summary saved: \(mdURL.path)")
         }
-
 
         Task {
             do {

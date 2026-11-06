@@ -8,20 +8,15 @@ import Foundation
 //
 // This is a deliberate trade-off: a plaintext file is less protected than the
 // macOS Keychain, but it avoids Keychain access prompts, is portable, and is
-// the user's explicit choice. Keychain.swift remains as a legacy read path, and
-// `legacyRead()` below reads the pre-multi-profile singular key file, both used
-// only to migrate forward (see Config.resolveApiKey / Config.load).
+// the user's explicit choice.
 enum APIKeyStore {
 
-    static var path: URL {
-        URL(fileURLWithPath: NSHomeDirectory())
-            .appendingPathComponent(".config/MeetingCapture/llm_api_keys.json")
-    }
+    /// Tests point this at a temp file, so they never touch the real keys.
+    static var pathOverride: URL?
 
-    /// Pre-multi-profile location: a single key, no profile scoping.
-    static var legacyPath: URL {
-        URL(fileURLWithPath: NSHomeDirectory())
-            .appendingPathComponent(".config/MeetingCapture/llm_api_key")
+    static var path: URL {
+        pathOverride ?? URL(fileURLWithPath: NSHomeDirectory())
+            .appendingPathComponent(".config/MeetingCapture/llm_api_keys.json")
     }
 
     private static func readAll() -> [String: String] {
@@ -69,23 +64,5 @@ enum APIKeyStore {
 
     static func isStored(profileID: String) -> Bool {
         read(profileID: profileID) != nil
-    }
-
-    // MARK: - Legacy (pre-multi-profile) migration
-
-    /// Reads the old single-key file (~/.config/MeetingCapture/llm_api_key), if any.
-    static func legacyRead() -> String? {
-        guard let data = try? Data(contentsOf: legacyPath),
-              let str = String(data: data, encoding: .utf8) else { return nil }
-        let trimmed = str.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
-    }
-
-    @discardableResult
-    static func legacyDelete() -> Bool {
-        let url = legacyPath
-        guard FileManager.default.fileExists(atPath: url.path) else { return true }
-        do { try FileManager.default.removeItem(at: url); return true }
-        catch { return false }
     }
 }

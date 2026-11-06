@@ -11,23 +11,27 @@ enum LLMAPIStyle: String, Codable {
 
 // How a provider expresses a reasoning/thinking request on the wire. Each shape
 // is genuinely different, so `Summarizer` serializes per style:
-//   .kimi      → `thinking: {type:"enabled", budget_tokens:N}` on the chat body
+//   .thinking  → `thinking: {type:"enabled", budget_tokens:N}` on the chat body
 //   .openai    → `reasoning_effort: "low"|"medium"|"high"` on the chat body
 //   .anthropic → `thinking: {type:"adaptive"}` + `output_config:{effort:…}` on /messages
 //   .none      → provider has no reasoning mode; nothing is sent
-// Raw values are persisted (per-profile override), so keep them stable.
+// Raw values are persisted (per-profile override), so keep them stable. Saved
+// configs may hold the old raw value `kimi`, which reads as `.thinking`.
 enum ReasoningStyle: String, Codable {
-    case none, kimi, openai, anthropic
+    case none, thinking, openai, anthropic
+
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = raw == "kimi" ? .thinking : (ReasoningStyle(rawValue: raw) ?? .none)
+    }
 
     /// Short label for the Settings editor. Names the *wire format*, not a vendor:
-    /// these conventions are shared across providers (e.g. `.kimi` — the
-    /// `thinking` request param + `reasoning_content` response field — is what
-    /// Kimi/Moonshot, DeepSeek and Qianfan all speak). The persisted value is the
-    /// raw case name (`kimi`/`openai`/`anthropic`), so relabeling is display-only.
+    /// `.thinking` is the `thinking` request param + `reasoning_content` response
+    /// field that DeepSeek speaks.
     var label: String {
         switch self {
         case .none:      return "none"
-        case .kimi:      return "thinking (reasoning_content)"
+        case .thinking:  return "thinking (reasoning_content)"
         case .openai:    return "reasoning_effort"
         case .anthropic: return "adaptive thinking"
         }
@@ -35,7 +39,7 @@ enum ReasoningStyle: String, Codable {
 }
 
 // The single, unified "depth" knob the user sets per profile. Each provider maps
-// it to its own parameter (token budget for Kimi, effort level for OpenAI and
+// it to its own parameter (token budget for `.thinking`, effort level for OpenAI and
 // Anthropic). Raw values are persisted; `low`/`medium`/`high` double as the
 // OpenAI/Anthropic effort strings.
 enum ReasoningEffort: String, Codable, CaseIterable {
@@ -43,7 +47,7 @@ enum ReasoningEffort: String, Codable, CaseIterable {
 
     var isOn: Bool { self != .off }
 
-    /// Kimi-style `budget_tokens` for each level (unused when `.off`).
+    /// `.thinking`-style `budget_tokens` for each level (unused when `.off`).
     var budgetTokens: Int {
         switch self {
         case .off:    return 0
@@ -84,9 +88,9 @@ struct LLMProvider: Identifiable {
 
 extension LLMProvider {
     static let catalog: [LLMProvider] = [
-        LLMProvider(id: "qianfan", label: "Qianfan / Kimi",
-                    baseURL: "https://qianfan.baidubce.com/v2/coding",
-                    defaultModel: "kimi-k2.5", reasoningStyle: .kimi),
+        LLMProvider(id: "deepseek", label: "DeepSeek",
+                    baseURL: "https://api.deepseek.com",
+                    defaultModel: "deepseek-v4-flash", reasoningStyle: .thinking),
         LLMProvider(id: "openai", label: "OpenAI",
                     baseURL: "https://api.openai.com/v1",
                     defaultModel: "gpt-4o-mini", reasoningStyle: .openai),
@@ -122,7 +126,7 @@ extension LLMProvider {
     static func reasoningStyle(baseURL: String, providerID: String) -> ReasoningStyle {
         if let host = URL(string: baseURL)?.host?.lowercased() {
             if host.contains("anthropic") { return .anthropic }
-            if host.contains("qianfan") || host.contains("baidubce") { return .kimi }
+            if host.contains("deepseek") { return .thinking }
             if host.contains("openai") { return .openai }
         }
         return reasoningStyle(providerID)
@@ -153,7 +157,7 @@ extension LLMProvider {
 // model/base URL/reasoning settings and, via APIKeyStore, its own API key.
 struct LLMProfile: Codable, Equatable, Identifiable {
     var id: String              // stable, assigned once at creation; keys the API-key store
-    var name: String            // user label, e.g. "Work Kimi", "Company-internal"
+    var name: String            // user label, e.g. "Work DeepSeek", "Company-internal"
     var providerID: String      // preset id (see LLMProvider.catalog) or "custom"
     var model: String
     var baseURL: String
@@ -241,15 +245,23 @@ struct LLMProfile: Codable, Equatable, Identifiable {
         return LLMProvider.byID(providerID)?.label ?? providerID
     }
 
-    /// Seeded once, with a fixed (non-random) id so the default config's
-    /// `llmProfiles` and `selectedLLMProfileID` always agree on a fresh install.
+    /// Stands in when no profile is saved, so callers always get a value. It has
+    /// no key, so it can't start billing by itself. A fresh install has no profiles
+    /// and runs on the subscription CLIs.
     static func defaultProfile() -> LLMProfile {
         LLMProfile(
-            id: "default-qianfan",
-            name: "Qianfan / Kimi",
-            providerID: "qianfan",
-            model: "kimi-k2.5",
-            baseURL: "https://qianfan.baidubce.com/v2/coding"
+            id: "default-deepseek",
+            name: "DeepSeek",
+            providerID: "deepseek",
+            model: "deepseek-v4-flash",
+            baseURL: "https://api.deepseek.com"
         )
+    }
+
+    /// Qianfan and Kimi are removed. A saved profile for them is dropped on load.
+    var isRemovedProvider: Bool {
+        if providerID == "qianfan" { return true }
+        let host = URL(string: baseURL)?.host?.lowercased() ?? ""
+        return host.contains("qianfan") || host.contains("baidubce")
     }
 }
