@@ -17,7 +17,7 @@ For its owner, a professional meeting helper (terminal and macOS app): speaker-l
 |---|---|---|---|---|---|---|---|
 | 1 | Safety gates, fast tests, history rewrite | #1 #2 | `m1-safety-gates` | yes | no | no | done |
 | 2 | Providers and redaction | #3 #4 | `m2-providers` | yes | no | no | done |
-| 2.1 | CI: build, tests, leak scan, lint | #12 | `m2.1-ci` | yes | no | no | todo |
+| 2.1 | CI: build, tests, leak scan, lint | #12 | `m2.1-ci` | yes | no | no | done |
 | 3 | M4A, retention, speakers, bug fixes | #5 #6 | `m3-audio-speakers` | yes | **yes** | short real call | todo |
 | 4 | Scenario summaries and HTML | #7 #8 | `m4-summaries-html` | yes | **yes** | reads a live report | todo |
 | 5 | Six designs, then the app | #9 | `m5-desktop` | yes | no | **picks a design** | todo |
