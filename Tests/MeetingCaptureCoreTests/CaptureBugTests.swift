@@ -134,7 +134,7 @@ final class CaptureBugTests: XCTestCase {
     // MARK: Progress and "Captured" counted paused time
 
     func testPausedAudioIsNotCounted() throws {
-        let writer = try MixingWriter(outputURL: dir.appendingPathComponent("p.wav"))
+        let writer = try TrackWriter(outputURL: dir.appendingPathComponent("p.wav"))
         let format = try XCTUnwrap(
             AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48_000, channels: 2, interleaved: true))
         let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4800))

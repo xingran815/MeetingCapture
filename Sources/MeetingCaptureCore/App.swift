@@ -302,20 +302,22 @@ public enum MeetingCaptureApp {
 
         let transcriber = Transcriber(model: model, language: language, modelFolder: modelFolder)
         try await transcriber.load()
-        let (text, segments) = try await transcriber.transcribe(wavPaths: wavPaths)
+        let pipeline = RecordingPipeline(transcriber: transcriber, detector: SpeakerKitDetector())
+        let result = try await pipeline.transcribe(parts: wavPaths.map { URL(fileURLWithPath: $0) })
+        for note in result.notes { print("⚠  \(note)") }
+        let text = result.formatted
 
         print("\n──── transcript ──────────────────────────")
-        print(text.trimmingCharacters(in: .whitespacesAndNewlines))
+        print(text)
         print("──────────────────────────────────────────")
 
-        // Use the first WAV file's base name (without _partN suffix) for the output
+        // Use the first file's base name (without _partN suffix) for the output
         let firstPath = wavPaths[0]
         let wavURL = URL(fileURLWithPath: firstPath)
         let baseName = RecordingFiles.baseName(of: wavURL.deletingPathExtension().lastPathComponent)
         let dir = wavURL.deletingLastPathComponent()
         let txtURL = dir.appendingPathComponent(baseName).appendingPathExtension("txt")
-        let body = Transcriber.format(segments: segments) + "\n"
-        try body.write(to: txtURL, atomically: true, encoding: .utf8)
+        try (text + "\n").write(to: txtURL, atomically: true, encoding: .utf8)
         print("📄  Transcript saved: \(txtURL.path)")
 
         return text

@@ -15,7 +15,7 @@ import ScreenCaptureKit
 final class AudioCapture: NSObject {
 
     // Set on run(), read on fileWriteQueue
-    private var writer: MixingWriter?
+    private var writer: TrackWriter?
     private var outputURL: URL?
     private var targetDuration: Double = 0
 
@@ -144,14 +144,14 @@ final class AudioCapture: NSObject {
 
         // 6. Create the mixing writer ─────────────────────────────────────────
         print("  creating WAV at \(url.path)…")
-        let writer = try MixingWriter(outputURL: url, targetDurationSeconds: duration)
+        let writer = try TrackWriter(outputURL: url, targetDurationSeconds: duration)
         self.writer = writer
         print("  WAV file created")
 
         // 6b. Optionally start mic capture and route into the writer ──────────
         // When AEC is enabled, mic samples flow through EchoCanceller first;
-        // its onCleanMic callback then feeds MixingWriter. When AEC is off,
-        // MicCapture feeds MixingWriter directly.
+        // its onCleanMic callback then feeds TrackWriter. When AEC is off,
+        // MicCapture feeds TrackWriter directly.
         var micStatus = "disabled"
         var aecStatus = "off"
         var mic: MicCapture?
@@ -318,7 +318,7 @@ final class AudioCapture: NSObject {
 
     // ─── Text ────────────────────────────────────────────────────────────────
 
-    static let formatDescription = "48 kHz · mono · int16"
+    static let formatDescription = "48 kHz · 2-track · int16"
     static let recordingHint = "🔴 Recording…  (Enter to stop, Space+Enter to pause)\n"
 
     /// Capture is scoped to the app, so a call in another app would record nothing.

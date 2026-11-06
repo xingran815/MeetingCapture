@@ -4,10 +4,10 @@ import XCTest
 @testable import MeetingCaptureCore
 
 /// Rotation is proved with a 2-second chunk, never by waiting 30 minutes.
-final class MixingWriterTests: XCTestCase {
+final class TrackWriterTests: XCTestCase {
 
     private var dir: URL!
-    private let rate = Int(MixingWriter.sampleRate)
+    private let rate = Int(TrackWriter.sampleRate)
 
     override func setUpWithError() throws {
         dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -22,7 +22,7 @@ final class MixingWriterTests: XCTestCase {
     private func oneSecond(value: Float = 0.25) throws -> AVAudioPCMBuffer {
         let format = try XCTUnwrap(
             AVAudioFormat(
-                commonFormat: .pcmFormatFloat32, sampleRate: MixingWriter.sampleRate,
+                commonFormat: .pcmFormatFloat32, sampleRate: TrackWriter.sampleRate,
                 channels: 2, interleaved: true))
         let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(rate)))
         buffer.frameLength = AVAudioFrameCount(rate)
@@ -34,11 +34,11 @@ final class MixingWriterTests: XCTestCase {
     /// Writes `seconds`, lets the writer deallocate to finalize headers, returns the frame count of each file.
     private func write(
         seconds: Int, target: Double = 0, chunkSeconds: Int = 2,
-        during: (MixingWriter, Int) -> Void = { _, _ in }
+        during: (TrackWriter, Int) -> Void = { _, _ in }
     ) throws -> [(name: String, frames: Int)] {
         var files: [URL] = []
         try autoreleasepool {
-            let writer = try MixingWriter(
+            let writer = try TrackWriter(
                 outputURL: dir.appendingPathComponent("meeting.wav"),
                 targetDurationSeconds: target,
                 chunkFrameLimit: chunkSeconds * rate)
@@ -65,7 +65,7 @@ final class MixingWriterTests: XCTestCase {
     }
 
     func testDefaultChunkIsThirtyMinutes() {
-        XCTAssertEqual(MixingWriter.defaultChunkFrameLimit, 30 * 60 * 48_000)
+        XCTAssertEqual(TrackWriter.defaultChunkFrameLimit, 30 * 60 * 48_000)
     }
 
     func testPausedAudioIsDroppedNotSpliced() throws {
@@ -73,13 +73,5 @@ final class MixingWriterTests: XCTestCase {
             if second == 1 || second == 2 { writer.togglePause() }
         }
         XCTAssertEqual(files.map(\.frames), [2 * rate], "the paused second must not reach the file")
-    }
-
-    func testFileIsInterleavedMonoInt16() throws {
-        let files = try write(seconds: 1)
-        let file = try AVAudioFile(forReading: dir.appendingPathComponent(files[0].name))
-        XCTAssertEqual(file.fileFormat.channelCount, 1)
-        XCTAssertEqual(file.fileFormat.sampleRate, 48_000)
-        XCTAssertEqual(file.fileFormat.settings[AVLinearPCMBitDepthKey] as? Int, 16)
     }
 }

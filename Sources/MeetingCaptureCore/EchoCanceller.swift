@@ -4,15 +4,15 @@ import Speexdsp
 
 // Real-time acoustic echo canceller wrapping speexdsp's MDF echo canceller.
 //
-// Sits between MicCapture and MixingWriter:
+// Sits between MicCapture and TrackWriter:
 //
-//   SCStream ──► AudioCapture ─► (a) MixingWriter (system channel)
+//   SCStream ──► AudioCapture ─► (a) TrackWriter (system channel)
 //                           └─► (b) EchoCanceller.pushReference
 //
 //   AVAudioEngine ► MicCapture ─► EchoCanceller.pushMic
 //                                          │
 //                                onCleanMic ▼
-//                                   MixingWriter (clean mic)
+//                                   TrackWriter (clean mic)
 //
 // Why software AEC instead of Apple's AVAudioEngine voice-processing? VPIO
 // switches the audio HAL into "voice chat" mode, which ducks output and

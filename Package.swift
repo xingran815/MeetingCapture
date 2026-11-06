@@ -34,6 +34,7 @@ let package = Package(
             name: "MeetingCaptureCore",
             dependencies: [
                 .product(name: "WhisperKit", package: "WhisperKit"),
+                .product(name: "SpeakerKit", package: "WhisperKit"),
                 "Speexdsp",
             ],
             path: "Sources/MeetingCaptureCore"

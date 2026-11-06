@@ -44,10 +44,18 @@ final class Transcriber {
         print(String(format: "   ready in %.1fs", dt))
     }
 
+    struct Word: Equatable {
+        let start: Double
+        let end: Double
+        let text: String
+    }
+
     struct Segment {
         let start: Double
         let end: Double
         let text: String
+        /// Empty if the model gave no word timings.
+        var words: [Word] = []
     }
 
     func transcribe(wavPath: String) async throws -> (text: String, segments: [Segment]) {
@@ -104,6 +112,7 @@ final class Transcriber {
                 language: resolvedLanguage,
                 usePrefillPrompt: true,
                 detectLanguage: resolvedLanguage == nil,
+                wordTimestamps: true,
                 compressionRatioThreshold: nil,
                 logProbThreshold: nil,
                 firstTokenLogProbThreshold: nil,
@@ -113,6 +122,7 @@ final class Transcriber {
             options = DecodingOptions(
                 task: .transcribe,
                 usePrefillPrompt: true,
+                wordTimestamps: true,
                 chunkingStrategy: .vad
             )
         }
@@ -123,7 +133,9 @@ final class Transcriber {
         let text = results.map(\.text).joined(separator: " ")
         let segments: [Segment] = results.flatMap { r in
             r.segments.map {
-                Segment(start: Double($0.start), end: Double($0.end), text: $0.text)
+                Segment(
+                    start: Double($0.start), end: Double($0.end), text: $0.text,
+                    words: ($0.words ?? []).map { Word(start: Double($0.start), end: Double($0.end), text: $0.word) })
             }
         }
 
@@ -195,7 +207,7 @@ final class Transcriber {
     }
 
     /// Strip Whisper special tokens (`<|startoftranscript|>`, `<|12.34|>`, …) from segment text.
-    private static func cleanSegmentText(_ s: String) -> String {
+    static func cleanSegmentText(_ s: String) -> String {
         let stripped = s.replacingOccurrences(
             of: #"<\|[^|]*\|>"#,
             with: "",
