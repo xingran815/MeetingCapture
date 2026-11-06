@@ -36,8 +36,8 @@ case "${1:-}" in
         if [ -n "${CI:-}" ]; then
             brew install shellcheck actionlint || die "installing the lint tools"
         fi
-        printf 'let  probe=1\n' > Sources/MeetingCaptureCore/LintProbe.swift # TEMPORARY: proves the lint gate goes red
         scripts/lint.sh || die "lint"
+        scripts/test-lint.sh || die "lint tests"
         ;;
     deps)
         swift package resolve || die "swift package resolve"

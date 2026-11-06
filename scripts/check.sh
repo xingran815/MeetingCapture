@@ -44,6 +44,11 @@ scripts/test-sweeps-isolation.sh "$ROOT/scripts/test-identity.sh" || die "identi
 scripts/test-identity.sh | tail -1
 [ "${PIPESTATUS[0]}" -eq 0 ] || die "identity tests"
 
+step "lint: each tool catches a seeded mistake"
+scripts/test-lint.sh | tail -1
+[ "${PIPESTATUS[0]}" -eq 0 ] || die "lint tests"
+scripts/test-sweeps-isolation.sh "$ROOT/scripts/test-lint.sh" || die "lint tests left git's environment in place"
+
 step "sweep: everything outgoing"
 scripts/sweep.sh --outgoing HEAD --not --remotes || die "outgoing sweep"
 scripts/sweep.sh --tree || die "tree sweep"

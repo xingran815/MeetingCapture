@@ -1,10 +1,17 @@
 #!/usr/bin/env bash
-# The one lint, used by check.sh and CI. shellcheck and actionlint may be missing
-# on a dev Mac, where they're skipped out loud. On CI a missing tool is a failure.
+# The one lint, used by check.sh, the pre-commit hook and CI. Every tool is
+# required, so a local pass means the same as a CI pass.
 set -uo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT" || exit 2
 failed=0
+
+for tool in shellcheck actionlint; do
+    if ! command -v "$tool" > /dev/null; then
+        echo "lint: FAILED, $tool isn't installed. Run: brew install shellcheck actionlint" >&2
+        failed=1
+    fi
+done
 
 # Sources/Speexdsp is vendored, so it isn't ours to format.
 if ! swift format lint --strict --recursive Package.swift Sources/MeetingCaptureCore Sources/MeetingCaptureCLI Tests; then
@@ -12,25 +19,12 @@ if ! swift format lint --strict --recursive Package.swift Sources/MeetingCapture
     failed=1
 fi
 
-missing() {
-    if [ -n "${CI:-}" ]; then
-        echo "lint: FAILED, $1 isn't installed on CI." >&2
-        failed=1
-    else
-        echo "lint: skipped $1, not installed here. CI runs it."
-    fi
-}
-
 if command -v shellcheck > /dev/null; then
     shellcheck scripts/*.sh .githooks/* || { echo "lint: FAILED, shellcheck." >&2; failed=1; }
-else
-    missing shellcheck
 fi
 
 if command -v actionlint > /dev/null; then
     actionlint || { echo "lint: FAILED, actionlint." >&2; failed=1; }
-else
-    missing actionlint
 fi
 
 scripts/check-workflows.sh --self-test || failed=1
