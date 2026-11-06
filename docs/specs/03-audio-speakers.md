@@ -16,7 +16,7 @@ record 2-track WAV chunks → transcribe + diarize from WAV → encode M4A → v
 - `audioRetentionDays`, default 30, user-changeable (1–3650, or `0` for keep forever) in terminal and desktop.
 - Only audio with a sidecar `<base>.mcmeta.json` is managed, and the new version writes that sidecar. **Old recordings are never auto-deleted** (D-10).
 - Transcripts, summaries and HTML are kept; retention covers audio only.
-- Clean-up runs at launch and after each recording; it prints what it deleted.
+- Clean-up runs at launch and after each recording, on the configured output folder; it prints what it deleted. It deletes only the files a sidecar lists, once that recording has a transcript with words in it (D-44, D-45).
 - Separate command `--audio-cleanup` lists old unmanaged WAVs, then converts or deletes only after confirmation.
 
 ## Speakers

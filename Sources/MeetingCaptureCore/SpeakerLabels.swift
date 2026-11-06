@@ -35,7 +35,9 @@ enum SpeakerLabels {
             if turn.end - turn.start >= minimumTurn {
                 kept.append(turn)
             } else if let last = kept.last {
-                kept[kept.count - 1] = SpeakerTurn(start: last.start, end: turn.end, speaker: last.speaker)
+                // Turns can overlap, so a short one inside a long one mustn't shorten it.
+                kept[kept.count - 1] = SpeakerTurn(
+                    start: last.start, end: max(last.end, turn.end), speaker: last.speaker)
             } else if let next = sorted[(i + 1)...].first(where: { $0.end - $0.start >= minimumTurn }) {
                 // A short turn at the very start goes to the next real speaker.
                 kept.append(SpeakerTurn(start: turn.start, end: turn.end, speaker: next.speaker))
@@ -127,10 +129,21 @@ enum SpeakerLabels {
         return tagged.sorted { ($0.1.start, $0.0) < ($1.1.start, $1.0) }.map(\.1)
     }
 
-    /// Whisper's own word for nothing being said. Anything else in brackets stays,
-    /// such as `[laughter]`, since it may be real.
+    /// A detected speaker's label in a later part of a recording. `Others` means no
+    /// one was detected, so it has nothing to tell apart.
+    static func markPart(_ segment: LabelledSegment, number: Int) -> LabelledSegment {
+        guard segment.speaker != others else { return segment }
+        return LabelledSegment(
+            start: segment.start, end: segment.end, speaker: "\(segment.speaker) (part \(number))", text: segment.text)
+    }
+
+    /// Whisper's own ways of saying nothing was said, including a lone bracket on
+    /// noise. Anything else in brackets stays, such as `[laughter]`, since it may be real.
     static func isSilenceMarker(_ text: String) -> Bool {
-        ["[BLANK_AUDIO]", "(BLANK_AUDIO)"].contains(text.trimmingCharacters(in: .whitespaces).uppercased())
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        guard trimmed.hasPrefix("[") || trimmed.hasPrefix("(") else { return false }
+        let inner = trimmed.trimmingCharacters(in: CharacterSet(charactersIn: "[]() ")).uppercased()
+        return ["", "BLANK_AUDIO", "SILENCE", "NO AUDIO", "NO SPEECH"].contains(inner)
     }
 
     /// `[00:01:12] Speaker 1: text`, one per line.

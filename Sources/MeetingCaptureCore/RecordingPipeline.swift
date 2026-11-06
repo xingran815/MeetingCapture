@@ -55,10 +55,13 @@ struct RecordingPipeline {
     /// Transcribes every part of a recording. A part with a silent track skips it,
     /// which is how a recording with the mic off ends up with no `You` label.
     ///
-    /// Each part's times are offset by the real length of the parts before it, and
-    /// speakers are numbered within the whole recording only as far as a part's
-    /// model allows: `Speaker 1` in part 2 may not be `Speaker 1` in part 1. A
-    /// 30-minute boundary in a long call can therefore swap labels. Unsure how often.
+    /// Each part's times are offset by the real length of the parts before it.
+    ///
+    /// Speakers are detected separately in each part, so whoever talks first in part
+    /// 2 would also be `Speaker 1`, with no link to part 1. Finding from the deep
+    /// review: showing that as one speaker states a guess as fact, and a rename would
+    /// then merge different people. So later parts carry their own labels, such as
+    /// `Speaker 1 (part 2)`, and renaming two to one name is how they're joined.
     func transcribe(parts: [URL]) async throws -> Transcript {
         let work = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
@@ -67,10 +70,16 @@ struct RecordingPipeline {
         var all: [LabelledSegment] = []
         var notes: [String] = []
         var offset = 0.0
-        for part in parts {
+        var detectedSpeakers = false
+        for (index, part) in parts.enumerated() {
             let tracks = try AudioTracks.split(part, into: work)
             var mic: [LabelledSegment] = []
             var system: [LabelledSegment] = []
+            for track in tracks.noiseOnly {
+                notes.append(
+                    "\(part.lastPathComponent): the \(track) track held only quiet, steady noise, so it wasn't "
+                        + "transcribed. The audio is kept, so you can listen to it.")
+            }
             if let url = tracks.mic {
                 mic = SpeakerLabels.labelMic(try await transcriber.transcribeSegments(path: url.path))
             }
@@ -87,6 +96,10 @@ struct RecordingPipeline {
                     }
                 }
                 system = SpeakerLabels.label(segments, turns: turns)
+                detectedSpeakers = detectedSpeakers || !turns.isEmpty
+                if index > 0 {
+                    system = system.map { SpeakerLabels.markPart($0, number: index + 1) }
+                }
             }
             let merged = SpeakerLabels.merge(mic: mic, system: system)
             all += merged.map {
@@ -94,25 +107,43 @@ struct RecordingPipeline {
             }
             offset += RecordingFiles.duration(ofAudioAt: part.path) ?? merged.map(\.end).max() ?? 0
         }
+        if parts.count > 1 && detectedSpeakers {
+            notes.append(
+                "This recording has \(parts.count) parts, and speakers are detected separately in each. "
+                    + "Speaker 1 (part 2) may be the same person as Speaker 1. Give them one name to join them.")
+        }
         return Transcript(segments: all, notes: notes)
     }
 
     /// Encodes each WAV to M4A, keeping any WAV whose M4A can't be proven good.
-    /// Returns one line for each WAV that was kept.
-    static func archive(parts: [URL], encoder: AudioEncoding = AACEncoder()) -> [String] {
-        parts.compactMap { part in
-            guard part.pathExtension.lowercased() == "wav" else { return nil }
-            if case .keptWAV(let reason) = AudioArchive.archive(wav: part, encoder: encoder) {
-                return "Kept \(part.lastPathComponent): \(reason)."
+    /// Returns one line for each WAV that was kept, and the audio files that remain.
+    static func archive(parts: [URL], encoder: AudioEncoding = AACEncoder()) -> (kept: [String], files: [URL]) {
+        var kept: [String] = []
+        var files: [URL] = []
+        for part in parts {
+            guard part.pathExtension.lowercased() == "wav" else {
+                files.append(part)
+                continue
             }
-            return nil
+            switch AudioArchive.archive(wav: part, encoder: encoder) {
+            case .archived(let m4a):
+                files.append(m4a)
+            case .keptWAV(let reason):
+                kept.append("Kept \(part.lastPathComponent): \(reason).")
+                files.append(part)
+            }
         }
+        return (kept, files)
     }
 
     /// Finishes a new recording. If transcription fails, the WAVs stay and the
     /// sidecar still says `recording`, so the next launch offers it again.
+    ///
+    /// Only a transcript with words in it sets `transcribedAt`, which is what lets
+    /// retention delete the audio later (finding from the deep review). A capture
+    /// with no transcript keeps its audio until the user deals with it.
     static func finish(
-        parts: [URL], base: URL, pipeline: RecordingPipeline?, encoder: AudioEncoding = AACEncoder()
+        parts: [URL], base: URL, pipeline: RecordingPipeline?, encoder: AudioEncoding = AACEncoder(), now: Date = Date()
     ) async throws -> Transcript? {
         var transcript: Transcript?
         if let pipeline {
@@ -121,12 +152,17 @@ struct RecordingPipeline {
                 to: base.appendingPathExtension("txt"), atomically: true, encoding: .utf8)
             transcript = result
         }
-        let kept = archive(parts: parts, encoder: encoder)
+        let archived = archive(parts: parts, encoder: encoder)
         let sidecarURL = RecordingSidecar.url(forBase: base)
-        var sidecar = RecordingSidecar.load(at: sidecarURL) ?? RecordingSidecar(createdAt: Date(), state: .recording)
+        var sidecar = RecordingSidecar.load(at: sidecarURL) ?? RecordingSidecar(createdAt: now, state: .recording)
         sidecar.state = .processed
+        sidecar.pid = nil
+        sidecar.audioFiles = archived.files.map(\.lastPathComponent)
+        if let transcript, !transcript.formatted.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            sidecar.transcribedAt = now
+        }
         try sidecar.save(to: sidecarURL)
-        for line in kept { print("⚠  \(line)") }
+        for line in archived.kept { print("⚠  \(line)") }
         return transcript
     }
 }

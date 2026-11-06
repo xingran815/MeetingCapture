@@ -92,6 +92,7 @@ final class CaptureBugTests: XCTestCase {
 
     func testStoppingTwiceThenFiringTheTimerGivesOneStop() {
         let stopper = RecordingStopper()
+        XCTAssertFalse(stopper.arm())
         var stops = 0
         func stop() { if stopper.claimStop() { stops += 1 } }
 
@@ -107,6 +108,7 @@ final class CaptureBugTests: XCTestCase {
 
     func testTheTimerStopsARecordingNobodyStopped() {
         let stopper = RecordingStopper()
+        XCTAssertFalse(stopper.arm())
         let fired = expectation(description: "timer fired")
         stopper.startTimer(after: 0.01) {
             XCTAssertTrue(stopper.claimStop())

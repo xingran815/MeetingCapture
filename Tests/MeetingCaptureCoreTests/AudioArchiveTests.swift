@@ -154,7 +154,12 @@ final class AudioArchiveTests: XCTestCase {
             XCTAssertTrue(
                 FileManager.default.createFile(atPath: dir.appendingPathComponent(name).path, contents: Data()))
         }
-        let sidecar = RecordingSidecar(createdAt: now.addingTimeInterval(-ageDays * 86_400), state: state)
+        let date = now.addingTimeInterval(-ageDays * 86_400)
+        var sidecar = RecordingSidecar(createdAt: date, state: state)
+        if state == .processed {
+            sidecar.transcribedAt = date
+            sidecar.audioFiles = ["\(base).m4a", "\(base)_part2.m4a"]
+        }
         try sidecar.save(to: RecordingSidecar.url(forBase: dir.appendingPathComponent(base)))
     }
 

@@ -213,12 +213,23 @@ final class AudioCapture: NSObject {
                     try await self.stream!.startCapture()
                     self.captureStart = Date()
                     print(Self.recordingHint)
+                    // A stop that came while starting is honoured now the stream can stop.
+                    if self.stopper.arm() {
+                        self.stopRecording(reason: .timerExpired)
+                        return
+                    }
                     // Auto-stop after requested duration
                     self.stopper.startTimer(after: duration) {
                         self.stopRecording(reason: .timerExpired)
                     }
                 } catch {
+                    _ = self.stopper.arm()
                     if self.stopper.claimStop() {
+                        self.micCapture?.stop()
+                        self.micCapture = nil
+                        self.echo = nil
+                        _ = self.writer?.finish()
+                        self.writer = nil
                         self.stopCont = nil
                         cont.resume(throwing: error)
                     }

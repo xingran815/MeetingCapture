@@ -52,26 +52,58 @@ enum AudioArchive {
         guard size > 0 else { return "the M4A is empty" }
         guard let original = RecordingFiles.duration(ofAudioAt: wav.path) else { return "the WAV couldn't be read" }
         guard let encoded = RecordingFiles.duration(ofAudioAt: m4a.path) else { return "the M4A couldn't be read" }
+        guard original > 0 else { return "the WAV's header says it holds no audio" }
+        guard !headerUndercounts(wav) else { return "the WAV holds more audio than its header says" }
         guard abs(original - encoded) <= durationTolerance else {
             return String(format: "the M4A is %.1f s long but the WAV is %.1f s", encoded, original)
         }
         return nil
     }
 
+    /// More than a header's worth of bytes beyond what the WAV declares.
+    private static let headerSlack: Int64 = 64 * 1024
+
+    /// Finding from the deep review: the length check compares against the header, so
+    /// a crashed WAV that declares no audio matched an empty M4A and was deleted. The
+    /// size on disk is the one figure a crash can't have left stale.
+    private static func headerUndercounts(_ wav: URL) -> Bool {
+        guard let file = try? AVAudioFile(forReading: wav),
+            let size = (try? FileManager.default.attributesOfItem(atPath: wav.path))?[.size] as? Int
+        else { return true }
+        let bytesPerFrame = Int64(file.fileFormat.streamDescription.pointee.mBytesPerFrame)
+        guard bytesPerFrame > 0 else { return false }
+        return Int64(size) > file.length * bytesPerFrame + headerSlack
+    }
+
+    /// The M4A is built under a temporary name and only moved into place once proven,
+    /// so a failure can't touch a file already called `<base>.m4a`, and neither can a
+    /// success: an existing one is left alone and the WAV stays.
     static func archive(wav: URL, encoder: AudioEncoding = AACEncoder()) -> Outcome {
+        let files = FileManager.default
         let m4a = wav.deletingPathExtension().appendingPathExtension("m4a")
+        guard !files.fileExists(atPath: m4a.path) else {
+            return .keptWAV(reason: "\(m4a.lastPathComponent) already exists, so it wasn't replaced")
+        }
+        // A crashed WAV reads as empty until this runs. If it can't run, the proof refuses it.
+        _ = try? WAVRepair.repairHeader(at: wav)
+
+        let temporary = wav.deletingLastPathComponent().appendingPathComponent(".\(UUID().uuidString).m4a")
+        defer { try? files.removeItem(at: temporary) }
         do {
-            try encoder.encode(wav: wav, to: m4a)
+            try encoder.encode(wav: wav, to: temporary)
         } catch {
-            try? FileManager.default.removeItem(at: m4a)
             return .keptWAV(reason: error.localizedDescription)
         }
-        if let problem = problem(withM4A: m4a, comparedTo: wav) {
-            try? FileManager.default.removeItem(at: m4a)
+        if let problem = problem(withM4A: temporary, comparedTo: wav) {
             return .keptWAV(reason: problem)
         }
         do {
-            try FileManager.default.removeItem(at: wav)
+            try files.moveItem(at: temporary, to: m4a)
+        } catch {
+            return .keptWAV(reason: error.localizedDescription)
+        }
+        do {
+            try files.removeItem(at: wav)
         } catch {
             // Both files exist, which loses nothing.
             return .keptWAV(reason: "the M4A is fine, but the WAV couldn't be deleted: \(error.localizedDescription)")
@@ -87,10 +119,31 @@ enum AudioTracks {
         /// Nil if the file has no mic track, or the track is silent.
         let mic: URL?
         let system: URL?
+        /// Tracks left out for holding only steady, quiet noise, by name.
+        var noiseOnly: [String] = []
     }
 
     /// Below this peak, a track counts as silent: an unconnected mic writes zeros.
     static let silencePeak: Float = 0.001
+
+    /// Finding from the deep review: Whisper turns steady room noise into invented
+    /// speech, in an invented language, labelled as a person. So a track that stays
+    /// quiet and steady for a whole part isn't transcribed. Both conditions must hold,
+    /// because dropping real speech is worse than a line of nonsense.
+    ///
+    /// These numbers come from invented white noise and `say` speech, not a real room.
+    /// The 👤 real call is the first test of them, and they may need changing.
+    static let quietLevel: Float = 0.005
+    static let steadyRatio: Float = 2
+    /// Fewer one-second windows than this can't show whether a track is steady.
+    static let fewestWindows = 5
+
+    /// `levels` holds the RMS level of each second of a track.
+    static func isSteadyQuietNoise(levels: [Float]) -> Bool {
+        guard levels.count >= fewestWindows, let loudest = levels.max() else { return false }
+        let median = levels.sorted()[levels.count / 2]
+        return loudest < quietLevel && loudest < median * steadyRatio
+    }
 
     /// Channel 1 is the mic and channel 2 is system audio. A one-channel file is an
     /// older mix, which can't be told apart, so all of it counts as system audio.
@@ -121,6 +174,7 @@ enum AudioTracks {
         let micURL = dir.appendingPathComponent(name + ".mic.wav")
         let systemURL = dir.appendingPathComponent(name + ".system.wav")
         var peaks: [Float] = [0, 0]
+        var levels: [[Float]] = [[], []]
         do {
             let outputs = [
                 try AVAudioFile(
@@ -142,22 +196,35 @@ enum AudioTracks {
                 for channel in 0..<2 {
                     let src = buffer.floatChannelData![channel]
                     let dst = out.floatChannelData![0]
+                    var energy: Float = 0
                     for f in 0..<frames {
                         dst[f] = src[f]
                         peaks[channel] = max(peaks[channel], abs(src[f]))
+                        energy += src[f] * src[f]
                     }
+                    // The last read may be short, and a short window says little.
+                    if frames == Int(capacity) { levels[channel].append((energy / Float(frames)).squareRoot()) }
                     try outputs[channel].write(from: out)
                 }
             }
         }
+        let noise = levels.map(isSteadyQuietNoise(levels:))
         return Split(
-            mic: peaks[0] >= silencePeak ? micURL : nil,
-            system: peaks[1] >= silencePeak ? systemURL : nil)
+            mic: peaks[0] >= silencePeak && !noise[0] ? micURL : nil,
+            system: peaks[1] >= silencePeak && !noise[1] ? systemURL : nil,
+            noiseOnly: (noise[0] && peaks[0] >= silencePeak ? ["mic"] : [])
+                + (noise[1] && peaks[1] >= silencePeak ? ["system audio"] : []))
     }
 }
 
 /// Only for scripts/e2e.sh: a two-track WAV from two mono files, through the real writer.
 enum AudioFixtures {
+    /// `--two-track-*` and `--finish-recording` overwrite and delete files by path,
+    /// so they do nothing unless a script asks for them on purpose.
+    static func scriptFlagsEnabled(environment: [String: String] = ProcessInfo.processInfo.environment) -> Bool {
+        environment["MEETINGCAPTURE_E2E"] == "1"
+    }
+
     static func writeTwoTrack(mic: URL, system: URL, systemDelay: Double, to out: URL) throws {
         let rate = TrackWriter.sampleRate
         let micSamples = try samples(of: mic)

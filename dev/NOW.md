@@ -1,7 +1,7 @@
 # Now
 Updated: 2026-11-06 · milestone 3 · issues #5, #6
 
-**Next step:** reviews run alongside CI on the M3 PR; fix findings in that PR. Then the 👤 check: the user records one short real call on the new build, and says whether it sounds right and labels correctly.
+**Next step:** review findings are fixed and committed on the branch. A Sonnet agent is adding local E2E cases and an Opus agent is auditing all tests (D-49). Then push, re-check the changed lines alongside CI. Then the 👤 check: the user records one short real call on the new build, and says whether it sounds right and labels correctly.
 **How to check:** `scripts/check.sh` passes; CI green on the exact commit; verifier, deep review and `/security-review` pass; the user's yes.
 
 Done since last save:

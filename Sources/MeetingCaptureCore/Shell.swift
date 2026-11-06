@@ -105,7 +105,7 @@ final class Shell {
         let wavURL = base.appendingPathExtension("wav")
         do {
             // Written first, so a crash leaves something the next launch can find.
-            try RecordingSidecar(createdAt: Date(), state: .recording).save(to: RecordingSidecar.url(forBase: base))
+            try RecordingSidecar.started().save(to: RecordingSidecar.url(forBase: base))
         } catch {
             print("❌  Couldn't prepare the recording: \(error.localizedDescription)")
             return
@@ -214,7 +214,8 @@ final class Shell {
                 continue
             }
             for part in parts { _ = try? WAVRepair.repairHeader(at: part) }
-            await finishRecording(parts: parts, base: first.deletingPathExtension())
+            let name = RecordingFiles.baseName(of: first.deletingPathExtension().lastPathComponent)
+            await finishRecording(parts: parts, base: first.deletingLastPathComponent().appendingPathComponent(name))
         }
     }
 

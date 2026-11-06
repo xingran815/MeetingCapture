@@ -14,6 +14,19 @@ struct RecordingSidecar: Codable, Equatable {
     var state: State
     /// Label as first assigned, such as "Speaker 1", to the name the user chose.
     var speakerNames: [String: String] = [:]
+    /// The process writing this recording, so another one doesn't take it for a crash.
+    var pid: Int32?
+    /// When a transcript with words in it was saved. Retention counts from here, and
+    /// audio without it is never deleted, because the audio would be all there is.
+    var transcribedAt: Date?
+    /// Exactly the audio files this recording ended with. Retention deletes these and
+    /// nothing else, so a similar name can't bring another recording's files with it.
+    var audioFiles: [String]?
+
+    /// The sidecar for a recording this process is about to start.
+    static func started(now: Date = Date()) -> RecordingSidecar {
+        RecordingSidecar(createdAt: now, state: .recording, pid: getpid())
+    }
 
     static func url(forBase base: URL) -> URL {
         base.appendingPathExtension("mcmeta.json")
@@ -47,8 +60,9 @@ enum AudioRetention {
     /// Returns what it deleted. Transcripts, summaries and reports stay, and so does
     /// the sidecar, because it still holds the speaker names.
     ///
-    /// A sidecar that can't be read means the age is unknown, so that audio stays.
-    /// So does a recording still marked `recording`: it hasn't been transcribed.
+    /// Audio stays if the sidecar can't be read, because the age is unknown. It also
+    /// stays if the recording has no transcript with words in it, which covers one
+    /// still marked `recording` and one captured with transcription off.
     @discardableResult
     static func clean(in dir: URL, days: Int, now: Date) -> [URL] {
         guard days > 0 else { return [] }
@@ -56,12 +70,14 @@ enum AudioRetention {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
         var deleted: [URL] = []
         for name in names where name.hasSuffix(sidecarSuffix) {
-            let sidecarURL = dir.appendingPathComponent(name)
-            guard let sidecar = RecordingSidecar.load(at: sidecarURL),
-                sidecar.state == .processed, sidecar.createdAt < limit
+            guard let sidecar = RecordingSidecar.load(at: dir.appendingPathComponent(name)),
+                sidecar.state == .processed,
+                let transcribedAt = sidecar.transcribedAt, transcribedAt < limit,
+                let files = sidecar.audioFiles
             else { continue }
-            let base = String(name.dropLast(sidecarSuffix.count))
-            for file in audioFiles(forBase: base, among: names) {
+            // Names come from the sidecar, so each must be a real entry in this folder.
+            // That also rules out a path pointing anywhere else.
+            for file in files where names.contains(file) && isAudio(file) {
                 let url = dir.appendingPathComponent(file)
                 if (try? FileManager.default.removeItem(at: url)) != nil { deleted.append(url) }
             }
@@ -69,36 +85,58 @@ enum AudioRetention {
         return deleted.sorted { $0.path < $1.path }
     }
 
-    /// WAVs with no sidecar, which only `--audio-cleanup` may touch, after asking.
+    /// WAVs that belong to no recording made by this version, which only
+    /// `--audio-cleanup` may touch, after asking.
     static func unmanagedWAVs(in dir: URL) -> [URL] {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
-        let bases = Set(names.filter { $0.hasSuffix(sidecarSuffix) }.map { String($0.dropLast(sidecarSuffix.count)) })
+        let sidecars = names.filter { $0.hasSuffix(sidecarSuffix) }.map { name in
+            (
+                base: String(name.dropLast(sidecarSuffix.count)),
+                files: RecordingSidecar.load(at: dir.appendingPathComponent(name))?.audioFiles
+            )
+        }
         return
             names
             .filter { name in
                 guard (name as NSString).pathExtension.lowercased() == "wav" else { return false }
                 let stem = (name as NSString).deletingPathExtension
-                return !bases.contains(RecordingFiles.baseName(of: stem))
+                return !sidecars.contains { sidecar in
+                    if sidecar.base == stem { return true }
+                    // No list yet means it's unfinished or unreadable, so any of its parts count.
+                    guard let files = sidecar.files else { return RecordingFiles.baseName(of: stem) == sidecar.base }
+                    return files.contains(name)
+                }
             }
             .sorted()
             .map { dir.appendingPathComponent($0) }
     }
 
-    /// Recordings a crash left unfinished: the sidecar still says `recording`.
-    static func unfinished(in dir: URL) -> [URL] {
+    /// Whether a process is alive. `EPERM` still means it exists.
+    static func isRunning(pid: Int32) -> Bool {
+        kill(pid, 0) == 0 || errno == EPERM
+    }
+
+    /// Recordings a crash left unfinished: the sidecar still says `recording` and the
+    /// process that wrote it is gone. Returns each one's first remaining part, which
+    /// is an M4A if a crash came partway through archiving.
+    ///
+    /// A process id can be reused, in which case the offer waits until that process
+    /// ends. That delays it and loses nothing.
+    static func unfinished(in dir: URL, isRunning: (Int32) -> Bool = isRunning(pid:)) -> [URL] {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
         return names.filter { $0.hasSuffix(sidecarSuffix) }.sorted().compactMap { name in
-            guard RecordingSidecar.load(at: dir.appendingPathComponent(name))?.state == .recording else { return nil }
+            guard let sidecar = RecordingSidecar.load(at: dir.appendingPathComponent(name)),
+                sidecar.state == .recording
+            else { return nil }
+            if let pid = sidecar.pid, isRunning(pid) { return nil }
             let base = String(name.dropLast(sidecarSuffix.count))
-            let first = base + ".wav"
-            return names.contains(first) ? dir.appendingPathComponent(first) : nil
+            let wanted = dir.appendingPathComponent(base + ".wav").path
+            let first = RecordingFiles.allParts(of: wanted)[0]
+            return FileManager.default.fileExists(atPath: first) ? URL(fileURLWithPath: first) : nil
         }
     }
 
-    private static func audioFiles(forBase base: String, among names: [String]) -> [String] {
-        names.filter { name in
-            guard audioExtensions.contains((name as NSString).pathExtension.lowercased()) else { return false }
-            return RecordingFiles.baseName(of: (name as NSString).deletingPathExtension) == base
-        }
+    private static func isAudio(_ name: String) -> Bool {
+        audioExtensions.contains((name as NSString).pathExtension.lowercased())
     }
 }

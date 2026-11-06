@@ -33,3 +33,18 @@ A mixed recording rarely has that much silence, but a separated track is mostly 
 - **Digital silence only.** A real mic track has room noise, which may make Whisper invent words. The 👤 real call is the first test of that.
 - **The earlier 22 s dropout** that led to VAD wasn't reproduced here; it's only absent from these runs.
 - **`--language` wasn't pinned for the real runs:** `small` detected English by itself.
+
+## Added after the deep review: noise and language
+Invented audio only: white noise at 0.003 and 0.001 amplitude, with a `say` sentence. The deep review's finding, repeated on `small` with no language pinned, through the real binary.
+
+| Audio | Before | After the fix |
+|---|---|---|
+| 35 s noise, then a sentence | Detected Welsh, and the sentence was lost | Detected English, sentence correct |
+| Mono file, noise only | Detected Welsh, invented lines | Same: mono files aren't checked for noise, because they can't be told apart from a mix |
+| Two-track, mic noise only, speech on system | Not measured | Mic left out with a note, no `You` lines, sentence correct |
+| Two-track, 35 s noise then speech on mic | Not measured | `You` at 00:00:35, sentence correct |
+
+## Still unsure, added after the deep review
+- **The noise thresholds are from white noise,** not a real room. The real call is their first test. Real room noise that isn't steady, or that's louder than the limit, would still reach Whisper.
+- **A whole window can still be skipped.** With `logProbThreshold` off, WhisperKit skips any 30 s window scored as no speech, however confident the words. This may explain the 29 s gap above. The reviewer's fixtures didn't reproduce a loss.
+

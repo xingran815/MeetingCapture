@@ -59,8 +59,8 @@ public enum MeetingCaptureApp {
         }
 
         // Hidden, for scripts/e2e.sh: builds a two-track file, then runs the real pipeline on it.
-        if let mic = args.option("--two-track-mic"), let system = args.option("--two-track-system"),
-            let out = args.option("--two-track-out")
+        if AudioFixtures.scriptFlagsEnabled(), let mic = args.option("--two-track-mic"),
+            let system = args.option("--two-track-system"), let out = args.option("--two-track-out")
         {
             do {
                 try AudioFixtures.writeTwoTrack(
@@ -72,7 +72,7 @@ public enum MeetingCaptureApp {
                 exit(1)
             }
         }
-        if let path = args.option("--finish-recording") {
+        if AudioFixtures.scriptFlagsEnabled(), let path = args.option("--finish-recording") {
             let model = args.option("--model") ?? Config.load().whisperModel
             let folder = args.option("--model-folder")
             let language = args.option("--language")
@@ -112,15 +112,16 @@ public enum MeetingCaptureApp {
                 Capture options:
                   --duration <sec>      Maximum capture duration          (default: 28800 = 8h safety cap)
                                          Press Enter during recording to stop earlier
-                  --output <path>       Output .wav file path             (default: meeting_<ts>.wav)
+                  --output <path>       Recording name, a new file ending in .wav, kept as .m4a once
+                                         proven good                       (default: meeting_<ts>.wav)
                   --all-audio           Capture ALL system audio          (default: meeting app only)
-                  --no-mic              Disable mic capture               (default: mic mixed in)
+                  --no-mic              Disable mic capture               (default: mic on its own track)
                   --no-aec              Disable acoustic echo cancellation (default: AEC on)
 
                 Transcription options:
-                  --transcribe          Transcribe the WAV after capture
-                  --transcribe-only P   Skip capture; transcribe existing WAV at path P
-                  --model <name>        Whisper model                     (default: openai_whisper-small.en)
+                  --transcribe          Transcribe the recording after capture
+                  --transcribe-only P   Skip capture; transcribe the .wav or .m4a at path P
+                  --model <name>        Whisper model                     (default: openai_whisper-small)
                   --language <code>     Pin language (en, zh, …)           (multilingual models auto-detect if omitted)
                   --model-folder <dir>  Load the Whisper model from this folder, no download
 
@@ -288,11 +289,12 @@ public enum MeetingCaptureApp {
 
                 let outputURL = URL(fileURLWithPath: outputPath)
                 let base = outputURL.deletingPathExtension()
-                let retentionDays = persistedConfig.audioRetentionDays
-                if let dir = try? persistedConfig.resolvedOutputDirectory() {
-                    AudioRetention.clean(in: dir, days: retentionDays, now: Date())
+                if let conflict = RecordingFiles.conflict(forNewRecordingAt: base) {
+                    fputs("❌  Can't record to \(outputPath): \(conflict)\n", stderr)
+                    exit(1)
                 }
-                try RecordingSidecar(createdAt: Date(), state: .recording).save(to: RecordingSidecar.url(forBase: base))
+                cleanOldAudio(persistedConfig)
+                try RecordingSidecar.started().save(to: RecordingSidecar.url(forBase: base))
                 RecordingKeys.install(on: capture)
                 defer { RecordingKeys.remove() }
                 let wavFiles = try await capture.run(
@@ -315,7 +317,7 @@ public enum MeetingCaptureApp {
                     pipeline = RecordingPipeline(transcriber: transcriber, detector: SpeakerKitDetector())
                 }
                 let result = try await RecordingPipeline.finish(parts: wavFiles, base: base, pipeline: pipeline)
-                AudioRetention.clean(in: outputURL.deletingLastPathComponent(), days: retentionDays, now: Date())
+                cleanOldAudio(persistedConfig)
                 if let result {
                     for note in result.notes { print("⚠  \(note)") }
                     print("📄  Transcript saved: \(base.appendingPathExtension("txt").path)")
@@ -333,6 +335,16 @@ public enum MeetingCaptureApp {
 
 
         keepRunLoopAlive()
+    }
+
+    /// Retention covers the configured output folder only. `--output` can point
+    /// anywhere, and a file left in a shared folder shouldn't decide what's deleted
+    /// there (D-45).
+    private static func cleanOldAudio(_ config: Config) {
+        guard let dir = try? config.resolvedOutputDirectory() else { return }
+        for url in AudioRetention.clean(in: dir, days: config.audioRetentionDays, now: Date()) {
+            print("🧹  Deleted old audio: \(url.lastPathComponent)")
+        }
     }
 
     /// Keeps the main run-loop alive so async Tasks and SCStream callbacks work.

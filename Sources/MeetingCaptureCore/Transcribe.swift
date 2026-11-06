@@ -98,8 +98,9 @@ final class Transcriber {
         //
         // Measured on 30 min of real English speech with `.en`: 3,179 words with VAD,
         // 3,148 with this setup. An earlier 22 s dropout at a 30 s window boundary was
-        // the reason for VAD; thresholds being off is meant to prevent that, but it
-        // isn't proven beyond these runs (dev/evidence/2026-11-06-m3-real-audio.md).
+        // the reason for VAD. It isn't proven gone: with `logProbThreshold` off, any
+        // window scored as no speech is skipped whole, however confident the words, and
+        // that may explain the 29 s gap in dev/evidence/2026-11-06-m3-real-audio.md.
         //
         // `usePrefillPrompt: true` ensures the language token reaches the decoder.
         let options = DecodingOptions(
@@ -137,9 +138,15 @@ final class Transcriber {
 
     /// Best-effort language detection. Returns nil on any failure so the
     /// caller can fall back to in-line detection.
+    ///
+    /// Finding from the deep review: WhisperKit listens to the first 30 s only, and
+    /// on a mic track that's often just room noise, which came back as Welsh and took
+    /// the English speech after it with it. So this listens where the track is loudest.
     private func detectLanguage(pipe: WhisperKit, audioPath: String) async -> String? {
         do {
-            let result = try await pipe.detectLanguage(audioPath: audioPath)
+            let samples = try AudioProcessor.loadAudioAsFloatArray(fromPath: audioPath)
+            let window = Self.loudestWindow(in: samples, length: Self.detectionWindow, step: WhisperKit.sampleRate)
+            let result = try await pipe.detectLangauge(audioArray: Array(samples[window]))
             print(
                 String(
                     format: "🌐  Detected language: %@ (%.2f)", result.language, result.langProbs[result.language] ?? 0))
@@ -148,6 +155,30 @@ final class Transcriber {
             // Older WhisperKit versions used a different method name.
             return nil
         }
+    }
+
+    /// What Whisper hears at once: 30 s at its 16 kHz.
+    private static let detectionWindow = 30 * WhisperKit.sampleRate
+
+    /// The window with the most energy, moving `step` samples at a time. The first
+    /// wins a tie, so all-silent audio gives the start.
+    static func loudestWindow(in samples: [Float], length: Int, step: Int) -> Range<Int> {
+        guard samples.count > length, step > 0 else { return 0..<min(length, samples.count) }
+        var running: Float = 0
+        for sample in samples[0..<length] { running += sample * sample }
+        var best = running
+        var bestStart = 0
+        var start = 0
+        while start + step + length <= samples.count {
+            for sample in samples[start..<(start + step)] { running -= sample * sample }
+            for sample in samples[(start + length)..<(start + length + step)] { running += sample * sample }
+            start += step
+            if running > best {
+                best = running
+                bestStart = start
+            }
+        }
+        return bestStart..<(bestStart + length)
     }
 
     /// Transcribe multiple WAV files, adjusting timestamps for continuity.

@@ -30,6 +30,8 @@ speak() {  # text, output wav
 BASE="$DIR/e2e_call"
 rm -f "$BASE".*
 BIN=.build/debug/MeetingCaptureCLI
+# The script-only flags overwrite and delete by path, so they need this to be set.
+export MEETINGCAPTURE_E2E=1
 "$BIN" --two-track-mic "$DIR/e2e_mic.wav" --two-track-system "$DIR/e2e_system.wav" --two-track-out "$BASE.wav" \
     || { echo "e2e: FAILED, couldn't build the two-track fixture." >&2; exit 1; }
 WAV_SIZE="$(wc -c < "$BASE.wav" | tr -d ' ')"
