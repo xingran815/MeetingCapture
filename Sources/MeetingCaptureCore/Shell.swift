@@ -21,12 +21,15 @@ final class Shell {
 
     func run() async {
         printBanner()
+        cleanOldAudio()
+        await offerUnfinishedRecordings()
         loop: while true {
             let items: [MenuItem] = [
                 MenuItem(key: "1", label: "Record a meeting          ← Enter to stop"),
-                MenuItem(key: "2", label: "Transcribe a .wav"),
+                MenuItem(key: "2", label: "Transcribe a recording"),
                 MenuItem(key: "3", label: "Summarize a .txt"),
-                MenuItem(key: "4", label: "Settings"),
+                MenuItem(key: "4", label: "Rename or merge speakers"),
+                MenuItem(key: "5", label: "Settings"),
                 MenuItem(key: "q", label: "Quit"),
             ]
             let pick = Menu.pick(header: mainHeader(), items: items, allowBack: false)
@@ -38,8 +41,9 @@ final class Shell {
                 case 0: await recordFlow()
                 case 1: await transcribeFlow()
                 case 2: await summarizeFlow()
-                case 3: await settingsFlow()
-                case 4: break loop
+                case 3: speakersFlow()
+                case 4: await settingsFlow()
+                case 5: break loop
                 default: break
                 }
             }
@@ -99,6 +103,13 @@ final class Shell {
             return
         }
         let wavURL = base.appendingPathExtension("wav")
+        do {
+            // Written first, so a crash leaves something the next launch can find.
+            try RecordingSidecar(createdAt: Date(), state: .recording).save(to: RecordingSidecar.url(forBase: base))
+        } catch {
+            print("❌  Couldn't prepare the recording: \(error.localizedDescription)")
+            return
+        }
 
         let capture = AudioCapture()
         let totalSec = Double(config.defaultDurationMinutes * 60)
@@ -137,26 +148,112 @@ final class Shell {
             return
         }
 
-        // Post-capture pipeline
-        var transcript: String? = nil
-        if config.autoTranscribe {
-            transcript = await runTranscribe(wavPaths: wavFiles.map { $0.path })
+        await finishRecording(parts: wavFiles, base: base)
+        cleanOldAudio()
+    }
+
+    /// Transcribes, encodes, then summarizes. If transcription fails, the WAVs stay
+    /// and the next launch offers the recording again.
+    private func finishRecording(parts: [URL], base: URL) async {
+        var transcript: String?
+        do {
+            let pipeline = config.autoTranscribe ? try await makePipeline() : nil
+            if let result = try await RecordingPipeline.finish(parts: parts, base: base, pipeline: pipeline) {
+                transcript = show(result, txtURL: base.appendingPathExtension("txt"))
+            }
+        } catch {
+            print("❌  Transcription failed: \(error.localizedDescription)")
+            print("   The audio is kept, and the next launch offers it again.")
+            return
         }
 
         if config.autoSummarize {
             if let text = transcript {
-                let txtURL = base.appendingPathExtension("txt")
-                await runSummarize(transcript: text, sourcePath: txtURL.path)
+                await runSummarize(transcript: text, sourcePath: base.appendingPathExtension("txt").path)
             } else {
                 print("ℹ  Skipping summary: auto-transcribe is off, no transcript available.")
             }
         }
     }
 
+    private func makePipeline() async throws -> RecordingPipeline {
+        let transcriber = Transcriber(model: config.whisperModel, language: config.whisperLanguage)
+        try await transcriber.load()
+        return RecordingPipeline(transcriber: transcriber, detector: SpeakerKitDetector())
+    }
+
+    private func show(_ result: RecordingPipeline.Transcript, txtURL: URL) -> String {
+        let text = result.formatted
+        print("\n──── transcript ──────────────────────────")
+        print(text)
+        print("──────────────────────────────────────────")
+        for note in result.notes { print("⚠  \(note)") }
+        print("   txt:  \(txtURL.path)")
+        return text
+    }
+
+    // MARK: - Old and unfinished audio
+
+    private var outputDirectoryURL: URL? { try? config.resolvedOutputDirectory() }
+
+    private func cleanOldAudio() {
+        guard let dir = outputDirectoryURL else { return }
+        for url in AudioRetention.clean(in: dir, days: config.audioRetentionDays, now: Date()) {
+            print("🧹  Deleted old audio: \(url.lastPathComponent)")
+        }
+    }
+
+    /// A crash mid-recording leaves WAV chunks. Declining leaves them, and asks again.
+    private func offerUnfinishedRecordings() async {
+        guard let dir = outputDirectoryURL else { return }
+        for first in AudioRetention.unfinished(in: dir) {
+            let parts = RecordingFiles.allParts(of: first.path).map { URL(fileURLWithPath: $0) }
+            let word = parts.count == 1 ? "file" : "files"
+            print("\n⚠  An unfinished recording was found: \(first.lastPathComponent) (\(parts.count) \(word)).")
+            guard let answer = promptLine("Process it now? [Y/n]: "), !answer.lowercased().hasPrefix("n") else {
+                continue
+            }
+            for part in parts { _ = try? WAVRepair.repairHeader(at: part) }
+            await finishRecording(parts: parts, base: first.deletingPathExtension())
+        }
+    }
+
+    // MARK: - Speakers
+
+    private func speakersFlow() {
+        guard let raw = askLine("Path to the transcript .txt"), !raw.isEmpty else { return }
+        let url = URL(fileURLWithPath: expand(raw))
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else {
+            print("❌  Couldn't read file: \(url.path)")
+            return
+        }
+        let speakers = SpeakerLabels.speakers(in: text)
+        guard !speakers.isEmpty else {
+            print("No speaker labels in that file.")
+            return
+        }
+        for (i, name) in speakers.enumerated() { print("  \(i + 1)) \(name)") }
+        guard let pick = askLine("Speaker to rename (number)"), let n = Int(pick), speakers.indices.contains(n - 1)
+        else {
+            return
+        }
+        print("Type a new name. Using another speaker's name merges the two.")
+        guard let raw = askLine("New name"), let name = SpeakerLabels.validName(raw) else {
+            print("Nothing changed: a name can't be empty or contain a colon.")
+            return
+        }
+        do {
+            try SpeakerLabels.rename(speakers[n - 1], to: name, transcriptAt: url)
+            print("✓  \(speakers[n - 1]) is now \(name).")
+        } catch {
+            print("❌  Couldn't save: \(error.localizedDescription)")
+        }
+    }
+
     // MARK: - Transcribe
 
     private func transcribeFlow() async {
-        guard let raw = askLine("Path to .wav"), !raw.isEmpty else { return }
+        guard let raw = askLine("Path to a .wav or .m4a"), !raw.isEmpty else { return }
         let path = expand(raw)
         guard FileManager.default.fileExists(atPath: path) else {
             print("❌  File not found: \(path)")
@@ -165,7 +262,11 @@ final class Shell {
         _ = await runTranscribe(wavPaths: RecordingFiles.allParts(of: path))
 
         // Offer to summarize the fresh transcript
-        let txtPath = (path as NSString).deletingPathExtension + ".txt"
+        let txtPath = URL(fileURLWithPath: path).deletingLastPathComponent()
+            .appendingPathComponent(
+                RecordingFiles.baseName(of: URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent)
+            )
+            .appendingPathExtension("txt").path
         guard FileManager.default.fileExists(atPath: txtPath) else { return }
         guard let yn = promptLine("Summarize the transcript now? [Y/n]: ") else { return }
         if yn.lowercased().hasPrefix("n") { return }
@@ -191,25 +292,14 @@ final class Shell {
     private func runTranscribe(wavPaths: [String]) async -> String? {
         guard !wavPaths.isEmpty else { return nil }
 
-        let transcriber = Transcriber(model: config.whisperModel, language: config.whisperLanguage)
+        let first = URL(fileURLWithPath: wavPaths[0])
+        let baseName = RecordingFiles.baseName(of: first.deletingPathExtension().lastPathComponent)
+        let txtURL = first.deletingLastPathComponent().appendingPathComponent(baseName).appendingPathExtension("txt")
         do {
-            try await transcriber.load()
-            let (text, segments) = try await transcriber.transcribe(wavPaths: wavPaths)
-
-            print("\n──── transcript ──────────────────────────")
-            print(text.trimmingCharacters(in: .whitespacesAndNewlines))
-            print("──────────────────────────────────────────")
-
-            // Use the first WAV file's base name (without _partN suffix) for the output
-            let firstPath = wavPaths[0]
-            let wavURL = URL(fileURLWithPath: firstPath)
-            let baseName = RecordingFiles.baseName(of: wavURL.deletingPathExtension().lastPathComponent)
-            let dir = wavURL.deletingLastPathComponent()
-            let txtURL = dir.appendingPathComponent(baseName).appendingPathExtension("txt")
-            let body = Transcriber.format(segments: segments) + "\n"
-            try body.write(to: txtURL, atomically: true, encoding: .utf8)
-            print("   txt:  \(txtURL.path)")
-            return text
+            let pipeline = try await makePipeline()
+            let result = try await pipeline.transcribe(parts: wavPaths.map { URL(fileURLWithPath: $0) })
+            try (result.formatted + "\n").write(to: txtURL, atomically: true, encoding: .utf8)
+            return show(result, txtURL: txtURL)
         } catch {
             print("❌  Transcription failed: \(error.localizedDescription)")
             return nil
@@ -331,6 +421,11 @@ final class Shell {
                 MenuItem(key: "a", label: "AEC (echo cancel)       [\(aecDesc)]"),
                 MenuItem(key: "m", label: "Mic capture             [\(c.micEnabled ? "on" : "off")]"),
                 MenuItem(key: "s", label: "Audio source            [\(appsDesc)]"),
+                MenuItem(
+                    key: "d",
+                    label:
+                        "Keep audio for          [\(c.audioRetentionDays == 0 ? "forever" : "\(c.audioRetentionDays) days")]"
+                ),
                 .separator("─────────────────────────────────────"),
                 MenuItem(key: "r", label: "Reset to defaults"),
             ]
@@ -358,6 +453,8 @@ final class Shell {
                 }
             case "m": toggle(\.micEnabled, label: "Mic capture")
             case "s": promptMeetingApps()
+            case "d":
+                promptInt(\.audioRetentionDays, label: "days to keep audio (0 = forever)", min: 0, max: 3650)
             case "r":
                 config = Config()
                 persistConfig()
@@ -654,7 +751,7 @@ final class Shell {
         let models: [(id: String, blurb: String)] = [
             ("openai_whisper-tiny.en", "~75 MB, fastest, rough"),
             ("openai_whisper-base.en", "~140 MB"),
-            ("openai_whisper-small.en", "~470 MB, default"),
+            ("openai_whisper-small.en", "~470 MB, English only"),
             ("openai_whisper-medium.en", "~1.5 GB, best for accents"),
             ("openai_whisper-small", "multilingual, for Chinese etc."),
             ("openai_whisper-medium", "multilingual"),

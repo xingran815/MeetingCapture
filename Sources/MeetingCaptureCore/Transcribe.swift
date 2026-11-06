@@ -87,45 +87,32 @@ final class Transcriber {
             print("   language: \(resolvedLanguage ?? "auto-detect (in-line)")")
         }
 
-        // Two-track decoding strategy:
+        // One decoding setup for every model, with WhisperKit's VAD chunking off.
         //
-        // - `.en` models: VAD chunking ON. Documented fix for cross-30s
-        //   boundary speech loss in English (see CLAUDE.md). The default
-        //   quality thresholds (compressionRatio, logProb, firstTokenLogProb)
-        //   are tuned on English statistics and catch real hallucinations.
+        // - VAD chunking silently lost speech after silence on `.en` models: a short
+        //   sentence after 6, 60 or 120 s of silence came back empty. Mixed recordings
+        //   rarely hit that, but a separated track is mostly silence. On Chinese with
+        //   the multilingual model, VAD returned zero segments.
+        // - The default quality thresholds are tuned on English and reject valid CJK,
+        //   Turkish, Arabic, Thai, Hindi and Vietnamese output, so they're off.
         //
-        // - Multilingual models: VAD chunking OFF (use default 30s windowing).
-        //   Empirically, VAD-chunked decoding on Chinese audio with the
-        //   multilingual `small` model returns zero segments — VAD's energy
-        //   threshold appears to misclassify a lot of speech as silence on
-        //   our SCStream + mic mix. Default windowing produces clean output.
-        //   We also disable the English-tuned quality guards: they routinely
-        //   reject valid CJK / Turkish / Arabic / Thai / Hindi / Vietnamese
-        //   output as "low confidence," yielding empty transcripts.
+        // Measured on 30 min of real English speech with `.en`: 3,179 words with VAD,
+        // 3,148 with this setup. An earlier 22 s dropout at a 30 s window boundary was
+        // the reason for VAD; thresholds being off is meant to prevent that, but it
+        // isn't proven beyond these runs (dev/evidence/2026-11-06-m3-real-audio.md).
         //
-        // `usePrefillPrompt: true` ensures the language token reaches the
-        // decoder in both paths.
-        let options: DecodingOptions
-        if isMultilingual {
-            options = DecodingOptions(
-                task: .transcribe,
-                language: resolvedLanguage,
-                usePrefillPrompt: true,
-                detectLanguage: resolvedLanguage == nil,
-                wordTimestamps: true,
-                compressionRatioThreshold: nil,
-                logProbThreshold: nil,
-                firstTokenLogProbThreshold: nil,
-                chunkingStrategy: ChunkingStrategy.none
-            )
-        } else {
-            options = DecodingOptions(
-                task: .transcribe,
-                usePrefillPrompt: true,
-                wordTimestamps: true,
-                chunkingStrategy: .vad
-            )
-        }
+        // `usePrefillPrompt: true` ensures the language token reaches the decoder.
+        let options = DecodingOptions(
+            task: .transcribe,
+            language: isMultilingual ? resolvedLanguage : nil,
+            usePrefillPrompt: true,
+            detectLanguage: isMultilingual && resolvedLanguage == nil,
+            wordTimestamps: true,
+            compressionRatioThreshold: nil,
+            logProbThreshold: nil,
+            firstTokenLogProbThreshold: nil,
+            chunkingStrategy: ChunkingStrategy.none
+        )
 
         let results = try await pipe.transcribe(audioPath: wavPath, decodeOptions: options)
         let dt = Date().timeIntervalSince(t0)

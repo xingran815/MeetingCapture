@@ -1,12 +1,14 @@
 # Now
 Updated: 2026-11-06 · milestone 3 · issues #5, #6
 
-**Next step:** `git switch -c m3-audio-speakers` from `main`, then build from `docs/specs/03-audio-speakers.md`.
-**How to check:** `scripts/check.sh` passes; CI is green; each Done-when in that spec was seen working. M3 also needs a 👤 short real call and a deep review before merge.
+**Next step:** reviews run alongside CI on the M3 PR; fix findings in that PR. Then the 👤 check: the user records one short real call on the new build, and says whether it sounds right and labels correctly.
+**How to check:** `scripts/check.sh` passes; CI green on the exact commit; verifier, deep review and `/security-review` pass; the user's yes.
 
 Done since last save:
 - M2.1 merged (PR #14), verifier PASS; #12 closed. Report: `dev/evidence/2026-11-06-m2.1-report.md`.
 - `main` requires all seven CI checks, with no bypass. Merging needs green CI on the exact commit.
+- M3 built on `m3-audio-speakers`: two tracks, M4A, retention, speakers, and the bug list. Real-audio trial: `dev/evidence/2026-11-06-m3-real-audio.md`.
+- Manual checks left for the real call: Enter stops a flag-mode recording on a TTY; listen once after the Speex rate change; room noise on a separated mic track.
 
 Open loops:
 - **First `push` to `main` CI run:** check that it passed; it's the first test of the `event.before` range.

@@ -127,11 +127,17 @@ enum SpeakerLabels {
         return tagged.sorted { ($0.1.start, $0.0) < ($1.1.start, $1.0) }.map(\.1)
     }
 
+    /// Whisper's own word for nothing being said. Anything else in brackets stays,
+    /// such as `[laughter]`, since it may be real.
+    static func isSilenceMarker(_ text: String) -> Bool {
+        ["[BLANK_AUDIO]", "(BLANK_AUDIO)"].contains(text.trimmingCharacters(in: .whitespaces).uppercased())
+    }
+
     /// `[00:01:12] Speaker 1: text`, one per line.
     static func format(_ segments: [LabelledSegment]) -> String {
         segments.compactMap { segment in
             let text = Transcriber.cleanSegmentText(segment.text)
-            guard !text.isEmpty else { return nil }
+            guard !text.isEmpty, !isSilenceMarker(text) else { return nil }
             let t = Int(segment.start)
             return String(format: "[%02d:%02d:%02d] ", t / 3600, (t % 3600) / 60, t % 60)
                 + "\(segment.speaker): \(text)"
@@ -153,6 +159,24 @@ enum SpeakerLabels {
             cursor = label.location + label.length
         }
         return out + ns.substring(from: cursor)
+    }
+
+    /// A trimmed name, or nil if it would break the `[time] name: text` format.
+    static func validName(_ raw: String) -> String? {
+        let name = raw.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty, !name.contains(":"), !name.contains(where: \.isNewline) else { return nil }
+        return name
+    }
+
+    /// Renames in the file, and remembers it in the recording's sidecar if it has one.
+    static func rename(_ from: String, to: String, transcriptAt url: URL) throws {
+        let text = try String(contentsOf: url, encoding: .utf8)
+        try rename(from, to: to, in: text).write(to: url, atomically: true, encoding: .utf8)
+        let sidecarURL = RecordingSidecar.url(forBase: url.deletingPathExtension())
+        if var sidecar = RecordingSidecar.load(at: sidecarURL) {
+            sidecar.speakerNames[from] = to
+            try sidecar.save(to: sidecarURL)
+        }
     }
 
     /// The labels in a transcript, in order of first appearance.

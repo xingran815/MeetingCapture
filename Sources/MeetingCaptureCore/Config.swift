@@ -15,7 +15,7 @@ enum LLMRoute: String, Codable {
 struct Config: Codable, Equatable {
 
     // Capture & transcription
-    var whisperModel: String = "openai_whisper-small.en"
+    var whisperModel: String = "openai_whisper-small"
     /// 2-letter language hint (e.g. "en", "zh"). nil = auto-detect (only safe for `.en` models).
     var whisperLanguage: String? = nil
     var defaultDurationMinutes: Int = 480
@@ -48,12 +48,14 @@ struct Config: Codable, Equatable {
     var allowCLIAPIBilling: Bool = false
     /// Replace formatted sensitive values with tokens before any LLM call.
     var redactionEnabled: Bool = true
+    /// Days to keep managed audio; 0 keeps it forever. Transcripts are never removed.
+    var audioRetentionDays: Int = 30
 
     static let `default` = Config()
 
     // Memberwise initializer (for creating defaults).
     init(
-        whisperModel: String = "openai_whisper-small.en",
+        whisperModel: String = "openai_whisper-small",
         whisperLanguage: String? = nil,
         defaultDurationMinutes: Int = 480,
         outputDirectory: String = "~/Documents/MeetingCapture",
@@ -88,6 +90,7 @@ struct Config: Codable, Equatable {
         case llmProfiles, selectedLLMProfileID
         case llmRoute, primaryCLI, dailyCLICallCap, claudeModels, codexModels
         case allowCLIAPIBilling, redactionEnabled
+        case audioRetentionDays
     }
 
     /// Pre-multi-profile keys, decoded as a fallback so older configs migrate
@@ -104,7 +107,7 @@ struct Config: Codable, Equatable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        whisperModel = try c.decodeIfPresent(String.self, forKey: .whisperModel) ?? "openai_whisper-small.en"
+        whisperModel = try c.decodeIfPresent(String.self, forKey: .whisperModel) ?? "openai_whisper-small"
         whisperLanguage = try c.decodeIfPresent(String.self, forKey: .whisperLanguage)
         defaultDurationMinutes = try c.decodeIfPresent(Int.self, forKey: .defaultDurationMinutes) ?? 480
         outputDirectory = try c.decodeIfPresent(String.self, forKey: .outputDirectory) ?? "~/Documents/MeetingCapture"
@@ -122,6 +125,8 @@ struct Config: Codable, Equatable {
         codexModels = try c.decodeIfPresent(CLITierModels.self, forKey: .codexModels) ?? .codexDefault
         allowCLIAPIBilling = try c.decodeIfPresent(Bool.self, forKey: .allowCLIAPIBilling) ?? false
         redactionEnabled = try c.decodeIfPresent(Bool.self, forKey: .redactionEnabled) ?? true
+        let days = try c.decodeIfPresent(Int.self, forKey: .audioRetentionDays) ?? 30
+        audioRetentionDays = AudioRetention.isValid(days: days) ? days : 30
 
         if let profiles = try c.decodeIfPresent([LLMProfile].self, forKey: .llmProfiles) {
             llmProfiles = profiles

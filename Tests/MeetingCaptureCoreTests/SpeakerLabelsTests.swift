@@ -69,6 +69,13 @@ final class SpeakerLabelsTests: XCTestCase {
         XCTAssertEqual(SpeakerLabels.format([line]), "[00:01:12] Speaker 1: Hello there.")
     }
 
+    func testFormatDropsSilenceMarkersButKeepsOtherBrackets() {
+        let lines = ["[BLANK_AUDIO]", " [BLANK_AUDIO] ", "[laughter]"].map {
+            LabelledSegment(start: 1, end: 2, speaker: "You", text: $0)
+        }
+        XCTAssertEqual(SpeakerLabels.format(lines), "[00:00:01] You: [laughter]")
+    }
+
     func testFormatDropsEmptyLines() {
         let line = LabelledSegment(start: 1, end: 2, speaker: "You", text: "<|endoftext|>")
         XCTAssertEqual(SpeakerLabels.format([line]), "")

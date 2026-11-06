@@ -155,3 +155,50 @@ enum AudioTracks {
             system: peaks[1] >= silencePeak ? systemURL : nil)
     }
 }
+
+/// Only for scripts/e2e.sh: a two-track WAV from two mono files, through the real writer.
+enum AudioFixtures {
+    static func writeTwoTrack(mic: URL, system: URL, systemDelay: Double, to out: URL) throws {
+        let rate = TrackWriter.sampleRate
+        let micSamples = try samples(of: mic)
+        let delay = [Float](repeating: 0, count: Int(systemDelay * rate))
+        let systemSamples = delay + (try samples(of: system))
+        let frames = max(micSamples.count, systemSamples.count)
+        guard
+            let stereo = AVAudioFormat(
+                commonFormat: .pcmFormatFloat32, sampleRate: rate, channels: 2, interleaved: true)
+        else { throw CocoaError(.fileWriteUnknown) }
+        let writer = try TrackWriter(outputURL: out, chunkFrameLimit: frames + 1)
+        let step = 4_800
+        var cursor = 0
+        while cursor < frames {
+            let count = min(step, frames - cursor)
+            guard let buffer = AVAudioPCMBuffer(pcmFormat: stereo, frameCapacity: AVAudioFrameCount(count)),
+                let dst = buffer.floatChannelData?[0]
+            else { throw CocoaError(.fileWriteUnknown) }
+            buffer.frameLength = AVAudioFrameCount(count)
+            var mono = [Float](repeating: 0, count: count)
+            for i in 0..<count {
+                let at = cursor + i
+                mono[i] = at < micSamples.count ? micSamples[at] : 0
+                let sample = at < systemSamples.count ? systemSamples[at] : 0
+                dst[2 * i] = sample
+                dst[2 * i + 1] = sample
+            }
+            mono.withUnsafeBufferPointer { writer.pushMic(mono: $0.baseAddress!, frameCount: count) }
+            writer.pushSystem(buffer)
+            cursor += count
+        }
+    }
+
+    private static func samples(of url: URL) throws -> [Float] {
+        let file = try AVAudioFile(forReading: url, commonFormat: .pcmFormatFloat32, interleaved: false)
+        guard
+            let buffer = AVAudioPCMBuffer(
+                pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.length))
+        else { throw CocoaError(.fileReadUnknown) }
+        try file.read(into: buffer)
+        guard let channel = buffer.floatChannelData?[0] else { throw CocoaError(.fileReadUnknown) }
+        return Array(UnsafeBufferPointer(start: channel, count: Int(buffer.frameLength)))
+    }
+}

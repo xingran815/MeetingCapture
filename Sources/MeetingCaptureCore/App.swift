@@ -58,6 +58,49 @@ public enum MeetingCaptureApp {
             keepRunLoopAlive()
         }
 
+        // Hidden, for scripts/e2e.sh: builds a two-track file, then runs the real pipeline on it.
+        if let mic = args.option("--two-track-mic"), let system = args.option("--two-track-system"),
+            let out = args.option("--two-track-out")
+        {
+            do {
+                try AudioFixtures.writeTwoTrack(
+                    mic: URL(fileURLWithPath: mic), system: URL(fileURLWithPath: system),
+                    systemDelay: 6, to: URL(fileURLWithPath: out))
+                exit(0)
+            } catch {
+                fputs("fixture: \(error.localizedDescription)\n", stderr)
+                exit(1)
+            }
+        }
+        if let path = args.option("--finish-recording") {
+            let model = args.option("--model") ?? Config.load().whisperModel
+            let folder = args.option("--model-folder")
+            let language = args.option("--language")
+            Task {
+                do {
+                    let transcriber = Transcriber(model: model, language: language, modelFolder: folder)
+                    try await transcriber.load()
+                    let url = URL(fileURLWithPath: path)
+                    let result = try await RecordingPipeline.finish(
+                        parts: [url], base: url.deletingPathExtension(),
+                        pipeline: RecordingPipeline(transcriber: transcriber, detector: SpeakerKitDetector()))
+                    for note in result?.notes ?? [] { print("⚠  \(note)") }
+                    exit(0)
+                } catch {
+                    fputs("❌  \(error.localizedDescription)\n", stderr)
+                    exit(1)
+                }
+            }
+            keepRunLoopAlive()
+        }
+
+        if args.flag("--audio-cleanup") {
+            if let dir = try? Config.load().resolvedOutputDirectory() {
+                AudioCleanup.run(in: dir)
+            }
+            exit(0)
+        }
+
         if args.flag("--help") || args.flag("-h") {
             print(
                 """
@@ -99,6 +142,7 @@ public enum MeetingCaptureApp {
 
                 Misc:
                   --list                List running applications and exit
+                  --audio-cleanup       List old WAV recordings, then convert or delete after asking
                   --help                Show this help
 
                 Permissions (once each):
@@ -242,6 +286,13 @@ public enum MeetingCaptureApp {
                     exit(0)
                 }
 
+                let outputURL = URL(fileURLWithPath: outputPath)
+                let base = outputURL.deletingPathExtension()
+                let retentionDays = persistedConfig.audioRetentionDays
+                if let dir = try? persistedConfig.resolvedOutputDirectory() {
+                    AudioRetention.clean(in: dir, days: retentionDays, now: Date())
+                }
+                try RecordingSidecar(createdAt: Date(), state: .recording).save(to: RecordingSidecar.url(forBase: base))
                 RecordingKeys.install(on: capture)
                 defer { RecordingKeys.remove() }
                 let wavFiles = try await capture.run(
@@ -254,16 +305,23 @@ public enum MeetingCaptureApp {
                     aecEnabled: !noAec && persistedConfig.aecEnabled
                 )
 
-                if (transcribeFlag || summarizeFlag) && !wavFiles.isEmpty {
-                    let wavPaths = wavFiles.map { $0.path }
-
-                    // --summarize implies transcription (we need text to summarize)
-                    let text = try await runTranscription(
-                        wavPaths: wavPaths, model: whisperModel, modelFolder: whisperFolder, language: whisperLang)
+                guard !wavFiles.isEmpty else { exit(0) }
+                // --summarize implies transcription (we need text to summarize)
+                var pipeline: RecordingPipeline?
+                if transcribeFlag || summarizeFlag {
+                    let transcriber = Transcriber(
+                        model: whisperModel, language: whisperLang, modelFolder: whisperFolder)
+                    try await transcriber.load()
+                    pipeline = RecordingPipeline(transcriber: transcriber, detector: SpeakerKitDetector())
+                }
+                let result = try await RecordingPipeline.finish(parts: wavFiles, base: base, pipeline: pipeline)
+                AudioRetention.clean(in: outputURL.deletingLastPathComponent(), days: retentionDays, now: Date())
+                if let result {
+                    for note in result.notes { print("⚠  \(note)") }
+                    print("📄  Transcript saved: \(base.appendingPathExtension("txt").path)")
                     if summarizeFlag {
-                        // Use first file's base name for the summary
-                        let firstPath = wavPaths[0]
-                        try await runSummarization(transcript: text, sourcePath: firstPath)
+                        try await runSummarization(
+                            transcript: result.formatted, sourcePath: base.appendingPathExtension("txt").path)
                     }
                 }
             } catch {
