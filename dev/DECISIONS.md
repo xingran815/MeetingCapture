@@ -26,3 +26,4 @@ One line per decision: `D-NN · date · decision · why · by`.
 - D-22 · 2026-11-06 · Add `--model-folder` · E2E must load a cached model with no network, and WhisperKit otherwise contacts Hugging Face · Assumed
 - D-23 · 2026-11-06 · Injected clock waits for M3, where retention first needs it; M1's Done-when needs only the chunk length · Assumed
 - D-24 · 2026-11-06 · History rewrite and force-push done; pre-rewrite bundle kept at `~/Documents/Projects/MeetingCapture-pre-rewrite.bundle`, outside the repo · per D-05 · by user
+- D-25 · 2026-11-06 · M1 closed after a verifier PASS on every Done-when item · by Claude, per the milestone rules
