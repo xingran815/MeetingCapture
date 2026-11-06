@@ -48,6 +48,14 @@ Take Codex's feature-off list from Job Radar's `src/lib/ai/providers/codex-featu
 
 Show current usage per CLI in terminal settings and the desktop app. Whether Claude applies a separate pool to `claude -p` is **still unknown**: official pages don't mention one, secondary sources do. Treat the reported limits as the truth and record any difference.
 
+## Daily call cap (D-18)
+**At most 200 calls per day for each CLI**, counted separately for `claude` and `codex`. Default 200, changeable in terminal settings.
+- Every started CLI process counts, including failures, retries, classifier calls and searches, because each one can use subscription quota.
+- The day is the local calendar day. The counter lives in `~/.config/MeetingCapture/usage.json`, with file locking so the app and terminal can't undercount each other. Tests use a temp path and an injected clock.
+- Check before starting a call. At the cap, treat that CLI as **usage full**: switch to the other CLI under the normal fallback rule.
+- Both capped: stop, keep the transcript and any finished steps, and say when the count resets. Never move to an API profile silently, because that would start billing.
+- `--live` and quality runs count against the cap. Show today's count next to the usage limits.
+
 ## Redaction: regex only (D-08)
 Before any LLM call, replace formatted values with tokens like `<EMAIL_1>`; restore them locally in the output. On by default; off via a setting. Port this set from `dev/spikes/regex_eval.py`, using the hush repo as the reference for validation:
 
@@ -63,3 +71,4 @@ Keep `Tests/Fixtures/redaction/` with the invented transcripts and scores as a r
 - [ ] Old config with a Qianfan profile migrates, with its key entry gone and DeepSeek intact.
 - [ ] Redaction: at least 95% on formatted values across old and new cases, no false positives on the set, and token restore works on Chinese text.
 - [ ] A test proves transcript text never appears in a call with tools on.
+- [ ] Cap tests with an injected clock: call 200 runs, call 201 switches CLI, both capped stops with no API call, the count resets next day, and two processes counting at once lose no calls.
