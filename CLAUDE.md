@@ -125,7 +125,7 @@ The Settings menu is grouped with dimmed `MenuItem.separator(...)` header rows (
 | **Run the tests, then commit.** The git hooks enforce `scripts/check.sh --fast` and the sweeps. Never use `--no-verify`. | A failed sweep means a leak was about to happen. |
 | **Sweep before every commit and before every push**: identity, secrets, security. | Repo is public. |
 | **Sonnet verifier (`verifier` agent) after every milestone**, before merge. | Independent proof that Done-when checks are true. |
-| **When CI needs more than 3 minutes to finish, run the verifier at the same time.** Details under "CI and the verifier together". | User's rule; no waiting on a slow run. |
+| **When CI needs more than 3 minutes to finish, run the verifier at the same time.** Reviewers and security checks too, when the spec calls for them. Details under "CI and the review agents together". | User's rule; no waiting on a slow run. |
 | **Opus deep review (`deep-reviewer` agent) only after M3, M4, M6**, before merge. | Deep review is expensive; these are the risky milestones. |
 | **Fix findings in the same PR. Never open a new PR for them.** Lows don't block; re-checks look at changed lines only. | Keeps one PR per milestone and stops review loops. |
 | **Turn each finding into a test where possible**, and name the finding in the test. | The same bug can't come back. |
@@ -142,25 +142,27 @@ The Settings menu is grouped with dimmed `MenuItem.separator(...)` header rows (
 | **After each compaction, re-read the files before anything else:** this file, `dev/NOW.md`, `dev/PLAN.md`, the end of `dev/DECISIONS.md`, the current spec and latest report, `git status` and `git log`. Where a summary disagrees, the files and git win. | User's rule; a summary is a recollection, the files are the facts. |
 | **Close every milestone with a report and rules on disk, then start the next one without waiting.** Steps below. | User's rule; only what's in files survives a session. |
 
-### CI and the verifier together
-Over 3 minutes of CI left: start the verifier now, on the pushed commit. Otherwise wait for CI, then start it. A push cancels the running CI, so hold pushes while either is running, except as below.
+### CI and the review agents together
+Review agents are the `verifier`, the reviewers (`reviewer`, `deep-reviewer`) and security checks (`/security-review` or a security agent). **Run only the ones the milestone's spec and the `dev/PLAN.md` table call for,** and each one checks what its spec says. This rule changes when they run, not which ones run.
+
+With over 3 minutes of CI left, start them now, together, on the pushed commit. Otherwise wait for CI, then start them. They're read-only, so they can't disturb each other or CI. A push cancels the running CI, so hold pushes while CI or an agent is running, except as below.
 
 | What happens | What to do | Because |
 |---|---|---|
 | Event names a head that's already replaced | Ignore it | It's about old code. |
-| CI fails, verifier still running | **Keep the verifier running.** Let the other CI jobs finish too. Fix locally and hold the push until the verifier reports | Its findings go in the same fix, which saves a round. |
-| CI fails so badly the verifier's result is worthless (the build is broken, or the fix will redo most of what it's checking) | Stop the verifier, fix, then start it again | Its answer would describe code that's going away. |
-| Verifier fails, CI still running | Let CI finish, then fix both together | Same reason. |
+| CI fails, agents still running | **Keep them running.** Let the other CI jobs finish too. Fix locally and hold the push until every agent reports | Their findings go in the same fix, which saves a round. |
+| CI fails so badly an agent's result is worthless (the build is broken, or the fix will redo most of what it's checking) | Stop that agent, fix, then start it again | Its answer would describe code that's going away. |
+| An agent fails or finds something, while CI or other agents are running | Let them finish, then fix everything together | Same reason. |
 
-After a fix, re-run the verifier by what changed:
+After a fix, re-run each agent by what changed:
 
-| The fix changed | Verifier | CI |
-|---|---|---|
-| Docs or comments only | No re-run | Runs on the push |
-| Code, scripts or workflows, in a contained way | Re-check the changed lines and the Done-when items they touch | Runs on the push |
-| The design, or most of the milestone | Full re-run | Runs on the push |
+| The fix changed | Verifier | Reviewers and security checks | CI |
+|---|---|---|---|
+| Docs or comments only | No re-run | No re-run | Runs on the push |
+| Code, scripts or workflows, in a contained way | Re-check the changed lines and the Done-when items they touch | Re-check the changed lines, if that agent is required for this milestone | Runs on the push |
+| The design, or most of the milestone | Full re-run | Full re-run, if required | Runs on the push |
 
-**To merge:** CI is green on the exact commit being merged, and a verifier PASS or re-check covers every non-doc change in it. The verifier's last check comes after the last fix round. Lows don't block. If the same check fails twice after a fix, stop and ask.
+**To merge:** CI is green on the exact commit being merged, and every required agent's PASS or re-check covers every non-doc change in it. The verifier's last check comes after the last fix round. Lows don't block. If the same check fails twice after a fix, stop and ask.
 
 ### Closing a milestone, then starting the next
 Order: M1 → M2 → M2.1 → M3 → M4 → M5 → M6.
