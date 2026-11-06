@@ -5,13 +5,23 @@
 # macOS
 .DS_Store
 
-# Local agent / IDE state
-.claude/
+# Local agent / IDE state (project agents are shared on purpose)
+.claude/*
+!.claude/agents/
+.claude/worktrees/
 
-# Capture artifacts & transcripts
+# Scratch output and logs from checks
+dev/tmp/
+
+# Capture artifacts, transcripts and reports
 *.wav
+*.m4a
+*.mp3
+*.aiff
 *.txt
 !README*.txt
+meeting_*.md
+meeting_*.html
 
 # Whisper model cache (if WhisperKit stores anything locally to the project)
 Models/

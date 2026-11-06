@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-**MeetingCapture** — a macOS command-line tool (no GUI, that decision is final) that records a meeting, transcribes it locally with Whisper, and summarizes it with a user-configurable LLM. Full pipeline is local-first: audio capture and transcription never leave the machine; only the final transcript is sent to the user's chosen LLM endpoint.
+> **Refactor in progress.** The block at the end of this file and `docs/specs/` win over anything below that disagrees. Sections below describe v0.6 and are rewritten in milestone 6.
+
+**MeetingCapture** — a macOS meeting helper with a terminal UI and, from milestone 5, a desktop app (this replaces the earlier "no GUI" decision). It records a meeting, transcribes it locally with Whisper, and summarizes it with an LLM. Full pipeline is local-first: audio capture and transcription never leave the machine; only transcript text is sent to the chosen LLM.
 
 Current state (v0.6): capture + transcribe + summarize all work. Software AEC via vendored speexdsp. Indefinite-length recordings with 30-min chunking for fault tolerance. Interactive menu shell is the primary UX; flag-based invocation still works and is the scripting escape hatch.
 
@@ -98,10 +100,43 @@ These are load-bearing and not obvious from reading a single file:
 
 Likely next rounds: speaker diarization, custom prompt templates, chunked/streaming summarization (not needed for current transcript sizes — Kimi has 256 k context), a brittle-stdin fix via termios, Chinese-meeting polish (switch default to multilingual `small` and tune the prompt).
 
-When working on the LLM side, check `memory/llm_provider.md` — the user has committed to Baidu Qianfan + Kimi-K2.5 as the default. Don't silently swap it.
+When working on the LLM side, follow `docs/specs/02-llm-providers.md`: Qianfan and Kimi are being removed, and the subscription CLIs become the default.
 
 When working on the shell, keep the "one keystroke to record" UX principle. If a feature needs a multi-prompt wizard, put it in the Settings menu.
 
 Settings and the audio-source picker use `Menu.run`, not `Menu.pick`: it stays open and redraws the menu **in place** (clears its block, runs the per-selection handler, re-renders) so changing a setting never prints a fresh stacked copy. Consequence: pure toggles must NOT print confirmations (the `[bracketed]` value already updates on redraw); rely on the menu's own redraw for feedback. In-place redraw only happens on a real TTY — piped stdin falls back to a reprinted numbered list.
 
 The Settings menu is grouped with dimmed `MenuItem.separator(...)` header rows (Capture & transcription / LLM / Audio). Because separators shift row indices, the `Menu.run` handler dispatches on `buildItems()[i].key` (the item's shortcut char), **not** the positional index — so you can reorder rows or add/remove separators without renumbering the `switch`. `Menu.run` only ever calls the handler with the index of an *enabled* row, so separators are never dispatched. Shortcut keys must avoid `j`/`k`/`q`/`b` (reserved by the picker for navigation/back/quit).
+
+<!-- devkit:start -->
+## Dev system (devkit) — read this first in every new session
+
+- **Plan:** dev/PLAN.md · **Now:** dev/NOW.md · **Decisions:** dev/DECISIONS.md · **Specs:** docs/specs/ · **Evidence:** dev/evidence/
+- **Mode:** 🏢 light production: quick and efficient, with real gates only where listed here. Start with `/next` or "continue"; end with `/next save`.
+- **Check command:** `scripts/check.sh` (until M1 lands it: `swift build`). Done means it passes and each Done-when check was seen working.
+- **Talk:** short chunks, key point in bold, tables over paragraphs, one-line status updates, at most 4 numbered questions with a recommended answer, reply in the language the user wrote in.
+
+### Rules, because a new session will pick this up cold
+
+| Rule | Because |
+|---|---|
+| **Build in the main session.** No builder subagents, no worktrees. | User's rule; keeps the context and the diff in one place. |
+| **One branch and one PR per milestone** (`m<n>-<slug>`), closing that milestone's issues. | Six PRs are easy to follow. |
+| **Run the tests, then commit.** The git hooks enforce `scripts/check.sh --fast` and the sweeps. Never use `--no-verify`. | A failed sweep means a leak was about to happen. |
+| **Sweep before every commit and before every push**: identity, secrets, security. | Repo is public. |
+| **Sonnet verifier (`verifier` agent) after every milestone**, before merge. | Independent proof that Done-when checks are true. |
+| **Opus deep review (`deep-reviewer` agent) only after M3, M4, M6**, before merge. | Deep review is expensive; these are the risky milestones. |
+| **Fix findings in the same PR. Never open a new PR for them.** Lows don't block; re-checks look at changed lines only. | Keeps one PR per milestone and stops review loops. |
+| **Turn each finding into a test where possible**, and name the finding in the test. | The same bug can't come back. |
+| **Merge locally:** `git switch main && git merge --ff-only <branch> && git push origin main`. Never use GitHub's merge button or `gh pr merge`. | GitHub can stamp the account email on server-made commits. The push closes the PR as merged. |
+| **After a merge, comment on each issue** (what landed, evidence, PR link), close it, update dev/NOW.md. | State lives in files and issues. |
+| **Merging and pushing task branches and `main` is pre-approved** after the checks pass. | User: "feel free to commit and merge". |
+| **Force-push is approved exactly once**: the M1 history rewrite. | User's explicit decision, D-05. |
+| **Never push or merge `feature/coding-interview`.** Push only named refs, never `--all` or `--mirror`. | User's rule; the pre-push hook also blocks it. |
+| **Commits use the repo-local noreply author.** No `Co-Authored-By` lines for Claude or any AI. | Email must not leak; user's rule. |
+| **Never put email, keys, tokens or real transcripts in code, fixtures, issues, PRs, logs or prompts.** Fixtures are invented; read secrets from the environment and mask output. | Public repo, sensitive sessions. |
+| **Tests never use a real model, network or 30-minute audio by default.** Fake CLIs on `PATH`, injected clocks and chunk lengths, and 5–30 second `say` fixtures. `--live` is opt-in. | Fast tests that don't spend subscription usage. |
+| **Say when unsure,** in code comments, reports and LLM prompts alike. | User's rule for the product and for us. |
+
+Long commands run in the background with a time limit and a log in `dev/tmp/`; macOS has no `timeout`, so use the Bash tool's timeout or `perl -e 'alarm shift; exec @ARGV'`.
+<!-- devkit:end -->
