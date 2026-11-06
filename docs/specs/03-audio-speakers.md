@@ -50,5 +50,5 @@ Switch to `openai_whisper-small` (multilingual), per D-11. Downloaded on first u
 - [ ] A simulated M4A failure keeps the WAV.
 - [ ] With an injected clock: managed audio older than the limit goes, younger stays, and old unmanaged WAVs stay.
 - [ ] All the bugs above have passing tests, or a noted manual check.
-- [ ] One real short call recorded by the user sounds right and labels correctly. **👤 User check.**
+- [ ] One real short call recorded by the user sounds right and labels correctly. **👤 User check.** Calls were recorded, and audible speaker echo remained. The user moved that, and the labels it affects, to M3.2 (`docs/specs/03.2-echo.md`, D-59).
 - [ ] Verifier passes; `deep-reviewer` and `/security-review` run in parallel, with findings fixed in this PR.

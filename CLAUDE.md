@@ -99,7 +99,7 @@ These are load-bearing and not obvious from reading a single file:
 - **Mid-recording stop/pause uses stdin readability, not readLine.** `Shell.recordFlow()` installs `FileHandle.standardInput.readabilityHandler` before awaiting `capture.run()`, and removes it after. The handler dispatches on input: bare `" "` (after stripping CR/LF) → `pauseToggle()`, anything else → `manualStop()`. A blocking `readLine()` in a detached Task would leak the thread because Swift can't cancel blocking syscalls. Handler approach is clean. **Caveat:** the handler only fires on a real TTY — when stdin is piped (testing), libc fully buffers stdin and the FileHandle dispatch source never sees subsequent bytes. Pause/stop are not reachable from piped tests; verify via interactive tty.
 - **`setbuf(stdout, nil)`** at the top of `main.swift` makes prompts and progress flush correctly and kept an early crash visible. Do not remove.
 - **Sendable warnings exist** on `AudioCapture`'s Task/DispatchQueue captures. They're left as warnings deliberately; making the class an actor is a bigger refactor than we've invested in.
-- **Echo needs the mic and system audio lined up (D-58).** They're paired by sample count, so a gap at the start stays for the whole recording, and Speex only removes an echo inside its tail. `MicStartGate` holds the mic until system audio starts, and the tail is 500 ms. To measure a real recording without reading it, compare the two tracks' 10 ms loudness envelopes.
+- **Echo needs the mic and system audio lined up (D-58).** They're paired by sample count, so a gap at the start stays for the whole recording, and Speex only removes an echo inside its tail. `MicStartGate` holds the mic until system audio starts, and the tail is 500 ms. To measure a real recording without reading it, compare the two tracks' 10 ms loudness envelopes. **Echo is still audible on real speakers, and M3.2 fixes it (`docs/specs/03.2-echo.md`):** on a Studio Display, raw echo is about as loud as its source, the lag is 150-180 ms, Speex takes off about 10-20 dB, and about a third of `You` words were the other side's. A deliberate repeat isn't an echo, so never remove lines by text alone.
 - **Do not enable Apple's Voice-Processing I/O on the mic input.** `AVAudioEngine.inputNode.setVoiceProcessingEnabled(true)` was tried (commit `a30025f`) to cancel the speaker→mic echo. It works as an AEC, but the API also switches the system audio HAL into "voice chat" mode — that ducks output (overriding user volume) and puts the mic into an exclusive voice-processing path. Any concurrent VoIP app (Zoom, Meet, Teams) that's also using VPIO is then unable to capture the mic, and its playback gets duck-attenuated. Recording becomes unusable in real meetings. **The fix is implemented:** software AEC via vendored `speexdsp` running in user-space against our own mic and SCStream buffers — that path doesn't claim the HAL session. Disable with `--no-aec` or Settings → AEC if needed.
 
 ## Extending the tool
@@ -126,10 +126,10 @@ The Settings menu is grouped with dimmed `MenuItem.separator(...)` header rows (
 
 | Rule | Because |
 |---|---|
-| **Build in the main session.** No builder subagents, no worktrees. | User's rule; keeps the context and the diff in one place. |
+| **Build in the main session.** No builder subagents, no worktrees. M3.2 alone uses researcher, developer and reviewer subagents (D-59). | User's rule; keeps the context and the diff in one place. |
 | **A fresh Sonnet subagent writes all tests, every time.** The one exception to building in the main session. It reports product bugs and doesn't fix them. | User's rule, D-49. |
 | **All E2E tests run locally; CI runs only the short one.** | User's rule, D-49; keeps CI quick. |
-| **One branch and one PR per milestone** (`m<n>-<slug>`), closing that milestone's issues. | Six PRs are easy to follow. |
+| **One branch and one PR per milestone** (`m<n>-<slug>`), closing that milestone's issues. | One PR per milestone is easy to follow. |
 | **Run the tests, then commit.** The git hooks enforce `scripts/check.sh --fast` and the sweeps. Never use `--no-verify`. | A failed sweep means a leak was about to happen. |
 | **Sweep before every commit and before every push**: identity, secrets, security. | Repo is public. |
 | **Sonnet verifier (`verifier` agent) after every milestone**, before merge. | Independent proof that Done-when checks are true. |
@@ -173,7 +173,7 @@ After a fix, re-run each agent by what changed:
 **To merge:** CI is green on the exact commit being merged, and every required agent's PASS or re-check covers every non-doc change in it. The verifier's last check comes after the last fix round. Lows don't block. If the same check fails twice after a fix, stop and ask.
 
 ### Closing a milestone, then starting the next
-Order: M1 → M2 → M2.1 → M3 → M4 → M5 → M6.
+Order: M1 → M2 → M2.1 → M3 → M3.1 → M3.2 → M4 → M5 → M6.
 
 1. **Save, on the milestone branch, once the verifier (and deep review, where required) has passed:**
    - `dev/evidence/<date>-m<n>-report.md`: what landed, each Done-when with its evidence, every verifier and review finding with the test it became, surprises, what's still unsure, and what the next milestone needs to know.
