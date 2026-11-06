@@ -154,32 +154,34 @@ final class Transcriber {
     /// Transcribe multiple WAV files, adjusting timestamps for continuity.
     /// Returns combined text and segments with correct absolute timestamps.
     func transcribe(wavPaths: [String]) async throws -> (text: String, segments: [Segment]) {
-        guard !wavPaths.isEmpty else {
-            return ("", [])
-        }
-
-        var allText: [String] = []
-        var allSegments: [Segment] = []
-        var timeOffset: Double = 0
-
+        var chunks: [Chunk] = []
         for path in wavPaths {
             let (text, segments) = try await transcribe(wavPath: path)
-
-            // Adjust segment timestamps by the offset
-            let adjustedSegments = segments.map { seg in
-                Segment(start: seg.start + timeOffset, end: seg.end + timeOffset, text: seg.text)
-            }
-
-            allText.append(text)
-            allSegments.append(contentsOf: adjustedSegments)
-
-            // Update offset: use the last segment's end time, or estimate from duration
-            if let last = segments.last {
-                timeOffset += last.end
-            }
+            chunks.append(Chunk(duration: RecordingFiles.duration(ofAudioAt: path), text: text, segments: segments))
         }
+        return Self.stitch(chunks)
+    }
 
-        return (allText.joined(separator: " "), allSegments)
+    struct Chunk {
+        /// The file's real length. Nil if it couldn't be read.
+        let duration: Double?
+        let text: String
+        let segments: [Segment]
+    }
+
+    /// Each chunk starts where the previous file ended, not where its speech ended,
+    /// so trailing silence doesn't shift later timestamps. If a file's length can't
+    /// be read, the last segment's end is the best estimate left, and it may run short.
+    static func stitch(_ chunks: [Chunk]) -> (text: String, segments: [Segment]) {
+        var texts: [String] = []
+        var all: [Segment] = []
+        var offset: Double = 0
+        for chunk in chunks {
+            texts.append(chunk.text)
+            all += chunk.segments.map { Segment(start: $0.start + offset, end: $0.end + offset, text: $0.text) }
+            offset += chunk.duration ?? chunk.segments.last?.end ?? 0
+        }
+        return (texts.filter { !$0.isEmpty }.joined(separator: " "), all)
     }
 
     /// Format segments as `[HH:MM:SS] text` one per line.

@@ -19,9 +19,11 @@ final class AudioCapture: NSObject {
     private var outputURL: URL?
     private var targetDuration: Double = 0
 
-    // Protected by fileWriteQueue
-    private var sampleCount: Int = 0
     private var captureStart: Date?
+    private let stopper = RecordingStopper()
+
+    /// Audio actually written, which leaves out paused time.
+    private var capturedFrames: Int { writer?.framesWritten ?? 0 }
 
     private var stream: SCStream?
     private var micCapture: MicCapture?
@@ -85,6 +87,7 @@ final class AudioCapture: NSObject {
                     targetApps = found
                     targetLabel = app.label
                     print("Found \(app.label): \(found.map(\.bundleIdentifier).joined(separator: ", "))")
+                    if let warning = Self.targetWarning(for: app) { print(warning) }
                     break
                 }
             }
@@ -190,7 +193,7 @@ final class AudioCapture: NSObject {
             │  Mic            : \(micStatus.padding(toLength: 22, withPad: " ", startingAt: 0))│
             │  AEC            : \(aecStatus.padding(toLength: 22, withPad: " ", startingAt: 0))│
             │  Duration       : \("\(Int(duration))s".padding(toLength: 22, withPad: " ", startingAt: 0))│
-            │  Format         : 48 kHz · stereo · f32  │
+            │  Format         : \(Self.formatDescription.padding(toLength: 22, withPad: " ", startingAt: 0))│
             │  Output         : \(url.lastPathComponent.padding(toLength: 22, withPad: " ", startingAt: 0))│
             └──────────────────────────────────────────┘
             """)
@@ -209,13 +212,16 @@ final class AudioCapture: NSObject {
                 do {
                     try await self.stream!.startCapture()
                     self.captureStart = Date()
-                    print("🔴 Recording…  (Ctrl+C to stop early)\n")
+                    print(Self.recordingHint)
                     // Auto-stop after requested duration
-                    DispatchQueue.main.asyncAfter(deadline: .now() + duration) {
+                    self.stopper.startTimer(after: duration) {
                         self.stopRecording(reason: .timerExpired)
                     }
                 } catch {
-                    cont.resume(throwing: error)
+                    if self.stopper.claimStop() {
+                        self.stopCont = nil
+                        cont.resume(throwing: error)
+                    }
                 }
             }
         }
@@ -247,13 +253,15 @@ final class AudioCapture: NSObject {
     }
 
     private func stopRecording(reason: StopReason) {
+        guard stopper.claimStop() else { return }
         Task {
             try? await stream?.stopCapture()
             micCapture?.stop()
             micCapture = nil
             echo = nil
 
-            let captured = Double(sampleCount) / 48_000.0
+            let frames = capturedFrames
+            let captured = Double(frames) / 48_000.0
             let files = writer?.finish() ?? []
             writer = nil  // closing AVAudioFile flushes + finalises the WAV header
 
@@ -264,7 +272,7 @@ final class AudioCapture: NSObject {
             case .error(let e):
                 print("⚠   Stopped with error: \(e.localizedDescription)")
             }
-            print(String(format: "   Captured  : %.2fs  (%d samples)", captured, sampleCount))
+            print(String(format: "   Captured  : %.2fs  (%d samples)", captured, frames))
             if files.count == 1 {
                 let url = files[0]
                 print("   Saved to  : \(url.path)")
@@ -306,6 +314,20 @@ final class AudioCapture: NSObject {
             }
             stopCont = nil
         }
+    }
+
+    // ─── Text ────────────────────────────────────────────────────────────────
+
+    static let formatDescription = "48 kHz · mono · int16"
+    static let recordingHint = "🔴 Recording…  (Enter to stop, Space+Enter to pause)\n"
+
+    /// Capture is scoped to the app, so a call in another app would record nothing.
+    static func targetWarning(for app: MeetingApp) -> String? {
+        guard app.isBrowser else { return nil }
+        return """
+            ⚠  Capturing only \(app.label). If the call is in another app, this records silence.
+               To capture everything: --all-audio, or Settings → Audio source → All system audio.
+            """
     }
 
     // ─── Errors ──────────────────────────────────────────────────────────────
@@ -358,14 +380,14 @@ extension AudioCapture: SCStreamOutput {
         }
         writer?.pushSystem(pcmBuffer)
         echo?.pushReference(pcmBuffer)
-        sampleCount += Int(pcmBuffer.frameLength)
-        printProgress()
+        printProgress(frameLength: Int(pcmBuffer.frameLength))
     }
 
     // Print a progress line every 5 seconds
-    private func printProgress() {
-        let elapsed = Double(sampleCount) / 48_000.0
-        let prevElapsed = Double(sampleCount - 1024) / 48_000.0  // approximate previous
+    private func printProgress(frameLength: Int) {
+        let frames = capturedFrames
+        let elapsed = Double(frames) / 48_000.0
+        let prevElapsed = Double(frames - frameLength) / 48_000.0
         let everyN: Double = 5
         guard Int(elapsed / everyN) > Int(prevElapsed / everyN) else { return }
 

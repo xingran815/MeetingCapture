@@ -228,7 +228,8 @@ public enum MeetingCaptureApp {
                 // Transcribe-only: skip capture, transcribe a .wav, optionally summarize
                 if let path = transcribeOnly {
                     let text = try await runTranscription(
-                        wavPaths: [path], model: whisperModel, modelFolder: whisperFolder, language: whisperLang)
+                        wavPaths: RecordingFiles.allParts(of: path), model: whisperModel, modelFolder: whisperFolder,
+                        language: whisperLang)
                     if summarizeFlag {
                         try await runSummarization(transcript: text, sourcePath: path)
                     }
@@ -241,6 +242,8 @@ public enum MeetingCaptureApp {
                     exit(0)
                 }
 
+                RecordingKeys.install(on: capture)
+                defer { RecordingKeys.remove() }
                 let wavFiles = try await capture.run(
                     duration: duration,
                     outputPath: outputPath,
@@ -308,8 +311,7 @@ public enum MeetingCaptureApp {
         // Use the first WAV file's base name (without _partN suffix) for the output
         let firstPath = wavPaths[0]
         let wavURL = URL(fileURLWithPath: firstPath)
-        let baseName = wavURL.deletingPathExtension().lastPathComponent
-            .replacingOccurrences(of: "_part\\d+$", with: "", options: .regularExpression)
+        let baseName = RecordingFiles.baseName(of: wavURL.deletingPathExtension().lastPathComponent)
         let dir = wavURL.deletingLastPathComponent()
         let txtURL = dir.appendingPathComponent(baseName).appendingPathExtension("txt")
         let body = Transcriber.format(segments: segments) + "\n"

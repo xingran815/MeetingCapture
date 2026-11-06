@@ -114,21 +114,8 @@ final class Shell {
                 Space+Enter to pause/resume · Enter to stop.
             """)
 
-        // Install stdin-readability handler. Line is "<space>\n" → pause toggle;
-        // anything else (including a bare "\n") → stop. Terminals are line-
-        // buffered by default so a bare space won't reach us until Enter.
-        let stdin = FileHandle.standardInput
-        stdin.readabilityHandler = { handle in
-            let data = handle.availableData
-            guard !data.isEmpty else { return }
-            let trimmed = data.filter { $0 != 0x0A && $0 != 0x0D }
-            if trimmed == Data([0x20]) {
-                capture.pauseToggle()
-            } else {
-                capture.manualStop()
-            }
-        }
-        defer { stdin.readabilityHandler = nil }
+        RecordingKeys.install(on: capture)
+        defer { RecordingKeys.remove() }
 
         let wavFiles: [URL]
         do {
@@ -175,7 +162,7 @@ final class Shell {
             print("❌  File not found: \(path)")
             return
         }
-        _ = await runTranscribe(wavPaths: [path])
+        _ = await runTranscribe(wavPaths: RecordingFiles.allParts(of: path))
 
         // Offer to summarize the fresh transcript
         let txtPath = (path as NSString).deletingPathExtension + ".txt"
@@ -216,8 +203,7 @@ final class Shell {
             // Use the first WAV file's base name (without _partN suffix) for the output
             let firstPath = wavPaths[0]
             let wavURL = URL(fileURLWithPath: firstPath)
-            let baseName = wavURL.deletingPathExtension().lastPathComponent
-                .replacingOccurrences(of: "_part\\d+$", with: "", options: .regularExpression)
+            let baseName = RecordingFiles.baseName(of: wavURL.deletingPathExtension().lastPathComponent)
             let dir = wavURL.deletingLastPathComponent()
             let txtURL = dir.appendingPathComponent(baseName).appendingPathExtension("txt")
             let body = Transcriber.format(segments: segments) + "\n"

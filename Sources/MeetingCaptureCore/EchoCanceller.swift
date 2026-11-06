@@ -67,6 +67,10 @@ final class EchoCanceller {
         echoState = speex_echo_state_init(Int32(Self.frameSize), Int32(Self.tailSamples))
         preprocessState = speex_preprocess_state_init(Int32(Self.frameSize), Int32(Self.sampleRate))
 
+        // Speex assumes 8 kHz until told otherwise, which skews its filter timing.
+        var rate = Int32(Self.sampleRate)
+        _ = speex_echo_ctl(echoState, SPEEX_ECHO_SET_SAMPLING_RATE, &rate)
+
         // Tell the preprocessor about the echo state so it can do residual-echo
         // suppression on top of the MDF's primary cancellation.
         if let es = echoState {
@@ -84,6 +88,13 @@ final class EchoCanceller {
     deinit {
         if let preprocessState { speex_preprocess_state_destroy(preprocessState) }
         if let echoState { speex_echo_state_destroy(echoState) }
+    }
+
+    /// The rate Speex itself reports.
+    var configuredSampleRate: Int {
+        var rate: Int32 = 0
+        _ = speex_echo_ctl(echoState, SPEEX_ECHO_GET_SAMPLING_RATE, &rate)
+        return Int(rate)
     }
 
     // MARK: - Push

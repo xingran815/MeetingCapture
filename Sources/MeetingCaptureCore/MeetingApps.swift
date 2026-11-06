@@ -44,6 +44,9 @@ extension MeetingApp {
             bundleIDs: ["com.apple.Safari"]),
     ]
 
+    /// Browsers run anything, so a browser being open doesn't mean the call is in it.
+    var isBrowser: Bool { id == "chrome" || id == "safari" }
+
     /// All catalog ids — the default "everything enabled" set.
     static var allIDs: [String] { catalog.map(\.id) }
 }
