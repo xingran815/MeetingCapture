@@ -119,8 +119,9 @@ enum AudioTracks {
         /// Nil if the file has no mic track, or the track is silent.
         let mic: URL?
         let system: URL?
-        /// Tracks left out for holding only steady, quiet noise, by name.
-        var noiseOnly: [String] = []
+        /// Tracks that sound like only steady, quiet noise, by name. They're still
+        /// transcribed, so their lines are doubtful (D-56).
+        var soundsLikeNoise: [String] = []
     }
 
     /// Below this peak, a track counts as silent: an unconnected mic writes zeros.
@@ -128,8 +129,11 @@ enum AudioTracks {
 
     /// Finding from the deep review: Whisper turns steady room noise into invented
     /// speech, in an invented language, labelled as a person. So a track that stays
-    /// quiet and steady for a whole part isn't transcribed. Both conditions must hold,
-    /// because dropping real speech is worse than a line of nonsense.
+    /// quiet and steady for a whole part is flagged as doubtful.
+    ///
+    /// It's flagged, not dropped (D-56). Soft speech over a noise floor measures the
+    /// same, and Whisper reads it well, so level alone can't tell them apart, and
+    /// dropping real speech is worse than a line of nonsense.
     ///
     /// Levels are measured over 100 ms. Finding from the deep-review re-check: over a
     /// whole second, soft speech varied by under 2x and passed as steady, because each
@@ -219,9 +223,9 @@ enum AudioTracks {
         }
         let noise = levels.map(isSteadyQuietNoise(levels:))
         return Split(
-            mic: peaks[0] >= silencePeak && !noise[0] ? micURL : nil,
-            system: peaks[1] >= silencePeak && !noise[1] ? systemURL : nil,
-            noiseOnly: (noise[0] && peaks[0] >= silencePeak ? ["mic"] : [])
+            mic: peaks[0] >= silencePeak ? micURL : nil,
+            system: peaks[1] >= silencePeak ? systemURL : nil,
+            soundsLikeNoise: (noise[0] && peaks[0] >= silencePeak ? ["mic"] : [])
                 + (noise[1] && peaks[1] >= silencePeak ? ["system audio"] : []))
     }
 }

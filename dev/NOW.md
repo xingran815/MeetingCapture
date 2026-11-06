@@ -1,7 +1,8 @@
 # Now
 Updated: 2026-11-06 · milestone 3 · issues #5, #6
 
-**Next step:** review and audit findings are fixed and pushed; the required agents re-check the changed lines alongside CI. Then the 👤 check: the user records one short real call on the new build, and says whether it sounds right and labels correctly.
+**Next step:** the user chose transcribe and flag for noise-like tracks (D-56). Finish its tests, push, and re-check the changed lines alongside CI. Then the 👤 check: the user records one short real call on the new build, and says whether it sounds right and labels correctly.
+**Re-checks on `8156d1d`:** CI green; verifier PASS on changed lines; security nothing at the bar; deep review one should-fix, which D-56 answers. Its lows are D-57.
 **How to check:** `scripts/check.sh` passes; CI green on the exact commit; verifier, deep review and `/security-review` pass; the user's yes.
 
 **Stop after M3 closes.** The user said so on 2026-11-06: don't start M4 until they say to. This overrides "start the next milestone" for this one close.

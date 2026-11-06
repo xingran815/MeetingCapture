@@ -30,6 +30,7 @@ CASE_NAMES=(
     two-system-voices
     noise-before-speech-unpinned
     noise-only-mic
+    soft-speech-over-noise
     multipart-wav
     multipart-m4a-and-wav
     crashed-wav-audio-kept
@@ -368,7 +369,8 @@ case_noise_before_speech_unpinned() {
     finish "$d/call"
     expect_line "$d/call.txt" You fox 33 42
     expect_line "$d/call.txt" "Speaker 1" friday 5 12
-    expect_lines "$d/call.txt" 2
+    # The 35 s of noise ahead of the speech may be flagged and transcribed (D-56). Only the
+    # speech must be right, and the language must not drift (checked below).
     if grep '^   language:' "$d/call.run.log" | grep -qv 'language: en$'; then
         echo "    FAIL: a track was detected as another language than English:"
         grep '^   language:' "$d/call.run.log"
@@ -382,13 +384,33 @@ case_noise_only_mic() {
     local before
     before="$(seconds "$d/call.wav")"
     finish "$d/call"
-    expect_log "$d/call.run.log" "held only quiet, steady noise"
-    expect_no_label "$d/call.txt" You
+    # D-56: the noise-like track is transcribed anyway, so the real model may invent `You`
+    # lines from it. Neither their presence nor their text is checked, only the system speech.
+    expect_log "$d/call.run.log" "sounded like only quiet, steady noise, so any lines from it may be invented"
     expect_line "$d/call.txt" "Speaker 1" friday 5 12
-    expect_lines "$d/call.txt" 1
     # The noise is audio the user may want to listen to, so it stays in the M4A.
     expect_archived "$d/call" "$before"
-    # A track left out could be soft speech, so retention must never delete this audio.
+    # Invented lines are possible, so retention must never delete this audio.
+    expect_transcribed_in_sidecar "$d/call" no
+    expect_log "$d/call.run.log" "won't be deleted automatically"
+}
+
+case_soft_speech_over_noise() {
+    local d="$1"
+    # Finding "soft speech over a noise floor was left out": speech whose loudest 100 ms
+    # window is about 0.004 over Gaussian noise of about 0.002 RMS looks like noise by level.
+    # It must be transcribed, labelled You, and flagged as doubtful. Real words, not a
+    # check for the absence of invented ones.
+    audio softmix "$d/mic.wav" "$FIX/long_mic.wav" 0.004 0.002 11 3
+    build "$d/mic.wav" "$FIX/friday.wav" "$d/call.wav"
+    local before
+    before="$(seconds "$d/call.wav")"
+    finish "$d/call" --language en
+    expect_log "$d/call.run.log" "sounded like only quiet, steady noise, so any lines from it may be invented"
+    expect_line "$d/call.txt" You "fox|lazy|dog" 0 25
+    expect_line "$d/call.txt" You "garden|sleeps|home|slowly" 0 25
+    expect_line "$d/call.txt" "Speaker 1" friday 5 14
+    expect_archived "$d/call" "$before"
     expect_transcribed_in_sidecar "$d/call" no
     expect_log "$d/call.run.log" "won't be deleted automatically"
 }

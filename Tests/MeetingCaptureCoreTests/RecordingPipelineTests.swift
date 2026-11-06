@@ -180,15 +180,18 @@ final class RecordingPipelineTests: AudioTestCase {
         XCTAssertFalse(result.notes.isEmpty, "an empty transcript with no reason looks like a bug or a lost meeting")
     }
 
-    func testNoiseOnEveryTrackKeepsTheAudioAndNames() async throws {
+    func testNoiseOnEveryTrackIsTranscribedFlaggedAndKeepsTheAudio() async throws {
         let file = url("m.wav")
         var generator = SystemRandomNumberGenerator()
         let noise = (0..<(TestAudio.rate * 6)).map { _ in Float.random(in: -0.003...0.003, using: &generator) }
         try TestAudio.writeWAV(at: file, seconds: 6, mic: { noise[$0] }, system: { noise[$0] })
         let transcriber = ScriptedTranscriber(text: "invented")
         let result = try await finish([file], transcriber)
-        XCTAssertEqual(transcriber.paths, [], "noise must never reach Whisper")
+        XCTAssertEqual(transcriber.paths.count, 2, "D-56: noise-like tracks still reach Whisper, \(transcriber.paths)")
         XCTAssertEqual(result?.notes.count, 2)
+        XCTAssertEqual(result?.hasDoubtfulTrack, true)
+        XCTAssertTrue(result?.formatted.contains("invented") ?? false, "their lines appear, labelled as usual")
+        XCTAssertNil(loadSidecar("m")?.transcribedAt)
         XCTAssertEqual(wouldRetentionDelete(), [])
     }
 

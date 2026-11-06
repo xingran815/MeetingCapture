@@ -44,7 +44,9 @@ Invented audio only: white noise at 0.003 and 0.001 amplitude, with a `say` sent
 | Two-track, mic noise only, speech on system | Not measured | Mic left out with a note, no `You` lines, sentence correct |
 | Two-track, 35 s noise then speech on mic | Not measured | `You` at 00:00:35, sentence correct |
 
+The third row's "left out" no longer applies. Since D-56, a noise-like track is transcribed and flagged, because soft speech over a noise floor measured the same as noise and Whisper read it almost perfectly.
+
 ## Still unsure, added after the deep review
-- **The noise thresholds are from white noise,** not a real room. The real call is their first test. Real room noise that isn't steady, or that's louder than the limit, would still reach Whisper.
+- **The noise thresholds are from white noise,** not a real room. The real call is their first test. They now only decide whether a track gets flagged, and whether its audio stays out of retention.
 - **A whole window can still be skipped.** With `logProbThreshold` off, WhisperKit skips any 30 s window scored as no speech, however confident the words. This may explain the 29 s gap above. The reviewer's fixtures didn't reproduce a loss.
 

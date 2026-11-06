@@ -415,7 +415,7 @@ final class ReviewFindingTests: XCTestCase {
     }
 
     /// Real file, real split: noise on the mic, a loud tone on the system track.
-    func testANoisyMicTrackIsLeftOutAndTheUserIsTold() async throws {
+    func testANoisyMicTrackIsTranscribedFlaggedAndTheUserIsTold() async throws {
         let url = dir.appendingPathComponent("noisy.wav")
         try autoreleasepool {
             let writer = try TrackWriter(outputURL: url)
@@ -432,12 +432,19 @@ final class ReviewFindingTests: XCTestCase {
                 writer.pushSystem(buffer)
             }
         }
-        let segment = Transcriber.Segment(start: 0, end: 1, text: "invented")
-        let pipeline = RecordingPipeline(transcriber: Scripted([segment]), detector: OneSpeaker())
+        let split = try AudioTracks.split(url, into: try workFolder())
+        XCTAssertNotNil(split.mic, "a noise-like track is still returned for transcription")
+        XCTAssertEqual(split.soundsLikeNoise, ["mic"])
+        let transcriber = ScriptedTranscriber(text: "invented")
+        let pipeline = RecordingPipeline(transcriber: transcriber, detector: OneSpeaker())
         let result = try await pipeline.transcribe(parts: [url])
-        XCTAssertEqual(result.segments.map(\.speaker), ["Speaker 1"], "no You, because the mic held only noise")
+        XCTAssertTrue(transcriber.paths.contains { $0.hasSuffix(".mic.wav") }, "\(transcriber.paths)")
+        XCTAssertEqual(
+            result.segments.map(\.speaker).sorted(), ["Speaker 1", "You"], "the mic lines are labelled as usual")
+        XCTAssertTrue(result.hasDoubtfulTrack)
         XCTAssertEqual(result.notes.count, 1)
         XCTAssertTrue(result.notes[0].contains("mic"), result.notes[0])
+        XCTAssertTrue(result.notes[0].contains("may be invented"), result.notes[0])
     }
 
     func testNoiseMarkersAreDroppedAndRealOnesStay() {
@@ -514,19 +521,21 @@ final class ReviewFindingTests: XCTestCase {
         AudioRetention.clean(in: dir, days: 1, now: now.addingTimeInterval(400 * 86_400)).map(\.lastPathComponent)
     }
 
-    /// Finding "retention can delete audio that was never transcribed": a mic track left out as
-    /// noise could be soft speech, so the recording must not become eligible for deletion.
-    func testATrackLeftOutAsNoiseKeepsTheAudioOutOfRetention() async throws {
+    /// Finding "retention can delete audio that was never transcribed": a mic track that sounds
+    /// like noise could be soft speech, so the recording must not become eligible for deletion.
+    func testATrackThatSoundsLikeNoiseKeepsTheAudioOutOfRetention() async throws {
         let part = try twoTrack("m.wav", seconds: 6, mic: Self.steadyNoise, system: TestAudio.systemTone)
         let result = try await finishRecording([part])
         let transcript = try XCTUnwrap(result)
         XCTAssertTrue(transcript.formatted.contains("invented words"), "the system track has words")
-        XCTAssertTrue(transcript.leftOutTrack)
+        XCTAssertTrue(transcript.hasDoubtfulTrack)
         XCTAssertTrue(
             transcript.notes.contains { $0.contains("won't be deleted automatically") }, "\(transcript.notes)")
         let saved = try XCTUnwrap(savedSidecar())
         XCTAssertEqual(saved.state, .processed)
-        XCTAssertNil(saved.transcribedAt, "a track was left out, so the audio isn't proven transcribed")
+        XCTAssertNil(
+            saved.transcribedAt,
+            "a track sounded like noise, so its lines are doubtful and the audio isn't proven transcribed")
         let files = try XCTUnwrap(saved.audioFiles)
         XCTAssertFalse(files.isEmpty)
         XCTAssertEqual(deletedByRetentionFarInTheFuture(), [])
@@ -540,7 +549,7 @@ final class ReviewFindingTests: XCTestCase {
         let two = try twoTrack("m_part2.wav", seconds: 6, mic: Self.steadyNoise, system: TestAudio.systemTone)
         let result = try await finishRecording([one, two])
         let transcript = try XCTUnwrap(result)
-        XCTAssertTrue(transcript.leftOutTrack)
+        XCTAssertTrue(transcript.hasDoubtfulTrack)
         XCTAssertNil(try XCTUnwrap(savedSidecar()).transcribedAt)
         XCTAssertEqual(deletedByRetentionFarInTheFuture(), [])
     }
@@ -551,7 +560,7 @@ final class ReviewFindingTests: XCTestCase {
         let part = try twoTrack("m.wav", seconds: 6, mic: nil, system: TestAudio.systemTone)
         let result = try await finishRecording([part])
         let transcript = try XCTUnwrap(result)
-        XCTAssertFalse(transcript.leftOutTrack)
+        XCTAssertFalse(transcript.hasDoubtfulTrack)
         XCTAssertEqual(try XCTUnwrap(savedSidecar()).transcribedAt, now)
         XCTAssertFalse(deletedByRetentionFarInTheFuture().isEmpty, "this one may be deleted once old")
     }
@@ -597,14 +606,14 @@ final class ReviewFindingTests: XCTestCase {
 
         let split = try AudioTracks.split(part, into: try workFolder())
         XCTAssertNotNil(split.mic, "the soft speech must go to transcription")
-        XCTAssertEqual(split.noiseOnly, [])
+        XCTAssertEqual(split.soundsLikeNoise, [])
     }
 
-    func testSteadyNoiseAtTheSameLevelIsStillReportedAsNoise() throws {
+    func testSteadyNoiseAtTheSameLevelIsReturnedAndListedAsSoundingLikeNoise() throws {
         let part = try twoTrack("steady.wav", seconds: 10, mic: Self.steadyNoise, system: nil)
         let split = try AudioTracks.split(part, into: try workFolder())
-        XCTAssertNil(split.mic)
-        XCTAssertEqual(split.noiseOnly, ["mic"])
+        XCTAssertNotNil(split.mic, "D-56: it is still transcribed")
+        XCTAssertEqual(split.soundsLikeNoise, ["mic"])
     }
 
     func testLessThanFiveSecondsIsNeverCalledNoise() throws {
@@ -613,9 +622,83 @@ final class ReviewFindingTests: XCTestCase {
         let short = try twoTrack("short.wav", seconds: 4.9, mic: Self.steadyNoise, system: nil)
         let shortSplit = try AudioTracks.split(short, into: work)
         XCTAssertNotNil(shortSplit.mic)
-        XCTAssertEqual(shortSplit.noiseOnly, [])
+        XCTAssertEqual(shortSplit.soundsLikeNoise, [])
         let enough = try twoTrack("enough.wav", seconds: 5, mic: Self.steadyNoise, system: nil)
-        XCTAssertEqual(try AudioTracks.split(enough, into: work).noiseOnly, ["mic"])
+        XCTAssertEqual(try AudioTracks.split(enough, into: work).soundsLikeNoise, ["mic"])
+    }
+
+    // MARK: D-56: soft speech over a noise floor was left out
+
+    /// Speech-like bursts: 150 ms on, 100 ms off, for 1.2 s of every 3 s. Tuned so the
+    /// loudest 100 ms window measures about 0.004, over a 0.002 noise floor.
+    private static let burstsOverFloor: (Int) -> Float = { i in
+        let ms = (i * 1000 / 48_000) % 3_000
+        let floor = noise(i, amplitude: amplitude(forRMS: 0.002))
+        guard ms < 1_200, ms % 250 < 150 else { return floor }
+        return floor + 0.0035 * sin(Float(i) * 0.05)
+    }
+
+    /// Finding "soft speech over a noise floor was left out": it is transcribed, the words
+    /// reach the text, the note says they may be invented, and the audio is never deleted.
+    func testSoftSpeechOverANoiseFloorWasLeftOutIsNowTranscribedAndFlagged() async throws {
+        let part = try twoTrack("m.wav", seconds: 12, mic: Self.burstsOverFloor, system: nil)
+        let samples = try TestAudio.tracks(of: part).mic
+        let loudest = try XCTUnwrap(rmsLevels(samples, window: AudioTracks.levelWindowFrames).max())
+        XCTAssertGreaterThan(loudest, 0.003, "the fixture's loudest window must be about 0.004")
+        XCTAssertLessThan(loudest, 0.005, "\(loudest)")
+
+        let split = try AudioTracks.split(part, into: try workFolder())
+        XCTAssertNotNil(split.mic, "the soft speech must go to transcription")
+        XCTAssertNil(split.system)
+
+        let transcriber = ScriptedTranscriber { path in
+            path.hasSuffix(".mic.wav") ? [Transcriber.Segment(start: 0.5, end: 1, text: "budget review tomorrow")] : []
+        }
+        let result = try await RecordingPipeline.finish(
+            parts: [part], base: dir.appendingPathComponent("m"),
+            pipeline: RecordingPipeline(transcriber: transcriber, detector: nil), now: now)
+        let transcript = try XCTUnwrap(result)
+        XCTAssertTrue(transcriber.paths.contains { $0.hasSuffix(".mic.wav") }, "\(transcriber.paths)")
+        let text = try String(contentsOf: dir.appendingPathComponent("m.txt"), encoding: .utf8)
+        XCTAssertTrue(text.contains("You: budget review tomorrow"), text)
+        XCTAssertTrue(transcript.hasDoubtfulTrack)
+        XCTAssertTrue(transcript.notes.contains { $0.contains("may be invented") }, "\(transcript.notes)")
+        XCTAssertNil(try XCTUnwrap(savedSidecar()).transcribedAt)
+        XCTAssertEqual(deletedByRetentionFarInTheFuture(), [])
+    }
+
+    /// Finding "soft speech over a noise floor was left out": the note names only the track
+    /// that sounds like noise.
+    func testOnlyTheNoiseLikeTrackIsListedWhenTheOtherIsClean() throws {
+        let part = try twoTrack("m.wav", seconds: 8, mic: Self.steadyNoise, system: TestAudio.systemTone)
+        let split = try AudioTracks.split(part, into: try workFolder())
+        XCTAssertEqual(split.soundsLikeNoise, ["mic"])
+        XCTAssertNotNil(split.mic)
+        XCTAssertNotNil(split.system)
+    }
+
+    func testTheNoteAppearsOnlyForTheTrackThatSoundsLikeNoise() async throws {
+        let part = try twoTrack("m.wav", seconds: 8, mic: Self.steadyNoise, system: TestAudio.systemTone)
+        let result = try await RecordingPipeline(transcriber: ScriptedTranscriber(text: "words"), detector: nil)
+            .transcribe(parts: [part])
+        let doubtful = result.notes.filter { $0.contains("may be invented") }
+        XCTAssertEqual(doubtful.count, 1, "\(result.notes)")
+        XCTAssertTrue(doubtful[0].contains("the mic track"), doubtful[0])
+        XCTAssertFalse(doubtful[0].contains("system audio"), doubtful[0])
+    }
+
+    /// A truly silent track (all zeros) is not noise-like: it is skipped, and there's no note.
+    func testATrulySilentTrackIsNotTranscribedAndNotListedAsNoise() async throws {
+        let part = try twoTrack("m.wav", seconds: 8, mic: { _ in 0 }, system: TestAudio.systemTone)
+        let split = try AudioTracks.split(part, into: try workFolder())
+        XCTAssertNil(split.mic)
+        XCTAssertNotNil(split.system)
+        XCTAssertEqual(split.soundsLikeNoise, [])
+        let transcriber = ScriptedTranscriber(text: "words")
+        let result = try await RecordingPipeline(transcriber: transcriber, detector: nil).transcribe(parts: [part])
+        XCTAssertFalse(transcriber.paths.contains { $0.hasSuffix(".mic.wav") }, "\(transcriber.paths)")
+        XCTAssertFalse(result.hasDoubtfulTrack)
+        XCTAssertTrue(result.notes.filter { $0.contains("invented") }.isEmpty, "\(result.notes)")
     }
 
     // MARK: Deep-review re-check: API key temp file was briefly readable

@@ -3,10 +3,13 @@
 
   e2e-audio.py silence OUT SECONDS
   e2e-audio.py noise   OUT SECONDS AMPLITUDE [SEED]   white noise, AMPLITUDE of full scale (0.003 is quiet)
+  e2e-audio.py softmix OUT SPEECH PEAK RMS SEED PAD   speech scaled so its loudest 100 ms window, with the noise, is
+                                                      PEAK, over Gaussian noise of RMS, PAD seconds of noise each side
   e2e-audio.py cat     OUT IN...                      files joined end to end
   e2e-audio.py crash   FILE                           makes a WAV declare no audio, as a crash leaves it
 """
 import array
+import math
 import random
 import sys
 import wave
@@ -42,6 +45,30 @@ def main(argv):
         peak = float(args[2]) * 32767
         count = int(float(args[1]) * RATE)
         write(args[0], array.array("h", (int(rng.uniform(-peak, peak)) for _ in range(count))))
+    elif cmd == "softmix":
+        out, speech_path, peak, rms, seed, pad = args[0], args[1], float(args[2]), float(args[3]), int(args[4]), float(args[5])
+        if peak <= rms:
+            sys.exit("PEAK must be above RMS")
+        speech = read(speech_path)
+        window = RATE // 10
+        loudest = 0.0
+        for start in range(0, max(1, len(speech) - window + 1), window // 2):
+            chunk = speech[start:start + window]
+            loudest = max(loudest, math.sqrt(sum(x * x for x in chunk) / len(chunk)) / 32768)
+        if loudest == 0:
+            sys.exit(f"{speech_path}: silent")
+        # Independent powers add: peak^2 = speech^2 + rms^2.
+        gain = math.sqrt(peak * peak - rms * rms) / loudest
+        rng = random.Random(seed)
+        padding = int(pad * RATE)
+        total = padding + len(speech) + padding
+        mixed = array.array("h")
+        for i in range(total):
+            value = rng.gauss(0, rms) * 32768
+            if padding <= i < padding + len(speech):
+                value += speech[i - padding] * gain
+            mixed.append(max(-32768, min(32767, int(value))))
+        write(out, mixed)
     elif cmd == "cat":
         joined = array.array("h")
         for path in args[1:]:
