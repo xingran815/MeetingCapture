@@ -38,7 +38,8 @@ exit 0
 STUB
 chmod +x scripts/*.sh .githooks/*
 git config core.hooksPath .githooks
-git add -A && git commit -qm "chore: base" || { echo "base commit refused"; exit 2; }
+git add -A
+git commit -qm "chore: base" || { echo "base commit refused"; exit 2; }
 
 # Expects the commit to be refused, naming the rule. $1 label, $2 rule, $3 file, $4 content.
 blocks() {

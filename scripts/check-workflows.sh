@@ -57,6 +57,7 @@ jobs:
     }
     expect "not pinned" 's/@[0-9a-f]+ # v7/@v7/'
     expect "pull_request_target" 's/^on: push/on: pull_request_target/'
+    # shellcheck disable=SC2016  # the text is meant literally
     expect "uses a secret" 's/macos-26/macos-26 # ${{ secrets.X }}/'
     expect "no top-level permissions" 's/^permissions:/perms:/'
     expect "read-only" 's/contents: read/contents: none/'

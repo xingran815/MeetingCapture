@@ -37,6 +37,7 @@ report() { printf 'BLOCKED [%s] %s\n' "$1" "$2"; found=1; }
 # ─── Line scanner ────────────────────────────────────────────────────────────
 # Reads a unified diff on stdin and checks added lines. SWEEP_CODE=1 also runs
 # the code-security rules, which only apply to staged changes.
+# shellcheck disable=SC2329  # called through feed
 scan_diff() {
     SWEEP_ALLOW="$ALLOW" perl -CSD -e '
         use strict; use warnings;
@@ -150,6 +151,7 @@ scan_message() {
 }
 
 # Reads file paths on stdin.
+# shellcheck disable=SC2329  # called through feed
 scan_filenames() {
     local path base
     while IFS= read -r path; do
@@ -217,6 +219,7 @@ sweep_outgoing() {  # rev-list arguments
 }
 
 # Prints every tracked text file as an all-added diff, for scan_diff.
+# shellcheck disable=SC2329,SC2016  # called through feed; the single quotes hold perl
 tree_as_diff() {
     git grep -Ilz '' | xargs -0 perl -e '
         for my $f (@ARGV) {
@@ -252,8 +255,8 @@ branch_rule() {  # local_ref local_sha remote_ref
 
 sweep_pre_push() {
     local zero=0000000000000000000000000000000000000000
-    local local_ref local_sha remote_ref remote_sha
-    while read -r local_ref local_sha remote_ref remote_sha; do
+    local local_ref local_sha remote_ref _
+    while read -r local_ref local_sha remote_ref _; do
         [ -n "${local_ref:-}" ] || continue
         [ "$local_sha" = "$zero" ] && continue   # a deletion sends no commits
         branch_rule "$local_ref" "$local_sha" "$remote_ref"
