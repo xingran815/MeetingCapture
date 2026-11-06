@@ -315,16 +315,17 @@ final class RecordingPipelineTests: AudioTestCase {
     // MARK: Splitting
 
     func testASteadyPartIsNoiseAndOneWithSpeechIsNot() {
-        let quiet = [Float](repeating: 0.002, count: 30)
+        // Levels are per 100 ms now, and 50 of them (5 s) is the fewest that can be judged.
+        let quiet = [Float](repeating: 0.002, count: AudioTracks.fewestWindows)
         XCTAssertTrue(AudioTracks.isSteadyQuietNoise(levels: quiet))
         var withSpeech = quiet
         withSpeech[20] = 0.3
-        XCTAssertFalse(AudioTracks.isSteadyQuietNoise(levels: withSpeech), "one loud second means someone spoke")
+        XCTAssertFalse(AudioTracks.isSteadyQuietNoise(levels: withSpeech), "one loud window means someone spoke")
     }
 
     func testPerfectSilenceIsNotCalledNoise() {
         XCTAssertFalse(
-            AudioTracks.isSteadyQuietNoise(levels: [Float](repeating: 0, count: 30)),
+            AudioTracks.isSteadyQuietNoise(levels: [Float](repeating: 0, count: AudioTracks.fewestWindows)),
             "a silent track gets no 'quiet noise' note")
     }
 }

@@ -46,6 +46,9 @@ struct RecordingPipeline {
         let segments: [LabelledSegment]
         /// Things the user should know, such as speaker detection failing.
         let notes: [String]
+        /// A track was left out as noise, so the audio may hold speech the transcript
+        /// doesn't. Finding from the deep-review re-check.
+        var leftOutTrack = false
         var formatted: String { SpeakerLabels.format(segments) }
     }
 
@@ -71,6 +74,7 @@ struct RecordingPipeline {
         var notes: [String] = []
         var offset = 0.0
         var detectedSpeakers = false
+        var leftOutTrack = false
         for (index, part) in parts.enumerated() {
             // A crashed WAV reads as empty until its header is repaired. Nothing else
             // about the file changes, and a healthy one isn't touched.
@@ -84,9 +88,11 @@ struct RecordingPipeline {
             var mic: [LabelledSegment] = []
             var system: [LabelledSegment] = []
             for track in tracks.noiseOnly {
+                leftOutTrack = true
                 notes.append(
                     "\(part.lastPathComponent): the \(track) track held only quiet, steady noise, so it wasn't "
-                        + "transcribed. The audio is kept, so you can listen to it.")
+                        + "transcribed. This recording's audio won't be deleted automatically, so you can listen to it."
+                )
             }
             if let url = tracks.mic {
                 mic = SpeakerLabels.labelMic(try await transcriber.transcribeSegments(path: url.path))
@@ -120,7 +126,7 @@ struct RecordingPipeline {
                 "This recording has \(parts.count) parts, and speakers are detected separately in each. "
                     + "Speaker 1 (part 2) may be the same person as Speaker 1. Give them one name to join them.")
         }
-        return Transcript(segments: all, notes: notes)
+        return Transcript(segments: all, notes: notes, leftOutTrack: leftOutTrack)
     }
 
     /// Encodes each WAV to M4A, keeping any WAV whose M4A can't be proven good.
@@ -167,8 +173,9 @@ struct RecordingPipeline {
         sidecar.pid = nil
         sidecar.audioFiles = archived.files.map(\.lastPathComponent)
         // A WAV that couldn't be archived may hold audio the transcript never reached,
-        // such as after a stale header, so it mustn't become eligible for deletion.
-        if archived.kept.isEmpty, let transcript,
+        // such as after a stale header, so it mustn't become eligible for deletion. The
+        // same goes for a track left out as noise, because that could be soft speech.
+        if archived.kept.isEmpty, let transcript, !transcript.leftOutTrack,
             !transcript.formatted.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         {
             sidecar.transcribedAt = now

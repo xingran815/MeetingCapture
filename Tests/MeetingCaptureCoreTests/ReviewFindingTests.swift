@@ -394,22 +394,24 @@ final class ReviewFindingTests: XCTestCase {
     }
 
     func testSteadyQuietNoiseCountsAsNoSpeech() {
-        let steady = [Float](repeating: 0.002, count: 60)
+        // Exactly the fewest windows (50 of 100 ms, which is 5 s) is enough to judge.
+        XCTAssertEqual(AudioTracks.fewestWindows, 50)
+        let steady = [Float](repeating: 0.002, count: 50)
         XCTAssertTrue(AudioTracks.isSteadyQuietNoise(levels: steady))
     }
 
     func testQuietSpeechIsNeverTakenForNoise() {
-        var levels = [Float](repeating: 0.002, count: 60)
+        var levels = [Float](repeating: 0.002, count: 50)
         levels[30] = 0.0045  // still quiet, but not steady
         XCTAssertFalse(AudioTracks.isSteadyQuietNoise(levels: levels))
     }
 
     func testSteadyLoudSoundIsNeverTakenForNoise() {
-        XCTAssertFalse(AudioTracks.isSteadyQuietNoise(levels: [Float](repeating: 0.05, count: 60)))
+        XCTAssertFalse(AudioTracks.isSteadyQuietNoise(levels: [Float](repeating: 0.05, count: 50)))
     }
 
     func testTooLittleAudioToJudgeIsKept() {
-        XCTAssertFalse(AudioTracks.isSteadyQuietNoise(levels: [Float](repeating: 0.002, count: 4)))
+        XCTAssertFalse(AudioTracks.isSteadyQuietNoise(levels: [Float](repeating: 0.002, count: 49)))
     }
 
     /// Real file, real split: noise on the mic, a loud tone on the system track.
@@ -469,5 +471,304 @@ final class ReviewFindingTests: XCTestCase {
             LabelledSegment(start: 3, end: 4, speaker: "You", text: "[BLANK_AUDIO]"),
         ]
         XCTAssertEqual(SpeakerLabels.format(segments), "[00:00:01] You: [silence please]")
+    }
+
+    // MARK: Deep-review re-check: retention could delete audio that was never transcribed
+
+    /// A deterministic, white-ish noise sample for index `i`, uniform in ±`amplitude`.
+    /// Hash-based so the same index always gives the same value and no run can flake.
+    private static func noise(_ i: Int, amplitude: Float) -> Float {
+        var x = UInt32(truncatingIfNeeded: i) &+ 0x9E37_79B9
+        x = (x ^ (x >> 16)) &* 0x85EB_CA6B
+        x = (x ^ (x >> 13)) &* 0xC2B2_AE35
+        x ^= x >> 16
+        return (Float(x) / Float(UInt32.max) * 2 - 1) * amplitude
+    }
+
+    /// Uniform noise has an RMS of amplitude / sqrt(3), so this is RMS `rms`.
+    private static func amplitude(forRMS rms: Float) -> Float { rms * Float(3).squareRoot() }
+
+    /// RMS 0.002: quiet steady noise.
+    private static let steadyNoise: (Int) -> Float = { noise($0, amplitude: amplitude(forRMS: 0.002)) }
+
+    private func twoTrack(_ name: String, seconds: Double, mic: ((Int) -> Float)?, system: ((Int) -> Float)?) throws
+        -> URL
+    {
+        let url = dir.appendingPathComponent(name)
+        try TestAudio.writeWAV(at: url, seconds: seconds, mic: mic, system: system)
+        return url
+    }
+
+    private func finishRecording(_ parts: [URL]) async throws -> RecordingPipeline.Transcript? {
+        let transcriber = ScriptedTranscriber(text: "invented words")
+        return try await RecordingPipeline.finish(
+            parts: parts, base: dir.appendingPathComponent("m"),
+            pipeline: RecordingPipeline(transcriber: transcriber, detector: nil), now: now)
+    }
+
+    private func savedSidecar() -> RecordingSidecar? {
+        RecordingSidecar.load(at: RecordingSidecar.url(forBase: dir.appendingPathComponent("m")))
+    }
+
+    private func deletedByRetentionFarInTheFuture() -> [String] {
+        AudioRetention.clean(in: dir, days: 1, now: now.addingTimeInterval(400 * 86_400)).map(\.lastPathComponent)
+    }
+
+    /// Finding "retention can delete audio that was never transcribed": a mic track left out as
+    /// noise could be soft speech, so the recording must not become eligible for deletion.
+    func testATrackLeftOutAsNoiseKeepsTheAudioOutOfRetention() async throws {
+        let part = try twoTrack("m.wav", seconds: 6, mic: Self.steadyNoise, system: TestAudio.systemTone)
+        let result = try await finishRecording([part])
+        let transcript = try XCTUnwrap(result)
+        XCTAssertTrue(transcript.formatted.contains("invented words"), "the system track has words")
+        XCTAssertTrue(transcript.leftOutTrack)
+        XCTAssertTrue(
+            transcript.notes.contains { $0.contains("won't be deleted automatically") }, "\(transcript.notes)")
+        let saved = try XCTUnwrap(savedSidecar())
+        XCTAssertEqual(saved.state, .processed)
+        XCTAssertNil(saved.transcribedAt, "a track was left out, so the audio isn't proven transcribed")
+        let files = try XCTUnwrap(saved.audioFiles)
+        XCTAssertFalse(files.isEmpty)
+        XCTAssertEqual(deletedByRetentionFarInTheFuture(), [])
+        for name in files {
+            XCTAssertTrue(FileManager.default.fileExists(atPath: dir.appendingPathComponent(name).path), name)
+        }
+    }
+
+    func testNoiseInOnlyThePartTwoMicTrackAlsoKeepsTheWholeRecording() async throws {
+        let one = try twoTrack("m.wav", seconds: 6, mic: nil, system: TestAudio.systemTone)
+        let two = try twoTrack("m_part2.wav", seconds: 6, mic: Self.steadyNoise, system: TestAudio.systemTone)
+        let result = try await finishRecording([one, two])
+        let transcript = try XCTUnwrap(result)
+        XCTAssertTrue(transcript.leftOutTrack)
+        XCTAssertNil(try XCTUnwrap(savedSidecar()).transcribedAt)
+        XCTAssertEqual(deletedByRetentionFarInTheFuture(), [])
+    }
+
+    /// The control: the same setup without a noise track is transcribed and eligible, so
+    /// the two tests above can't pass just because nothing ever sets `transcribedAt`.
+    func testTheSameRecordingWithNoNoiseTrackIsMarkedTranscribedAndEligible() async throws {
+        let part = try twoTrack("m.wav", seconds: 6, mic: nil, system: TestAudio.systemTone)
+        let result = try await finishRecording([part])
+        let transcript = try XCTUnwrap(result)
+        XCTAssertFalse(transcript.leftOutTrack)
+        XCTAssertEqual(try XCTUnwrap(savedSidecar()).transcribedAt, now)
+        XCTAssertFalse(deletedByRetentionFarInTheFuture().isEmpty, "this one may be deleted once old")
+    }
+
+    // MARK: Deep-review re-check: soft speech passed as noise
+
+    /// Quiet speech-like audio: a 0.002-RMS floor, plus 150 ms bursts 4 times a second for 1.2 s
+    /// of every 3 s, with a pause between phrases. Each burst adds 0.0042 RMS on top of the floor.
+    private static let softSpeech: (Int) -> Float = { i in
+        let ms = (i * 1000 / 48_000) % 3_000
+        let floor = noise(i, amplitude: amplitude(forRMS: 0.002))
+        guard ms < 1_200, ms % 250 < 150 else { return floor }
+        return floor + noise(i &+ 7_919, amplitude: amplitude(forRMS: 0.0042))
+    }
+
+    private func rmsLevels(_ samples: [Float], window: Int) -> [Float] {
+        stride(from: 0, to: samples.count - window + 1, by: window).map { start in
+            let energy = samples[start..<(start + window)].reduce(Float(0)) { $0 + $1 * $1 }
+            return (energy / Float(window)).squareRoot()
+        }
+    }
+
+    private func workFolder() throws -> URL {
+        let work = dir.appendingPathComponent("work")
+        try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
+        return work
+    }
+
+    func testSoftSpeechThatTheOldSecondLongMeasureCalledNoiseIsStillTranscribed() throws {
+        let part = try twoTrack("soft.wav", seconds: 12, mic: Self.softSpeech, system: nil)
+        let samples = try TestAudio.tracks(of: part).mic
+
+        // The old measure: one-second levels, all under 0.005 and varying by under 2x.
+        let seconds = rmsLevels(samples, window: 48_000)
+        let median = seconds.sorted()[seconds.count / 2]
+        let loudestSecond = try XCTUnwrap(seconds.max())
+        XCTAssertLessThan(loudestSecond, AudioTracks.quietLevel, "\(seconds)")
+        XCTAssertLessThan(loudestSecond, median * AudioTracks.steadyRatio, "\(seconds)")
+        // The new measure sees the words apart from the pauses.
+        let windows = rmsLevels(samples, window: AudioTracks.levelWindowFrames)
+        XCTAssertGreaterThanOrEqual(windows.count, AudioTracks.fewestWindows)
+        XCTAssertFalse(AudioTracks.isSteadyQuietNoise(levels: windows))
+
+        let split = try AudioTracks.split(part, into: try workFolder())
+        XCTAssertNotNil(split.mic, "the soft speech must go to transcription")
+        XCTAssertEqual(split.noiseOnly, [])
+    }
+
+    func testSteadyNoiseAtTheSameLevelIsStillReportedAsNoise() throws {
+        let part = try twoTrack("steady.wav", seconds: 10, mic: Self.steadyNoise, system: nil)
+        let split = try AudioTracks.split(part, into: try workFolder())
+        XCTAssertNil(split.mic)
+        XCTAssertEqual(split.noiseOnly, ["mic"])
+    }
+
+    func testLessThanFiveSecondsIsNeverCalledNoise() throws {
+        let work = try workFolder()
+        // 4.9 s is 49 windows of 100 ms: one short of enough. 5 s is exactly enough.
+        let short = try twoTrack("short.wav", seconds: 4.9, mic: Self.steadyNoise, system: nil)
+        let shortSplit = try AudioTracks.split(short, into: work)
+        XCTAssertNotNil(shortSplit.mic)
+        XCTAssertEqual(shortSplit.noiseOnly, [])
+        let enough = try twoTrack("enough.wav", seconds: 5, mic: Self.steadyNoise, system: nil)
+        XCTAssertEqual(try AudioTracks.split(enough, into: work).noiseOnly, ["mic"])
+    }
+
+    // MARK: Deep-review re-check: API key temp file was briefly readable
+
+    private func withKeyFile<T>(_ body: (URL) throws -> T) rethrows -> T {
+        let file = dir.appendingPathComponent("keys", isDirectory: true).appendingPathComponent("keys.json")
+        APIKeyStore.pathOverride = file
+        defer { APIKeyStore.pathOverride = nil }
+        return try body(file)
+    }
+
+    private final class ModeWatcher: @unchecked Sendable {
+        private let lock = NSLock()
+        private var stopped = false
+        private var looked = 0
+        private var loose: [String] = []
+        private let folder: String
+
+        init(folder: String) { self.folder = folder }
+
+        func stop() {
+            lock.lock()
+            stopped = true
+            lock.unlock()
+        }
+
+        private var isStopped: Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return stopped
+        }
+
+        func run() {
+            while !isStopped {
+                guard let names = try? FileManager.default.contentsOfDirectory(atPath: folder) else { continue }
+                for name in names where name.hasSuffix(".tmp") {
+                    var info = stat()
+                    // A file moved or deleted between listing and stat isn't a finding.
+                    guard lstat(folder + "/" + name, &info) == 0 else { continue }
+                    lock.lock()
+                    looked += 1
+                    if info.st_mode & 0o077 != 0 { loose.append("\(name): \(String(info.st_mode & 0o777, radix: 8))") }
+                    lock.unlock()
+                }
+            }
+        }
+
+        var report: (looked: Int, loose: [String]) {
+            lock.lock()
+            defer { lock.unlock() }
+            return (looked, loose)
+        }
+    }
+
+    /// Finding "API key temp file is briefly readable". The watcher only fails when it catches a
+    /// loose file, so the correct code can't make it flake. How often it catches the old code
+    /// depends on timing, so many writes of a growing file give it many chances.
+    func testTheKeyTempFileIsNeverReadableByOthersWhileItExists() throws {
+        try withKeyFile { file in
+            let folder = file.deletingLastPathComponent()
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let watcher = ModeWatcher(folder: folder.path)
+            let thread = Thread { watcher.run() }
+            thread.start()
+            let bigValue = String(repeating: "fake-key-", count: 200)
+            for i in 0..<400 {
+                XCTAssertTrue(APIKeyStore.write(bigValue + "\(i)", forProfile: "profile-\(i)"))
+            }
+            watcher.stop()
+            let report = watcher.report
+            XCTAssertEqual(report.loose, [], "a temp file was readable by group or others (\(report.looked) looked at)")
+            XCTAssertEqual(APIKeyStore.read(profileID: "profile-399"), bigValue + "399")
+        }
+    }
+
+    func testTheKeyFileEndsPrivateAndLeavesNoTempFileBehind() throws {
+        try withKeyFile { file in
+            XCTAssertTrue(APIKeyStore.write("fake-key", forProfile: "a"))
+            XCTAssertTrue(APIKeyStore.write("fake-key-2", forProfile: "b"))
+            XCTAssertTrue(APIKeyStore.delete(profileID: "a"))
+            let mode = try FileManager.default.attributesOfItem(atPath: file.path)[.posixPermissions] as? Int
+            XCTAssertEqual(mode, 0o600)
+            let names = try FileManager.default.contentsOfDirectory(atPath: file.deletingLastPathComponent().path)
+            XCTAssertEqual(names, ["keys.json"])
+            XCTAssertEqual(APIKeyStore.read(profileID: "b"), "fake-key-2")
+        }
+    }
+
+    func testWritingAKeyFailsSafelyWhenTheFolderIsNotWritable() throws {
+        try XCTSkipIf(geteuid() == 0, "root ignores folder permissions")
+        try withKeyFile { file in
+            let folder = file.deletingLastPathComponent()
+            XCTAssertTrue(APIKeyStore.write("fake-key", forProfile: "a"))
+            try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: folder.path)
+            defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path) }
+            XCTAssertFalse(APIKeyStore.write("other-key", forProfile: "b"))
+            XCTAssertEqual(APIKeyStore.read(profileID: "a"), "fake-key", "the earlier key survives")
+            XCTAssertNil(APIKeyStore.read(profileID: "b"))
+            let names = try FileManager.default.contentsOfDirectory(atPath: folder.path)
+            XCTAssertEqual(names, ["keys.json"], "no temp file left")
+        }
+    }
+
+    // MARK: Deep-review re-check: a corrupt config was lost on the first Settings change
+
+    private func writeConfig(_ text: String) throws -> URL {
+        let url = dir.appendingPathComponent("config.json")
+        try Data(text.utf8).write(to: url)
+        return url
+    }
+
+    private func folderNames() throws -> [String] {
+        try FileManager.default.contentsOfDirectory(atPath: dir.path).sorted()
+    }
+
+    func testACorruptConfigIsCopiedBeforeTheNextSaveReplacesIt() throws {
+        let original = #"{"llmProfiles": [ {"id": "mine", "name": "typo here" ,,}"#
+        let url = try writeConfig(original)
+        let config = Config.load(at: url, legacyURL: nil)
+        XCTAssertEqual(config.audioRetentionDays, 0, "unsure what they chose, so delete nothing")
+        try config.save(to: url)
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: url.path + ".corrupt")), Data(original.utf8))
+        XCTAssertNotEqual(try Data(contentsOf: url), Data(original.utf8), "the save replaced the original")
+    }
+
+    func testTheSameCorruptBytesAreNotCopiedTwiceAndDifferentOnesGetANewNumber() throws {
+        let first = "{ first typo"
+        let url = try writeConfig(first)
+        _ = Config.load(at: url, legacyURL: nil)
+        _ = try writeConfig(first)
+        _ = Config.load(at: url, legacyURL: nil)
+        XCTAssertEqual(try folderNames(), ["config.json", "config.json.corrupt"])
+
+        let second = "{ second typo"
+        _ = try writeConfig(second)
+        _ = Config.load(at: url, legacyURL: nil)
+        XCTAssertEqual(try folderNames(), ["config.json", "config.json.corrupt", "config.json.corrupt2"])
+        XCTAssertEqual(try String(contentsOf: URL(fileURLWithPath: url.path + ".corrupt"), encoding: .utf8), first)
+        XCTAssertEqual(try String(contentsOf: URL(fileURLWithPath: url.path + ".corrupt2"), encoding: .utf8), second)
+
+        // The second bytes again reuse their copy.
+        _ = try writeConfig(second)
+        _ = Config.load(at: url, legacyURL: nil)
+        XCTAssertEqual(try folderNames(), ["config.json", "config.json.corrupt", "config.json.corrupt2"])
+    }
+
+    func testAGoodConfigMakesNoCopy() throws {
+        let url = dir.appendingPathComponent("config.json")
+        try Config().save(to: url)
+        _ = Config.load(at: url, legacyURL: nil)
+        XCTAssertEqual(try folderNames(), ["config.json"])
+        try FileManager.default.removeItem(at: url)
+        _ = Config.load(at: url, legacyURL: nil)
+        XCTAssertEqual(try folderNames(), [], "a missing file makes no copy either")
     }
 }

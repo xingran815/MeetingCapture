@@ -35,18 +35,18 @@ enum APIKeyStore {
         do {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             let data = try JSONEncoder().encode(map)
-            // Private from its first moment, then moved into place, so the keys are
-            // never readable by others, even briefly.
+            // The mode is set as the file is created, then it's moved into place, so the
+            // keys are never readable by others, even briefly. Finding from the
+            // deep-review re-check: `createFile(attributes:)` writes first and restricts
+            // afterwards, which a watcher caught.
             let temporary = dir.appendingPathComponent(".\(UUID().uuidString).tmp")
-            guard
-                FileManager.default.createFile(
-                    atPath: temporary.path, contents: data, attributes: [.posixPermissions: 0o600])
-            else { return false }
-            guard rename(temporary.path, url.path) == 0 else {
-                try? FileManager.default.removeItem(at: temporary)
-                return false
-            }
-            return true
+            let descriptor = open(temporary.path, O_WRONLY | O_CREAT | O_EXCL, mode_t(0o600))
+            guard descriptor >= 0 else { return false }
+            defer { try? FileManager.default.removeItem(at: temporary) }
+            let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+            try handle.write(contentsOf: data)
+            try handle.close()
+            return rename(temporary.path, url.path) == 0
         } catch {
             return false
         }

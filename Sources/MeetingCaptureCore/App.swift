@@ -58,6 +58,14 @@ public enum MeetingCaptureApp {
             keepRunLoopAlive()
         }
 
+        // Finding from the security re-check: ignoring these flags without the variable
+        // went on to a real capture of up to 8 hours, so they stop here instead.
+        let scriptFlags = ["--two-track-mic", "--two-track-system", "--two-track-out", "--finish-recording"]
+        if !AudioFixtures.scriptFlagsEnabled(), let used = scriptFlags.first(where: args.flag) {
+            fputs("❌  \(used) is only for the test scripts, and needs MEETINGCAPTURE_E2E=1.\n", stderr)
+            exit(2)
+        }
+
         // Hidden, for scripts/e2e.sh: builds a two-track file, then runs the real pipeline on it.
         if AudioFixtures.scriptFlagsEnabled(), let mic = args.option("--two-track-mic"),
             let system = args.option("--two-track-system"), let out = args.option("--two-track-out")

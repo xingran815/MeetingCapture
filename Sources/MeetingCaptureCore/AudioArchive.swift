@@ -131,14 +131,19 @@ enum AudioTracks {
     /// quiet and steady for a whole part isn't transcribed. Both conditions must hold,
     /// because dropping real speech is worse than a line of nonsense.
     ///
+    /// Levels are measured over 100 ms. Finding from the deep-review re-check: over a
+    /// whole second, soft speech varied by under 2x and passed as steady, because each
+    /// second averages words and the pauses between them. 100 ms sees those apart.
+    ///
     /// These numbers come from invented white noise and `say` speech, not a real room.
     /// The 👤 real call is the first test of them, and they may need changing.
     static let quietLevel: Float = 0.005
     static let steadyRatio: Float = 2
-    /// Fewer one-second windows than this can't show whether a track is steady.
-    static let fewestWindows = 5
+    static let levelWindowFrames = 4_800
+    /// Fewer 100 ms windows than this, which is 5 s, can't show whether a track is steady.
+    static let fewestWindows = 50
 
-    /// `levels` holds the RMS level of each second of a track.
+    /// `levels` holds the RMS level of each 100 ms of a track.
     static func isSteadyQuietNoise(levels: [Float]) -> Bool {
         guard levels.count >= fewestWindows, let loudest = levels.max() else { return false }
         let median = levels.sorted()[levels.count / 2]
@@ -196,14 +201,18 @@ enum AudioTracks {
                 for channel in 0..<2 {
                     let src = buffer.floatChannelData![channel]
                     let dst = out.floatChannelData![0]
-                    var energy: Float = 0
                     for f in 0..<frames {
                         dst[f] = src[f]
                         peaks[channel] = max(peaks[channel], abs(src[f]))
-                        energy += src[f] * src[f]
                     }
-                    // The last read may be short, and a short window says little.
-                    if frames == Int(capacity) { levels[channel].append((energy / Float(frames)).squareRoot()) }
+                    // A short window at the end says little, so it isn't counted.
+                    var start = 0
+                    while start + levelWindowFrames <= frames {
+                        var energy: Float = 0
+                        for f in start..<(start + levelWindowFrames) { energy += src[f] * src[f] }
+                        levels[channel].append((energy / Float(levelWindowFrames)).squareRoot())
+                        start += levelWindowFrames
+                    }
                     try outputs[channel].write(from: out)
                 }
             }

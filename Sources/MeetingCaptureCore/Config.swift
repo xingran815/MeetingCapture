@@ -184,8 +184,8 @@ struct Config: Codable, Equatable {
 
     /// Load from disk. Missing file → defaults (silent), unless a legacy config
     /// exists at the old Application Support path, in which case it's loaded and
-    /// migrated to the new path. Corrupt file → defaults (warn, don't overwrite —
-    /// the user may want to fix it by hand).
+    /// migrated to the new path. Corrupt file → defaults, with a warning and a copy
+    /// beside it, because the next change in Settings saves over it.
     static func load(at url: URL = Config.path, legacyURL: URL? = Config.legacyPath) -> Config {
         let fm = FileManager.default
 
@@ -215,11 +215,30 @@ struct Config: Codable, Equatable {
             return config
         } catch {
             fputs("⚠  Config at \(url.path) is unreadable (\(error.localizedDescription)); using defaults.\n", stderr)
+            if let copy = keepCorruptCopy(of: url) {
+                fputs("   A copy is at \(copy.path). Changing a setting replaces the original.\n", stderr)
+            }
             // Finding from the test audit: the default would turn on deletion for someone
             // who may have chosen keep-forever. Unsure what they chose, so delete nothing.
             var config = Config()
             config.audioRetentionDays = 0
             return config
+        }
+    }
+
+    /// Finding from the deep-review re-check: a one-character typo, then any Settings
+    /// change, lost every profile. Same bytes reuse their copy, so launches don't pile up;
+    /// different bytes get a new number, so an earlier copy is never replaced.
+    private static func keepCorruptCopy(of url: URL) -> URL? {
+        guard let bytes = try? Data(contentsOf: url) else { return nil }
+        var number = 1
+        while true {
+            let copy = URL(fileURLWithPath: url.path + (number == 1 ? ".corrupt" : ".corrupt\(number)"))
+            guard FileManager.default.fileExists(atPath: copy.path) else {
+                return (try? bytes.write(to: copy, options: [.withoutOverwriting])) == nil ? nil : copy
+            }
+            if (try? Data(contentsOf: copy)) == bytes { return copy }
+            number += 1
         }
     }
 

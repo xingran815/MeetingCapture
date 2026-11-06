@@ -388,6 +388,9 @@ case_noise_only_mic() {
     expect_lines "$d/call.txt" 1
     # The noise is audio the user may want to listen to, so it stays in the M4A.
     expect_archived "$d/call" "$before"
+    # A track left out could be soft speech, so retention must never delete this audio.
+    expect_transcribed_in_sidecar "$d/call" no
+    expect_log "$d/call.run.log" "won't be deleted automatically"
 }
 
 # Two parts of one recording: the second part is Thank-you on the mic, budget on the system track.
@@ -525,8 +528,9 @@ case_output_refused() {
 case_script_flags_need_env() {
     local d="$1"
     build "$FIX/fox.wav" "$FIX/friday.wav" "$d/call.wav"
-    # Taken, so that if the script flags were ignored the run would stop at the name check
-    # and never reach capture.
+    # Taken, so that if the guard regressed and the flags were ignored again, the run would
+    # stop at the name check and never reach a capture of up to 8 hours. Without the variable
+    # the binary now stops earlier, with exit 2, before the name check.
     printf '{}' > "$d/taken.mcmeta.json"
     local before value out
     before="$(shasum "$d/call.wav")"
@@ -543,8 +547,9 @@ case_script_flags_need_env() {
                 --finish-recording "$d/call.wav" --model "$MODEL" --model-folder "$FOLDER" \
                 --output "$d/taken.wav" --duration 2 --no-mic < /dev/null > "$out" 2>&1
         fi
-        [ "$?" -eq 1 ] || { echo "    FAIL: with MEETINGCAPTURE_E2E=$value the run didn't stop at the name check"; show "$out"; exit 1; }
-        expect_log "$out" "Can't record to"
+        [ "$?" -eq 2 ] || { echo "    FAIL: with MEETINGCAPTURE_E2E=$value the run didn't stop with exit 2 at the script-flag guard"; show "$out"; exit 1; }
+        expect_log "$out" "only for the test scripts"
+        ! grep -qF "Can't record to" "$out" || fail "MEETINGCAPTURE_E2E=$value: the run got as far as the name check"
         [ ! -e "$d/made.wav" ] || fail "MEETINGCAPTURE_E2E=$value: --two-track-* wrote a file"
         [ "$(shasum "$d/call.wav")" = "$before" ] || fail "MEETINGCAPTURE_E2E=$value: --finish-recording changed the WAV"
         [ ! -e "$d/call.m4a" ] && [ ! -e "$d/call.txt" ] || fail "MEETINGCAPTURE_E2E=$value: --finish-recording wrote output"
