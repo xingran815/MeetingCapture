@@ -4,7 +4,13 @@
 # file doesn't trip the sweep it tests; every value is invented.
 set -uo pipefail
 
-SRC="$(git rev-parse --show-toplevel)"
+# Finding (M2.1): under a hook in a linked worktree git sets GIT_DIR, so every
+# command below hit the real repo: core.bare, the author, branches, even dry-run
+# pushes to the real remote. Clear git's repo variables before anything else.
+# scripts/test-sweeps-isolation.sh keeps this true.
+while IFS= read -r var; do unset "$var"; done < <(git rev-parse --local-env-vars)
+
+SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 pass=0; fail=0
@@ -15,6 +21,11 @@ GOOD_EMAIL="1+tester@users.noreply.github.com"
 REPO="$WORK/repo"
 git init -q -b main "$REPO"
 cd "$REPO" || exit 2
+# Everything below changes config and history, so stop unless this is the temp repo.
+if [ "$(git rev-parse --absolute-git-dir)" != "$(pwd -P)/.git" ]; then
+    echo "test-sweeps: refusing to run, git isn't using the temporary repo." >&2
+    exit 2
+fi
 git config user.name tester
 git config user.email "$GOOD_EMAIL"
 mkdir -p scripts .githooks

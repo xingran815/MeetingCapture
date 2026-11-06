@@ -40,6 +40,7 @@ echo "guard: refused, as it should"
 step "sweep: seeded leaks"
 scripts/test-sweeps.sh | tail -1
 [ "${PIPESTATUS[0]}" -eq 0 ] || die "seeded-leak tests"
+scripts/test-sweeps-isolation.sh || die "seeded-leak tests left git's environment in place"
 
 step "sweep: everything outgoing"
 scripts/sweep.sh --outgoing HEAD --not --remotes || die "outgoing sweep"
