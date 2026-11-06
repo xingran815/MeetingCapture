@@ -51,4 +51,4 @@ Switch to `openai_whisper-small` (multilingual), per D-11. Downloaded on first u
 - [ ] With an injected clock: managed audio older than the limit goes, younger stays, and old unmanaged WAVs stay.
 - [ ] All the bugs above have passing tests, or a noted manual check.
 - [ ] One real short call recorded by the user sounds right and labels correctly. **👤 User check.**
-- [ ] Verifier passes, deep review findings fixed in this PR.
+- [ ] Verifier passes; `deep-reviewer` and `/security-review` run in parallel, with findings fixed in this PR.

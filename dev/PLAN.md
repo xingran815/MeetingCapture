@@ -29,7 +29,7 @@ Each milestone's Done-when list is in `docs/specs/0<n>-*.md`.
 1. Branch from `main`. Build in the main session.
 2. Commit each logical change after `scripts/check.sh --fast` passes (hooks enforce it after M1).
 3. Push the branch; open one PR that says `Closes` for the milestone's issues.
-4. `verifier` agent checks every Done-when item. After M3, M4 and M6, `deep-reviewer` agent also reviews.
+4. `verifier` agent checks every Done-when item. After M3, M4 and M6, `deep-reviewer` agent also reviews. M3 and M6 also run `/security-review`, in parallel with the deep review.
 5. Fix findings in the same PR, turning each into a test where possible. Lows don't block; re-checks cover changed lines only.
 6. Merge with `git merge --ff-only` and push `main`. Comment on and close the issues with evidence. Update `dev/NOW.md`.
 

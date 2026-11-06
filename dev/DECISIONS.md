@@ -39,3 +39,4 @@ One line per decision: `D-NN · date · decision · why · by`.
 - D-35 · 2026-11-06 · No Dependabot and no CodeQL; both are dropped from M2.1 · by user
 - D-36 · 2026-11-06 · CI's E2E uses `openai_whisper-tiny` at a pinned revision; local runs keep the cached `small.en`. The tokenizer still comes from WhisperKit's own download, unpinned · Assumed
 - D-37 · 2026-11-06 · Required checks work with the local `merge --ff-only` flow, proven on a throwaway branch under a no-bypass ruleset: failing and missing checks were refused, passing checks accepted · required checks added to `protect-main` · by user, issue #12, proven by Claude
+- D-38 · 2026-11-06 · `/security-review` and `deep-reviewer` run in parallel in M3 and M6; M3 gains a security review it did not have. Read from "change it, run in parallel in milestone m3" · by user, wording read by Claude

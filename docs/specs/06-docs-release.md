@@ -10,7 +10,7 @@
 - `--help` matches the behaviour; no references to Qianfan, Kimi, the mono format, or `swift run`.
 
 ## Security pass
-Run `/security-review`, then the `deep-reviewer` agent on the whole milestone. Also check by hand:
+Run `/security-review` and the `deep-reviewer` agent in parallel on the whole milestone, while CI runs (see "CI and the review agents together" in `CLAUDE.md`). Also check by hand:
 - Fresh clone: `scripts/setup.sh` installs the hooks, and `scripts/check.sh` passes.
 - Full-history sweep on `main` and every commit email on GitHub.
 - `feature/coding-interview` is absent from the remote.
