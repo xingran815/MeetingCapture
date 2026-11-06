@@ -15,7 +15,7 @@ For its owner, a professional meeting helper (terminal and macOS app): speaker-l
 ## Milestones
 | # | Milestone | Issues | Branch | Verify (Sonnet) | Deep review (Opus) | User check | Status |
 |---|---|---|---|---|---|---|---|
-| 1 | Safety gates, fast tests, history rewrite | #1 #2 | `m1-safety-gates` | yes | no | no | in progress: setup committed |
+| 1 | Safety gates, fast tests, history rewrite | #1 #2 | `m1-safety-gates` | yes | no | no | in review: PR open, verifier running |
 | 2 | Providers and redaction | #3 #4 | `m2-providers` | yes | no | no | todo |
 | 3 | M4A, retention, speakers, bug fixes | #5 #6 | `m3-audio-speakers` | yes | **yes** | short real call | todo |
 | 4 | Scenario summaries and HTML | #7 #8 | `m4-summaries-html` | yes | **yes** | reads a live report | todo |
@@ -53,7 +53,7 @@ Never cut: sweeps and hooks, WAV-first conversion check, retention sparing old f
 | `lesson` | Save pitfalls | global devkit |
 
 ## Check command
-`scripts/check.sh` (until M1 lands it: `swift build`). Run it before saying anything is done.
+`scripts/check.sh`. Run it before saying anything is done.
 
 ## Lessons applied
 - Keep state in files so a new session resumes in a minute — devkit `experience/lessons/2026-10-21-state-in-files.md`

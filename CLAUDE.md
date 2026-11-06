@@ -94,7 +94,7 @@ These are load-bearing and not obvious from reading a single file:
 - **Mid-recording stop/pause uses stdin readability, not readLine.** `Shell.recordFlow()` installs `FileHandle.standardInput.readabilityHandler` before awaiting `capture.run()`, and removes it after. The handler dispatches on input: bare `" "` (after stripping CR/LF) → `pauseToggle()`, anything else → `manualStop()`. A blocking `readLine()` in a detached Task would leak the thread because Swift can't cancel blocking syscalls. Handler approach is clean. **Caveat:** the handler only fires on a real TTY — when stdin is piped (testing), libc fully buffers stdin and the FileHandle dispatch source never sees subsequent bytes. Pause/stop are not reachable from piped tests; verify via interactive tty.
 - **`setbuf(stdout, nil)`** at the top of `main.swift` makes prompts and progress flush correctly and kept an early crash visible. Do not remove.
 - **Sendable warnings exist** on `AudioCapture`'s Task/DispatchQueue captures. They're left as warnings deliberately; making the class an actor is a bigger refactor than we've invested in.
-- **Do not enable Apple's Voice-Processing I/O on the mic input.** `AVAudioEngine.inputNode.setVoiceProcessingEnabled(true)` was tried (commit `fc39ed2`) to cancel the speaker→mic echo. It works as an AEC, but the API also switches the system audio HAL into "voice chat" mode — that ducks output (overriding user volume) and puts the mic into an exclusive voice-processing path. Any concurrent VoIP app (Zoom, Meet, Teams) that's also using VPIO is then unable to capture the mic, and its playback gets duck-attenuated. Recording becomes unusable in real meetings. **The fix is implemented:** software AEC via vendored `speexdsp` running in user-space against our own mic and SCStream buffers — that path doesn't claim the HAL session. Disable with `--no-aec` or Settings → AEC if needed.
+- **Do not enable Apple's Voice-Processing I/O on the mic input.** `AVAudioEngine.inputNode.setVoiceProcessingEnabled(true)` was tried (commit `a30025f`) to cancel the speaker→mic echo. It works as an AEC, but the API also switches the system audio HAL into "voice chat" mode — that ducks output (overriding user volume) and puts the mic into an exclusive voice-processing path. Any concurrent VoIP app (Zoom, Meet, Teams) that's also using VPIO is then unable to capture the mic, and its playback gets duck-attenuated. Recording becomes unusable in real meetings. **The fix is implemented:** software AEC via vendored `speexdsp` running in user-space against our own mic and SCStream buffers — that path doesn't claim the HAL session. Disable with `--no-aec` or Settings → AEC if needed.
 
 ## Extending the tool
 
@@ -113,7 +113,7 @@ The Settings menu is grouped with dimmed `MenuItem.separator(...)` header rows (
 
 - **Plan:** dev/PLAN.md · **Now:** dev/NOW.md · **Decisions:** dev/DECISIONS.md · **Specs:** docs/specs/ · **Evidence:** dev/evidence/
 - **Mode:** 🏢 light production: quick and efficient, with real gates only where listed here. Start with `/next` or "continue"; end with `/next save`.
-- **Check command:** `scripts/check.sh` (until M1 lands it: `swift build`). Done means it passes and each Done-when check was seen working.
+- **Check command:** `scripts/check.sh`. Done means it passes and each Done-when check was seen working.
 - **Talk:** short chunks, key point in bold, tables over paragraphs, one-line status updates, at most 4 numbered questions with a recommended answer, reply in the language the user wrote in.
 
 ### Rules, because a new session will pick this up cold
@@ -131,7 +131,7 @@ The Settings menu is grouped with dimmed `MenuItem.separator(...)` header rows (
 | **Merge locally:** `git switch main && git merge --ff-only <branch> && git push origin main`. Never use GitHub's merge button or `gh pr merge`. | GitHub can stamp the account email on server-made commits. The push closes the PR as merged. |
 | **After a merge, comment on each issue** (what landed, evidence, PR link), close it, update dev/NOW.md. | State lives in files and issues. |
 | **Merging and pushing task branches and `main` is pre-approved** after the checks pass. | User: "feel free to commit and merge". |
-| **Force-push is approved exactly once**: the M1 history rewrite. | User's explicit decision, D-05. |
+| **Force-push approval is used up.** The one approved rewrite ran on 2026-11-06; never force-push again without a new yes. | User's explicit decision, D-05. |
 | **Never push or merge `feature/coding-interview`.** Push only named refs, never `--all` or `--mirror`. | User's rule; the pre-push hook also blocks it. |
 | **Commits use the repo-local noreply author.** No `Co-Authored-By` lines for Claude or any AI. | Email must not leak; user's rule. |
 | **Never put email, keys, tokens or real transcripts in code, fixtures, issues, PRs, logs or prompts.** Fixtures are invented; read secrets from the environment and mask output. | Public repo, sensitive sessions. |
