@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Fails closed: a missing script blocks the commit.
+root="$(git rev-parse --show-toplevel)" || exit 1
+[ -x "$root/scripts/sweep.sh" ] || { echo "commit-msg: scripts/sweep.sh is missing; refusing to commit." >&2; exit 1; }
+exec "$root/scripts/sweep.sh" --commit-msg "$1"

@@ -20,6 +20,8 @@ dev/tmp/
 *.aiff
 *.txt
 !README*.txt
+!scripts/sweep-allow.txt
+!Tests/Fixtures/**/*.txt
 meeting_*.md
 meeting_*.html
 

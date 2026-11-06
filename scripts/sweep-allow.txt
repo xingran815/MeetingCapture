@@ -1,0 +1,7 @@
+# Known-fake values the sweeps may ignore. One per line, tab-separated:
+#   rule <TAB> path prefix <TAB> exact matched value
+# Only obviously fake values containing FAKE or example belong here.
+secret-openai-style	dev/spikes/regex_eval.py	sk-ant-api03-FAKEabcdefghijklmnopqrstuvwxyz012345
+secret-url-token	dev/spikes/regex_eval.py	?token=abc123def456ghi789jkl012
+secret-openai-style	scripts/sweep-allow.txt	sk-ant-api03-FAKEabcdefghijklmnopqrstuvwxyz012345
+secret-url-token	scripts/sweep-allow.txt	?token=abc123def456ghi789jkl012

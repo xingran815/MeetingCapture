@@ -7,6 +7,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Developer checkouts get the leak-sweep hooks. A source tarball has no .git.
+if [[ -d .git ]]; then
+    scripts/setup.sh >/dev/null
+fi
+
 INSTALL_DIR="$HOME/.local/bin"
 INSTALL_PATH="$INSTALL_DIR/meetingcapture"
 
