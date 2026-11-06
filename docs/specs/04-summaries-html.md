@@ -53,5 +53,6 @@ Rendering rules:
 - [ ] XSS test: script tags and `javascript:` URLs in transcript and model text render inert.
 - [ ] Filename test covers Chinese, slashes, emoji and very long topics.
 - [ ] A test proves the concept search prompt contains no transcript text or names.
+- [ ] **Answer quality with and without regex, full pipeline** (D-19): `scripts/quality-compare.sh --full` runs an invented transcript for each of the six scenarios both ways, on real tiers and frontier review. Check before running that the planned calls fit today's cap of 200 per CLI, and stop rather than exceed it. It records section coverage, facts kept, whether scenario and topic stayed the same, tokens restored correctly, `unsure` items, and a blind frontier-model rating per section. Results go in `dev/evidence/`; the user sees any section rated worse with regex before merge.
 - [ ] `--live` on an invented meeting and therapy transcript gives a report the user reads and accepts. **👤 User check.**
 - [ ] Verifier passes, deep review findings fixed in this PR.

@@ -19,4 +19,5 @@ One line per decision: `D-NN · date · decision · why · by`.
 - D-15 · 2026-11-06 · HTML: LLM fills JSON, one template renders it; `<timestamp>_<short-topic>.html` · by user
 - D-16 · 2026-11-06 · Merge locally by fast-forward, never on GitHub's servers · server merges can stamp the account email · by Claude
 - D-18 · 2026-11-06 · Limit each of `claude` and `codex` to 200 calls a day; at the cap treat that CLI as usage full; both capped stops without touching API billing · by user (limit), Claude (counting and cap behaviour)
+- D-19 · 2026-11-06 · Compare answer quality with and without regex in M2 (summaries) and M4 (full pipeline, six scenarios) · the first test only matched strings · by user
 - D-17 · 2026-11-06 · Keep OpenAI API, Anthropic API, Ollama and custom profiles in terminal config · user only asked to remove Qianfan and Kimi · Assumed

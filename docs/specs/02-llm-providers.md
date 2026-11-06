@@ -72,3 +72,4 @@ Keep `Tests/Fixtures/redaction/` with the invented transcripts and scores as a r
 - [ ] Redaction: at least 95% on formatted values across old and new cases, no false positives on the set, and token restore works on Chinese text.
 - [ ] A test proves transcript text never appears in a call with tools on.
 - [ ] Cap tests with an injected clock: call 200 runs, call 201 switches CLI, both capped stops with no API call, the count resets next day, and two processes counting at once lose no calls.
+- [ ] **Answer quality with and without regex** (D-19): `scripts/quality-compare.sh --redaction` runs the same invented transcripts both ways on the normal tier, including the independent cases. It records facts kept, tokens lost or mangled, and a blind frontier-model rating, with the two answers in random order, for accuracy and usefulness. Results go in `dev/evidence/`. With-regex keeps every fact without-regex kept; any loss is fixed or shown to the user before merge.
