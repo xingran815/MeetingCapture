@@ -1,13 +1,18 @@
 #!/usr/bin/env bash
 # End to end without recording: a short spoken fixture goes through the real
-# binary and a cached Whisper model. Skips with a message if no model is cached.
+# binary and a cached Whisper model. Skips with a message if no model is cached,
+# but on CI a missing model is a failure. E2E_MODEL and E2E_MODEL_FOLDER override.
 set -uo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT" || exit 2
 
-MODEL="openai_whisper-small.en"
-FOLDER="$HOME/Documents/huggingface/models/argmaxinc/whisperkit-coreml/$MODEL"
+MODEL="${E2E_MODEL:-openai_whisper-small.en}"
+FOLDER="${E2E_MODEL_FOLDER:-$HOME/Documents/huggingface/models/argmaxinc/whisperkit-coreml/$MODEL}"
 if [ ! -d "$FOLDER" ]; then
+    if [ -n "${CI:-}" ]; then
+        echo "e2e: FAILED, no model at $FOLDER. A skip doesn't count on CI." >&2
+        exit 1
+    fi
     echo "e2e: SKIPPED, no cached model $MODEL. Nothing was downloaded."
     exit 0
 fi
@@ -32,4 +37,5 @@ for word in fox report friday; do
     grep -qi "$word" "$DIR/e2e_fox.txt" || { echo "e2e: FAILED, \"$word\" missing from the transcript." >&2; exit 1; }
 done
 grep -qE '^\[?[0-9]' "$DIR/e2e_fox.txt" || { echo "e2e: FAILED, transcript has no timestamps." >&2; exit 1; }
+[ -n "${CI:-}" ] && cat "$DIR/e2e_fox.txt"
 echo "e2e: ok, transcript has the expected words and timestamps."

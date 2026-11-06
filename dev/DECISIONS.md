@@ -33,3 +33,8 @@ One line per decision: `D-NN · date · decision · why · by`.
 - D-29 · 2026-11-06 · Flag mode's `--llm-*` API flags pick the API route; `--llm-cli` picks the first CLI; `--no-redact` turns redaction off for a run · Assumed
 - D-30 · 2026-11-06 · Selecting a DeepSeek-only config moves to the CLI route by default; the API route is a setting · matches D-07's order, but it changes where an existing user's summaries run · Assumed
 - D-31 · 2026-11-06 · M2 closed after a verifier PASS on every Done-when item; caveats are Lows and are listed in the M2 report · by Claude, per the milestone rules
+- D-32 · 2026-11-06 · `main` requires CI, for the admin too, turned on only after every required job has passed on the M2.1 PR · by user, issue #12
+- D-33 · 2026-11-06 · Force-push and deletion on `main` are blocked by ruleset `protect-main`, with required checks added to that same ruleset; a future approved force-push needs the ruleset changed first · by user, issue #12
+- D-34 · 2026-11-06 · CI knows the protected branch's commits as SHA-256 hashes of their ids, because plain ids would point at pre-rewrite commits GitHub still serves with the old email; the list is a snapshot, and the pre-push hook stays the live check · Assumed
+- D-35 · 2026-11-06 · Dependabot PRs are notices only: their commits can't pass the identity job, so updates are redone locally and pass the normal gates · simpler than a bot exception in a rule that protects the email · Assumed
+- D-36 · 2026-11-06 · CI's E2E uses `openai_whisper-tiny` at a pinned revision; local runs keep the cached `small.en`. The tokenizer still comes from WhisperKit's own download, unpinned · Assumed

@@ -113,7 +113,7 @@ The Settings menu is grouped with dimmed `MenuItem.separator(...)` header rows (
 
 - **Plan:** dev/PLAN.md · **Now:** dev/NOW.md · **Decisions:** dev/DECISIONS.md · **Specs:** docs/specs/ · **Evidence:** dev/evidence/
 - **Mode:** 🏢 light production: quick and efficient, with real gates only where listed here. Start with `/next` or "continue"; end with `/next save`.
-- **Check command:** `scripts/check.sh`. Done means it passes and each Done-when check was seen working.
+- **Check command:** `scripts/check.sh`; CI runs `scripts/ci.sh <job>`. Done means it passes and each Done-when check was seen working.
 - **Talk:** short chunks, key point in bold, tables over paragraphs, one-line status updates, at most 4 numbered questions with a recommended answer, reply in the language the user wrote in.
 
 ### Rules, because a new session will pick this up cold
@@ -128,10 +128,11 @@ The Settings menu is grouped with dimmed `MenuItem.separator(...)` header rows (
 | **Opus deep review (`deep-reviewer` agent) only after M3, M4, M6**, before merge. | Deep review is expensive; these are the risky milestones. |
 | **Fix findings in the same PR. Never open a new PR for them.** Lows don't block; re-checks look at changed lines only. | Keeps one PR per milestone and stops review loops. |
 | **Turn each finding into a test where possible**, and name the finding in the test. | The same bug can't come back. |
+| **`gh pr checks` must be green before the local merge.** `main` requires CI, for the admin too. | A clean machine proves what hooks on this Mac can't. |
 | **Merge locally:** `git switch main && git merge --ff-only <branch> && git push origin main`. Never use GitHub's merge button or `gh pr merge`. | GitHub can stamp the account email on server-made commits. The push closes the PR as merged. |
 | **After a merge, comment on each issue** (what landed, evidence, PR link), close it, update dev/NOW.md. | State lives in files and issues. |
 | **Merging and pushing task branches and `main` is pre-approved** after the checks pass. | User: "feel free to commit and merge". |
-| **Force-push approval is used up.** The one approved rewrite ran on 2026-11-06; never force-push again without a new yes. | User's explicit decision, D-05. |
+| **Force-push approval is used up.** The one approved rewrite ran on 2026-11-06; never force-push again without a new yes. Ruleset `protect-main` also blocks it, so an approved force-push needs the ruleset changed first. | User's explicit decision, D-05, D-33. |
 | **Never push or merge `feature/coding-interview`.** Push only named refs, never `--all` or `--mirror`. | User's rule; the pre-push hook also blocks it. |
 | **Commits use the repo-local noreply author.** No `Co-Authored-By` lines for Claude or any AI. | Email must not leak; user's rule. |
 | **Never put email, keys, tokens or real transcripts in code, fixtures, issues, PRs, logs or prompts.** Fixtures are invented; read secrets from the environment and mask output. | Public repo, sensitive sessions. |

@@ -5,6 +5,7 @@
 #   sweep.sh --commit-msg FILE   a commit message
 #   sweep.sh --outgoing RANGE    commits, messages and diffs in a rev-list range
 #   sweep.sh --pre-push          reads git's pre-push lines on stdin
+#   sweep.sh --identity RANGE    authors, committers and messages only
 #   sweep.sh --tree              every tracked file as it stands
 #
 # Findings name the rule, the file and the line, never the matched value, so a
@@ -188,15 +189,28 @@ sweep_staged() {
     SWEEP_CODE=1 feed scan_diff -- git diff --cached -U0 --no-color --no-ext-diff --diff-filter=ACMRT
 }
 
+identity_of() {  # commit
+    local short="${1:0:9}"
+    check_email "commit $short author" "$(git log -1 --format=%ae "$1")"
+    check_email "commit $short committer" "$(git log -1 --format=%ce "$1")"
+    feed scan_message "commit $short message" -- git log -1 --format=%B "$1"
+}
+
+# Who made each commit and what its message says, without reading the diffs.
+sweep_identity() {  # rev-list arguments
+    local sha
+    local shas
+    shas="$(git rev-list "$@")" || { echo "sweep: bad range" >&2; exit 2; }
+    for sha in $shas; do identity_of "$sha"; done
+}
+
 sweep_outgoing() {  # rev-list arguments
     local sha
     local shas
     shas="$(git rev-list "$@")" || { echo "sweep: bad range" >&2; exit 2; }
     for sha in $shas; do
         local short="${sha:0:9}"
-        check_email "commit $short author" "$(git log -1 --format=%ae "$sha")"
-        check_email "commit $short committer" "$(git log -1 --format=%ce "$sha")"
-        feed scan_message "commit $short message" -- git log -1 --format=%B "$sha"
+        identity_of "$sha"
         feed scan_filenames -- git diff-tree --root --no-commit-id -r --name-only --diff-filter=ACMRT "$sha"
         feed scan_diff -- git diff-tree --root --no-commit-id -p -U0 --no-color --no-ext-diff --diff-filter=ACMRT "$sha"
     done
@@ -254,8 +268,9 @@ case "${1:-}" in
                   SWEEP_STRIP_COMMENTS=1 scan_message "commit message" < "$2" ;;
     --outgoing)   shift; sweep_outgoing "$@" ;;
     --pre-push)   sweep_pre_push ;;
+    --identity)   shift; sweep_identity "$@" ;;
     --tree)       sweep_tree ;;
-    *) echo "usage: sweep.sh --staged | --commit-msg FILE | --outgoing RANGE | --pre-push | --tree" >&2; exit 2 ;;
+    *) echo "usage: sweep.sh --staged | --commit-msg FILE | --outgoing RANGE | --identity RANGE | --pre-push | --tree" >&2; exit 2 ;;
 esac
 
 if [ "$found" -ne 0 ]; then

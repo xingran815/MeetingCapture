@@ -17,6 +17,9 @@ START=$SECONDS
 step "sweep: staged changes"
 scripts/sweep.sh --staged || die "staged sweep"
 
+step "lint"
+scripts/lint.sh || die "lint"
+
 step "build"
 swift build 2>&1 | tail -3
 [ "${PIPESTATUS[0]}" -eq 0 ] || die "swift build"
@@ -31,16 +34,15 @@ if [ "$MODE" = "--fast" ]; then
 fi
 
 step "guard: tests without the fake CLIs must fail"
-if swift test --filter FakeCLIGuardTests > dev/tmp/guard.log 2>&1; then
-    die "tests passed with no fake CLI on PATH; see dev/tmp/guard.log"
-fi
-grep -q "is not the fake" dev/tmp/guard.log || die "guard failed for another reason; see dev/tmp/guard.log"
-echo "guard: refused, as it should"
+scripts/test-guard.sh || die "no-fake-CLI guard"
 
 step "sweep: seeded leaks"
 scripts/test-sweeps.sh | tail -1
 [ "${PIPESTATUS[0]}" -eq 0 ] || die "seeded-leak tests"
 scripts/test-sweeps-isolation.sh || die "seeded-leak tests left git's environment in place"
+scripts/test-sweeps-isolation.sh "$ROOT/scripts/test-identity.sh" || die "identity tests left git's environment in place"
+scripts/test-identity.sh | tail -1
+[ "${PIPESTATUS[0]}" -eq 0 ] || die "identity tests"
 
 step "sweep: everything outgoing"
 scripts/sweep.sh --outgoing HEAD --not --remotes || die "outgoing sweep"
