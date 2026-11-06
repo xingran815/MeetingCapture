@@ -24,15 +24,19 @@ enum RecordingFiles {
             guard accepted.contains(nameExt), let number = partNumber(of: name, base: base) else { continue }
             if parts[number] == nil || nameExt == ext { parts[number] = name }
         }
+        // The file asked for is always in the answer, even with a look-alike beside it.
+        let asked = url.lastPathComponent
+        if names.contains(asked), let number = partNumber(of: asked, base: base) { parts[number] = asked }
         let ordered = parts.keys.sorted().compactMap { parts[$0] }.map { dir.appendingPathComponent($0).path }
         return ordered.isEmpty ? [path] : ordered
     }
 
-    /// 1 for `meeting.wav`, N for `meeting_partN.wav`, nil if it's another recording's.
+    /// 1 for `meeting.wav` or `meeting_part1.wav`, N for `meeting_partN.wav`, nil if
+    /// it's another recording's.
     private static func partNumber(of name: String, base: String) -> Int? {
         let stem = (name as NSString).deletingPathExtension
         if stem == base { return 1 }
-        guard stem.hasPrefix(base + "_part"), let number = Int(stem.dropFirst(base.count + 5)), number >= 2 else {
+        guard stem.hasPrefix(base + "_part"), let number = Int(stem.dropFirst(base.count + 5)), number >= 1 else {
             return nil
         }
         return number
@@ -52,10 +56,14 @@ enum RecordingFiles {
             return "a name ending in _part2 is kept for the later files of a long recording. Choose another name."
         }
         let names = (try? FileManager.default.contentsOfDirectory(atPath: base.deletingLastPathComponent().path)) ?? []
+        // Compared without case, because the default Mac disk treats `A.wav` and `a.wav`
+        // as one file, and writing one would erase the other.
+        let lowered = stem.lowercased()
         let taken = names.sorted().first { name in
-            if name == stem + ".mcmeta.json" || name == stem + ".txt" { return true }
-            return audioExtensions.contains((name as NSString).pathExtension.lowercased())
-                && partNumber(of: name, base: stem) != nil
+            let candidate = name.lowercased()
+            if candidate == lowered + ".mcmeta.json" || candidate == lowered + ".txt" { return true }
+            return audioExtensions.contains((candidate as NSString).pathExtension)
+                && partNumber(of: candidate, base: lowered) != nil
         }
         return taken.map { "\($0) already exists, and recording here would replace it. Choose another name." }
     }

@@ -446,4 +446,28 @@ final class ReviewFindingTests: XCTestCase {
             XCTAssertFalse(SpeakerLabels.isSilenceMarker(real), real)
         }
     }
+
+    /// The marker words are removed from the text before the rest is judged, so text that
+    /// only contains them next to real words must be left with those words, and kept.
+    func testMarkerWordsBesideRealWordsAreNotSilence() {
+        for text in [
+            "[silence please]", "(no speech today)", "[BLANK_AUDIO] thanks", "(no audio) hello",
+            "[silence] and then he left",
+            "[no audio recording]", "[silenced]", "[silence 5]", "(no speech detected)", "[NO NO SPEECH SPEECH]",
+            "[SILEN NO SPEECH CE]", "[silence, then applause]",
+        ] {
+            XCTAssertFalse(SpeakerLabels.isSilenceMarker(text), text)
+        }
+        for text in ["[silence...]", "(No Speech.)", "[silence] [silence]", "  [BLANK_AUDIO]  "] {
+            XCTAssertTrue(SpeakerLabels.isSilenceMarker(text), text)
+        }
+    }
+
+    func testAFormattedTranscriptKeepsALineWhoseBracketHoldsRealWords() {
+        let segments = [
+            LabelledSegment(start: 1, end: 2, speaker: "You", text: "[silence please]"),
+            LabelledSegment(start: 3, end: 4, speaker: "You", text: "[BLANK_AUDIO]"),
+        ]
+        XCTAssertEqual(SpeakerLabels.format(segments), "[00:00:01] You: [silence please]")
+    }
 }

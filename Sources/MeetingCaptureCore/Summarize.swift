@@ -142,7 +142,7 @@ final class Summarizer {
             throw SummarizerError.badResponse("Not an HTTP response")
         }
         guard (200..<300).contains(http.statusCode) else {
-            let bodyText = String(data: data, encoding: .utf8) ?? "<non-utf8 body>"
+            let bodyText = Self.scrubbed(data)
             throw SummarizerError.badResponse(
                 "HTTP \(http.statusCode) from \(endpoint.absoluteString):\n\(bodyText)"
             )
@@ -157,9 +157,15 @@ final class Summarizer {
     /// Throws `badResponse` (echoing the raw body) on an unexpected shape — for
     /// Anthropic this also surfaces a `stop_reason: "refusal"` body with empty
     /// content, which is what we want to show the user.
+    /// A provider's error can quote its input, so it's scrubbed before reaching a
+    /// screen or log, as CLI errors are.
+    private static func scrubbed(_ data: Data) -> String {
+        Redactor.redact(String(decoding: data, as: UTF8.self)).text
+    }
+
     private func parseContent(from data: Data) throws -> String {
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            let raw = String(data: data, encoding: .utf8) ?? "<non-utf8 body>"
+            let raw = Self.scrubbed(data)
             throw SummarizerError.badResponse("Unexpected response shape:\n\(raw)")
         }
         switch apiStyle {
@@ -177,12 +183,13 @@ final class Summarizer {
             // { choices: [ { message: { content: "…" } } ] }
             if let choices = json["choices"] as? [[String: Any]],
                 let message = choices.first?["message"] as? [String: Any],
-                let content = message["content"] as? String
+                let content = message["content"] as? String,
+                !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             {
                 return content
             }
         }
-        let raw = String(data: data, encoding: .utf8) ?? "<non-utf8 body>"
+        let raw = Self.scrubbed(data)
         throw SummarizerError.badResponse("Unexpected response shape:\n\(raw)")
     }
 
@@ -227,7 +234,7 @@ final class Summarizer {
         let (data, response) = try await URLSession.shared.data(for: req)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             let code = (response as? HTTPURLResponse)?.statusCode ?? -1
-            let bodyText = String(data: data, encoding: .utf8) ?? "<non-utf8 body>"
+            let bodyText = Self.scrubbed(data)
             throw SummarizerError.badResponse("HTTP \(code) from classifier:\n\(bodyText)")
         }
         let text = (try? parseContent(from: data))?.lowercased() ?? ""

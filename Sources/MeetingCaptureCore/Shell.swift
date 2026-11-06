@@ -213,7 +213,6 @@ final class Shell {
             guard let answer = promptLine("Process it now? [Y/n]: "), !answer.lowercased().hasPrefix("n") else {
                 continue
             }
-            for part in parts { _ = try? WAVRepair.repairHeader(at: part) }
             let name = RecordingFiles.baseName(of: first.deletingPathExtension().lastPathComponent)
             await finishRecording(parts: parts, base: first.deletingLastPathComponent().appendingPathComponent(name))
         }

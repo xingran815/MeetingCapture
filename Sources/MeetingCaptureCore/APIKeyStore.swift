@@ -20,11 +20,12 @@ enum APIKeyStore {
             .appendingPathComponent(".config/MeetingCapture/llm_api_keys.json")
     }
 
-    private static func readAll() -> [String: String] {
-        guard let data = try? Data(contentsOf: path),
-            let map = try? JSONDecoder().decode([String: String].self, from: data)
-        else { return [:] }
-        return map
+    /// Nil if a file exists that can't be understood, which is different from no keys.
+    private static func readAll() -> [String: String]? {
+        guard let data = try? Data(contentsOf: path) else {
+            return FileManager.default.fileExists(atPath: path.path) ? nil : [:]
+        }
+        return try? JSONDecoder().decode([String: String].self, from: data)
     }
 
     @discardableResult
@@ -34,8 +35,17 @@ enum APIKeyStore {
         do {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             let data = try JSONEncoder().encode(map)
-            try data.write(to: url, options: [.atomic])
-            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+            // Private from its first moment, then moved into place, so the keys are
+            // never readable by others, even briefly.
+            let temporary = dir.appendingPathComponent(".\(UUID().uuidString).tmp")
+            guard
+                FileManager.default.createFile(
+                    atPath: temporary.path, contents: data, attributes: [.posixPermissions: 0o600])
+            else { return false }
+            guard rename(temporary.path, url.path) == 0 else {
+                try? FileManager.default.removeItem(at: temporary)
+                return false
+            }
             return true
         } catch {
             return false
@@ -43,22 +53,23 @@ enum APIKeyStore {
     }
 
     static func read(profileID: String) -> String? {
-        guard let v = readAll()[profileID] else { return nil }
+        guard let v = readAll()?[profileID] else { return nil }
         let trimmed = v.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
     }
 
     /// Store or replace the key for one profile. Returns true on success.
+    /// Refuses to replace a file it can't read: the other keys in it may be recoverable.
     @discardableResult
     static func write(_ value: String, forProfile profileID: String) -> Bool {
-        var map = readAll()
+        guard var map = readAll() else { return false }
         map[profileID] = value
         return writeAll(map)
     }
 
     @discardableResult
     static func delete(profileID: String) -> Bool {
-        var map = readAll()
+        guard var map = readAll() else { return false }
         guard map.removeValue(forKey: profileID) != nil else { return true }
         return writeAll(map)
     }

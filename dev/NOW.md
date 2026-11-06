@@ -1,8 +1,10 @@
 # Now
 Updated: 2026-11-06 · milestone 3 · issues #5, #6
 
-**Next step:** review findings are fixed and committed on the branch. A Sonnet agent is adding local E2E cases and an Opus agent is auditing all tests (D-49). Then push, re-check the changed lines alongside CI. Then the 👤 check: the user records one short real call on the new build, and says whether it sounds right and labels correctly.
+**Next step:** review and audit findings are fixed and pushed; the required agents re-check the changed lines alongside CI. Then the 👤 check: the user records one short real call on the new build, and says whether it sounds right and labels correctly.
 **How to check:** `scripts/check.sh` passes; CI green on the exact commit; verifier, deep review and `/security-review` pass; the user's yes.
+
+**Stop after M3 closes.** The user said so on 2026-11-06: don't start M4 until they say to. This overrides "start the next milestone" for this one close.
 
 Done since last save:
 - M2.1 merged (PR #14), verifier PASS; #12 closed. Report: `dev/evidence/2026-11-06-m2.1-report.md`.
@@ -11,8 +13,8 @@ Done since last save:
 - Manual checks left for the real call: Enter stops a flag-mode recording on a TTY; listen once after the Speex rate change; room noise on a separated mic track.
 
 Open loops:
+- M5 settles the macOS setting: `Package.swift` says 14, untested; the specs say 26 (D-51).
 - **First `push` to `main` CI run:** check that it passed; it's the first test of the `event.before` range.
-- **Old SHAs still resolve on GitHub**, for example `bb04148`, and show the old email until GitHub purges them. The user decides whether to ask GitHub Support to purge.
 - Local `feature/coding-interview` and `feat/multi-provider-reasoning` keep old metadata and stay unpushed. `scripts/protected-commits.sha256` is a snapshot of the former.
 - `README.md` is stale (still says Qianfan is the default). M6 rewrites it; `docs/specs/06-docs-release.md`.
 - `NetworkRefusal` only covers `URLSession.shared`.
@@ -20,5 +22,4 @@ Open loops:
 - From M2, still unsure: Claude's `ind-07` rating gap has no saved rater note; quality tables predate the softened fixture values.
 
 Needs you:
-- Confirm GitHub's "Block command line pushes that expose my email" is on (global git email is already noreply).
-- `Package.swift` says macOS 14, the spec says macOS 26. Recommended: keep 14 and correct the spec.
+- The 👤 real call, once the fixes are pushed and CI is green.

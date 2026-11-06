@@ -126,7 +126,8 @@ struct Config: Codable, Equatable {
         allowCLIAPIBilling = try c.decodeIfPresent(Bool.self, forKey: .allowCLIAPIBilling) ?? false
         redactionEnabled = try c.decodeIfPresent(Bool.self, forKey: .redactionEnabled) ?? true
         let days = try c.decodeIfPresent(Int.self, forKey: .audioRetentionDays) ?? 30
-        audioRetentionDays = AudioRetention.isValid(days: days) ? days : 30
+        // A value that makes no sense says nothing about what the user wanted, so keep everything.
+        audioRetentionDays = AudioRetention.isValid(days: days) ? days : 0
 
         if let profiles = try c.decodeIfPresent([LLMProfile].self, forKey: .llmProfiles) {
             llmProfiles = profiles
@@ -214,7 +215,11 @@ struct Config: Codable, Equatable {
             return config
         } catch {
             fputs("⚠  Config at \(url.path) is unreadable (\(error.localizedDescription)); using defaults.\n", stderr)
-            return Config()
+            // Finding from the test audit: the default would turn on deletion for someone
+            // who may have chosen keep-forever. Unsure what they chose, so delete nothing.
+            var config = Config()
+            config.audioRetentionDays = 0
+            return config
         }
     }
 

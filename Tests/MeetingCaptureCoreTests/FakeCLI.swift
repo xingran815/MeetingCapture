@@ -99,6 +99,29 @@ final class FakeCLIWorld {
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
     }
 
+    /// A fake whose model call is this bash snippet, for what a canned answer can't do:
+    /// sleeping, ignoring signals, leaving a child behind, or exiting without reading.
+    func installScript(
+        _ cli: CLIKind, modelCall: String, featuresList: String = "exit 1", authStatus: String? = nil
+    ) throws {
+        let status =
+            authStatus
+            ?? (cli == .claude
+                ? #"{"loggedIn":true,"authMethod":"claude.ai"}"#
+                : "Logged in using ChatGPT")
+        let script = """
+            #!/usr/bin/env bash
+            case "$1 $2" in
+              "auth status"|"login status") printf '%s' '\(status)'; exit 0 ;;
+              "features list") \(featuresList) ;;
+            esac
+            \(modelCall)
+            """
+        let url = bin.appendingPathComponent(cli.rawValue)
+        try script.write(to: url, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+    }
+
     struct Call {
         let args: [String]
         let stdin: String
@@ -144,10 +167,11 @@ final class FakeCLIWorld {
         ]
     }
 
-    func runner(allowAPIBilling: Bool = false) -> CLIRunner {
-        CLIRunner(
-            models: [.claude: .claudeDefault, .codex: .codexDefault],
-            allowAPIBilling: allowAPIBilling, environment: environment, timeout: 30)
+    func runner(
+        allowAPIBilling: Bool = false, timeout: TimeInterval = 30,
+        models: [CLIKind: CLITierModels] = [.claude: .claudeDefault, .codex: .codexDefault]
+    ) -> CLIRunner {
+        CLIRunner(models: models, allowAPIBilling: allowAPIBilling, environment: environment, timeout: timeout)
     }
 
     func ledger() -> UsageLedger {

@@ -37,8 +37,14 @@ class GuardedTestCase: XCTestCase {
 final class NetworkRefusal: URLProtocol {
     struct Refused: Error {}
 
+    /// Requests refused so far, so a test can prove none was even tried.
+    private(set) static var attempts = 0
+
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-    override func startLoading() { client?.urlProtocol(self, didFailWithError: Refused()) }
+    override func startLoading() {
+        Self.attempts += 1
+        client?.urlProtocol(self, didFailWithError: Refused())
+    }
     override func stopLoading() {}
 }

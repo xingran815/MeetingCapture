@@ -142,14 +142,23 @@ enum SpeakerLabels {
     static func isSilenceMarker(_ text: String) -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         guard trimmed.hasPrefix("[") || trimmed.hasPrefix("(") else { return false }
-        let inner = trimmed.trimmingCharacters(in: CharacterSet(charactersIn: "[]() ")).uppercased()
-        return ["", "BLANK_AUDIO", "SILENCE", "NO AUDIO", "NO SPEECH"].contains(inner)
+        // Whisper can repeat them, or end them with a full stop.
+        var rest = trimmed.uppercased()
+        for marker in ["BLANK_AUDIO", "SILENCE", "NO AUDIO", "NO SPEECH"] {
+            rest = rest.replacingOccurrences(of: marker, with: "")
+        }
+        return rest.trimmingCharacters(
+            in: CharacterSet(charactersIn: "[]()").union(.whitespaces).union(.punctuationCharacters)
+        )
+        .isEmpty
     }
 
     /// `[00:01:12] Speaker 1: text`, one per line.
     static func format(_ segments: [LabelledSegment]) -> String {
         segments.compactMap { segment in
-            let text = Transcriber.cleanSegmentText(segment.text)
+            // One line each, so text can't pass itself off as another speaker's turn.
+            let text = Transcriber.cleanSegmentText(
+                segment.text.components(separatedBy: .newlines).joined(separator: " "))
             guard !text.isEmpty, !isSilenceMarker(text) else { return nil }
             let t = Int(segment.start)
             return String(format: "[%02d:%02d:%02d] ", t / 3600, (t % 3600) / 60, t % 60)
@@ -187,7 +196,9 @@ enum SpeakerLabels {
         try rename(from, to: to, in: text).write(to: url, atomically: true, encoding: .utf8)
         let sidecarURL = RecordingSidecar.url(forBase: url.deletingPathExtension())
         if var sidecar = RecordingSidecar.load(at: sidecarURL) {
-            sidecar.speakerNames[from] = to
+            // The first label stays the key, so a second rename updates it.
+            let first = sidecar.speakerNames.first { $0.value == from }?.key ?? from
+            sidecar.speakerNames[first] = to
             try sidecar.save(to: sidecarURL)
         }
     }

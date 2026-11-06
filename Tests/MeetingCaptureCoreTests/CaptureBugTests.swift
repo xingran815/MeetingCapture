@@ -24,38 +24,9 @@ final class CaptureBugTests: XCTestCase {
     }
 
     // MARK: Chunk offset used the last segment's end
-
-    func testTrailingSilenceInAChunkDoesNotShiftLaterTimestamps() {
-        // The first chunk is 30 s long, but its speech ends at 10 s.
-        let first = Transcriber.Segment(start: 8, end: 10, text: "one")
-        let second = Transcriber.Segment(start: 1, end: 2, text: "two")
-        let stitched = Transcriber.stitch([
-            .init(duration: 30, text: "one", segments: [first]),
-            .init(duration: 30, text: "two", segments: [second]),
-        ])
-        XCTAssertEqual(stitched.segments.map(\.start), [8, 31])
-        XCTAssertEqual(stitched.segments.map(\.end), [10, 32])
-        XCTAssertEqual(stitched.text, "one two")
-    }
-
-    func testASilentChunkStillAdvancesTime() {
-        let later = Transcriber.Segment(start: 1, end: 2, text: "later")
-        let stitched = Transcriber.stitch([
-            .init(duration: 30, text: "", segments: []),
-            .init(duration: 30, text: "later", segments: [later]),
-        ])
-        XCTAssertEqual(stitched.segments.map(\.start), [31])
-    }
-
-    func testAnUnreadableDurationFallsBackToTheLastSegment() {
-        let first = Transcriber.Segment(start: 0, end: 10, text: "one")
-        let second = Transcriber.Segment(start: 1, end: 2, text: "two")
-        let stitched = Transcriber.stitch([
-            .init(duration: nil, text: "one", segments: [first]),
-            .init(duration: 30, text: "two", segments: [second]),
-        ])
-        XCTAssertEqual(stitched.segments.map(\.start), [0, 11])
-    }
+    //
+    // The live path is RecordingPipeline.transcribe, tested in RecordingPipelineTests.
+    // `Transcriber.stitch` no longer runs: nothing calls `transcribe(wavPaths:)`.
 
     // MARK: Shell transcribe ignored _partN files
 

@@ -81,6 +81,10 @@ struct SummaryPipeline {
     let redaction: Bool
 
     func run(transcript: String, forcedStyle: SummaryStyle? = nil) async throws -> SummaryOutcome {
+        // A model handed nothing invents a meeting, and that spends usage too.
+        guard !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw Summarizer.SummarizerError.badResponse("The transcript is empty, so there's nothing to summarize.")
+        }
         let redacted =
             redaction
             ? Redactor.redact(transcript)

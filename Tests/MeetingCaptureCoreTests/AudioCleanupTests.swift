@@ -134,8 +134,16 @@ final class AudioCleanupTests: XCTestCase {
         XCTAssertEqual(config.whisperModel, "openai_whisper-small")
     }
 
-    func testAnOutOfRangeRetentionFallsBackToTheDefault() throws {
-        let config = try JSONDecoder().decode(Config.self, from: Data(#"{"audioRetentionDays": 99999}"#.utf8))
+    /// D-52: a number that makes no sense says nothing about what the user wanted, so keep forever.
+    func testAnOutOfRangeRetentionMeansKeepForever() throws {
+        for saved in ["99999", "-5", "3651"] {
+            let config = try JSONDecoder().decode(Config.self, from: Data(#"{"audioRetentionDays": \#(saved)}"#.utf8))
+            XCTAssertEqual(config.audioRetentionDays, 0, saved)
+        }
+    }
+
+    func testAMissingRetentionKeepsTheThirtyDayDefault() throws {
+        let config = try JSONDecoder().decode(Config.self, from: Data("{}".utf8))
         XCTAssertEqual(config.audioRetentionDays, 30)
     }
 

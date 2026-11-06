@@ -148,12 +148,12 @@ final class LLMRouterTests: GuardedTestCase {
     }
 
     func testBothCappedMakesNoAPICall() async throws {
-        // URLSession is refused by GuardedTestCase, and the backend is CLI-only: a
-        // capped run must end in an error, never reach Summarizer.
+        // The backend is CLI-only: a capped run must end in an error, never reach Summarizer.
         try installBoth()
         let router = world.router(cap: 1)
         _ = try await router.call(plain)
         _ = try await router.call(plain)
+        let requestsBefore = NetworkRefusal.attempts
         let pipeline = SummaryPipeline(backend: CLISummaryBackend(router: router), redaction: true)
         do {
             _ = try await pipeline.run(transcript: "hello", forcedStyle: .meeting)
@@ -161,6 +161,7 @@ final class LLMRouterTests: GuardedTestCase {
         } catch {
             XCTAssertTrue(error is LLMRouter.RouterError, "\(error)")
         }
+        XCTAssertEqual(NetworkRefusal.attempts, requestsBefore, "nothing may try a network request")
     }
 
     func testCountResetsNextDay() throws {

@@ -72,7 +72,15 @@ struct RecordingPipeline {
         var offset = 0.0
         var detectedSpeakers = false
         for (index, part) in parts.enumerated() {
+            // A crashed WAV reads as empty until its header is repaired. Nothing else
+            // about the file changes, and a healthy one isn't touched.
+            _ = try? WAVRepair.repairHeader(at: part)
             let tracks = try AudioTracks.split(part, into: work)
+            if tracks.mic == nil, tracks.system == nil, tracks.noiseOnly.isEmpty {
+                notes.append(
+                    "\(part.lastPathComponent): no sound on either track. If that's unexpected, "
+                        + "check the Screen Recording and Microphone permissions.")
+            }
             var mic: [LabelledSegment] = []
             var system: [LabelledSegment] = []
             for track in tracks.noiseOnly {
@@ -158,7 +166,11 @@ struct RecordingPipeline {
         sidecar.state = .processed
         sidecar.pid = nil
         sidecar.audioFiles = archived.files.map(\.lastPathComponent)
-        if let transcript, !transcript.formatted.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        // A WAV that couldn't be archived may hold audio the transcript never reached,
+        // such as after a stale header, so it mustn't become eligible for deletion.
+        if archived.kept.isEmpty, let transcript,
+            !transcript.formatted.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        {
             sidecar.transcribedAt = now
         }
         try sidecar.save(to: sidecarURL)

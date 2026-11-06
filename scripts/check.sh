@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # --fast   build, unit tests, sweep of staged changes     (pre-commit, < 2 min)
-# default  --fast + sweep and E2E tests + outgoing sweep  (pre-push, verifier, < 8 min)
+# default  --fast + sweep and E2E tests + outgoing sweep  (pre-push, verifier, < 10 min)
+#          E2E = scripts/e2e.sh (the short one CI also runs) and scripts/e2e-full.sh (local only, D-49)
 # --live   default + small real calls, spends usage       (by hand only)
 set -uo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
@@ -55,6 +56,9 @@ scripts/sweep.sh --tree || die "tree sweep"
 
 step "E2E: transcribe a short fixture"
 scripts/e2e.sh || die "E2E"
+
+step "E2E (full, local only): many cases, each reported by name"
+scripts/e2e-full.sh || die "full E2E"
 
 if [ "$MODE" = "--live" ]; then
     step "live"

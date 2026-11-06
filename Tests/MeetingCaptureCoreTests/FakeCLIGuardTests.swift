@@ -18,12 +18,14 @@ final class FakeCLIGuardTests: GuardedTestCase {
         XCTAssertEqual(p.terminationStatus, 3)
     }
 
+    /// Any failure used to pass, so being offline looked like the guard working.
     func testNetworkIsRefused() async {
+        let before = NetworkRefusal.attempts
         do {
             _ = try await URLSession.shared.data(from: URL(string: "https://example.com/")!)
             XCTFail("a request got out during a guarded test")
         } catch {
-            // Refused by NetworkRefusal, as intended.
+            XCTAssertEqual(NetworkRefusal.attempts, before + 1, "it failed, but not at the guard: \(error)")
         }
     }
 }

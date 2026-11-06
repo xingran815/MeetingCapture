@@ -75,10 +75,16 @@ enum AudioRetention {
                 let transcribedAt = sidecar.transcribedAt, transcribedAt < limit,
                 let files = sidecar.audioFiles
             else { continue }
-            // Names come from the sidecar, so each must be a real entry in this folder.
-            // That also rules out a path pointing anywhere else.
+            let base = String(name.dropLast(sidecarSuffix.count))
+            // Names come from the sidecar, so each must be a real entry in this folder,
+            // which rules out a path pointing anywhere else, and one of this recording's
+            // own parts, which stops a damaged or planted sidecar claiming other files.
             for file in files where names.contains(file) && isAudio(file) {
+                let stem = (file as NSString).deletingPathExtension
+                guard RecordingFiles.baseName(of: stem) == base else { continue }
+                if stem != base, names.contains(stem + sidecarSuffix) { continue }
                 let url = dir.appendingPathComponent(file)
+                guard !isFolder(url) else { continue }
                 if (try? FileManager.default.removeItem(at: url)) != nil { deleted.append(url) }
             }
         }
@@ -98,7 +104,9 @@ enum AudioRetention {
         return
             names
             .filter { name in
-                guard (name as NSString).pathExtension.lowercased() == "wav" else { return false }
+                guard (name as NSString).pathExtension.lowercased() == "wav",
+                    !isFolder(dir.appendingPathComponent(name))
+                else { return false }
                 let stem = (name as NSString).deletingPathExtension
                 return !sidecars.contains { sidecar in
                     if sidecar.base == stem { return true }
@@ -134,6 +142,12 @@ enum AudioRetention {
             let first = RecordingFiles.allParts(of: wanted)[0]
             return FileManager.default.fileExists(atPath: first) ? URL(fileURLWithPath: first) : nil
         }
+    }
+
+    /// A folder can be named like audio, and deleting it would take everything inside.
+    private static func isFolder(_ url: URL) -> Bool {
+        let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+        return attributes?[.type] as? FileAttributeType == .typeDirectory
     }
 
     private static func isAudio(_ name: String) -> Bool {

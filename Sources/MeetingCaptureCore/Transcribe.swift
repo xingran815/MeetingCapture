@@ -181,49 +181,6 @@ final class Transcriber {
         return bestStart..<(bestStart + length)
     }
 
-    /// Transcribe multiple WAV files, adjusting timestamps for continuity.
-    /// Returns combined text and segments with correct absolute timestamps.
-    func transcribe(wavPaths: [String]) async throws -> (text: String, segments: [Segment]) {
-        var chunks: [Chunk] = []
-        for path in wavPaths {
-            let (text, segments) = try await transcribe(wavPath: path)
-            chunks.append(Chunk(duration: RecordingFiles.duration(ofAudioAt: path), text: text, segments: segments))
-        }
-        return Self.stitch(chunks)
-    }
-
-    struct Chunk {
-        /// The file's real length. Nil if it couldn't be read.
-        let duration: Double?
-        let text: String
-        let segments: [Segment]
-    }
-
-    /// Each chunk starts where the previous file ended, not where its speech ended,
-    /// so trailing silence doesn't shift later timestamps. If a file's length can't
-    /// be read, the last segment's end is the best estimate left, and it may run short.
-    static func stitch(_ chunks: [Chunk]) -> (text: String, segments: [Segment]) {
-        var texts: [String] = []
-        var all: [Segment] = []
-        var offset: Double = 0
-        for chunk in chunks {
-            texts.append(chunk.text)
-            all += chunk.segments.map { Segment(start: $0.start + offset, end: $0.end + offset, text: $0.text) }
-            offset += chunk.duration ?? chunk.segments.last?.end ?? 0
-        }
-        return (texts.filter { !$0.isEmpty }.joined(separator: " "), all)
-    }
-
-    /// Format segments as `[HH:MM:SS] text` one per line.
-    static func format(segments: [Segment]) -> String {
-        segments.map { seg in
-            let h = Int(seg.start) / 3600
-            let m = (Int(seg.start) % 3600) / 60
-            let s = Int(seg.start) % 60
-            return String(format: "[%02d:%02d:%02d] %@", h, m, s, cleanSegmentText(seg.text))
-        }.joined(separator: "\n")
-    }
-
     /// Strip Whisper special tokens (`<|startoftranscript|>`, `<|12.34|>`, …) from segment text.
     static func cleanSegmentText(_ s: String) -> String {
         let stripped = s.replacingOccurrences(

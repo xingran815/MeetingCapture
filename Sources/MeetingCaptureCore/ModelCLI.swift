@@ -335,6 +335,11 @@ enum CLIOutputParser {
                     parsed.text = text
                 }
                 if completed, item["type"] as? String == "web_search" { parsed.webSearchCount += 1 }
+            case "turn.completed":
+                // A notice such as a retry came earlier, and the turn finished anyway.
+                // Unsure Codex sends those; this is safe either way.
+                parsed.isError = false
+                parsed.errorText = nil
             case "turn.failed":
                 parsed.isError = true
                 parsed.errorText = (event["error"] as? [String: Any])?["message"] as? String ?? parsed.errorText

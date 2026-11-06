@@ -102,9 +102,11 @@ final class ConfigMigrationTests: XCTestCase {
         XCTAssertEqual(config.codexModels.normal, "gpt-6.1-sol")
     }
 
-    func testCorruptConfigIsNotOverwritten() throws {
+    func testCorruptConfigIsNotOverwrittenAndDeletesNothing() throws {
         try write("{ not json")
-        XCTAssertEqual(Config.load(at: configURL, legacyURL: nil), Config())
+        var expected = Config()
+        expected.audioRetentionDays = 0  // D-52: unsure what the user chose, so keep forever
+        XCTAssertEqual(Config.load(at: configURL, legacyURL: nil), expected)
         XCTAssertEqual(try String(contentsOf: configURL, encoding: .utf8), "{ not json")
     }
 }

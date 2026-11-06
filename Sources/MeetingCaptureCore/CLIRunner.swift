@@ -54,18 +54,8 @@ enum ProcessExec {
 
         // Drain everything at once, or a full pipe deadlocks parent and child.
         let group = DispatchGroup()
-        var outData = Data()
-        var errData = Data()
-        group.enter()
-        DispatchQueue.global().async {
-            outData = outPipe.fileHandleForReading.readDataToEndOfFile()
-            group.leave()
-        }
-        group.enter()
-        DispatchQueue.global().async {
-            errData = errPipe.fileHandleForReading.readDataToEndOfFile()
-            group.leave()
-        }
+        let out = PipeDrain(outPipe, group: group)
+        let err = PipeDrain(errPipe, group: group)
         DispatchQueue.global().async {
             try? inPipe.fileHandleForWriting.write(contentsOf: Data(stdin.utf8))
             try? inPipe.fileHandleForWriting.close()
@@ -78,19 +68,94 @@ enum ProcessExec {
             timedOut = true
             lock.unlock()
             process.terminate()
+            // Finding from the test audit: a CLI can ignore that, so this one it can't.
+            DispatchQueue.global().asyncAfter(deadline: .now() + killGrace) {
+                if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+            }
         }
         DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: killer)
         process.waitUntilExit()
         killer.cancel()
-        group.wait()
+
+        // Finding from the test audit: a child left behind can hold the pipes open for
+        // ever. Once the CLI has exited, stop as soon as the output has stopped arriving.
+        var seen = -1
+        while group.wait(timeout: .now() + drainPatience) == .timedOut {
+            let now = out.count + err.count
+            if now == seen { break }
+            seen = now
+        }
+        out.stop()
+        err.stop()
 
         lock.lock()
         defer { lock.unlock() }
         return ProcessOutput(
             status: process.terminationStatus,
-            stdout: String(decoding: outData, as: UTF8.self),
-            stderr: String(decoding: errData, as: UTF8.self),
+            stdout: String(decoding: out.data, as: UTF8.self),
+            stderr: String(decoding: err.data, as: UTF8.self),
             timedOut: timedOut)
+    }
+
+    /// How long after SIGTERM a CLI has to end. It has already run out of time.
+    private static let killGrace: TimeInterval = 0.4
+    /// How long output can stay still after the CLI exits before it counts as finished.
+    private static let drainPatience: TimeInterval = 0.25
+}
+
+/// Reads a pipe in the background, and can be abandoned while something still holds it open.
+private final class PipeDrain {
+    private let lock = NSLock()
+    private var buffer = Data()
+    private let handle: FileHandle
+    private var finished = false
+    private let group: DispatchGroup
+
+    init(_ pipe: Pipe, group: DispatchGroup) {
+        handle = pipe.fileHandleForReading
+        self.group = group
+        group.enter()
+        handle.readabilityHandler = { [weak self] handle in
+            let chunk = handle.availableData
+            self?.received(chunk)
+        }
+    }
+
+    private func received(_ chunk: Data) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !finished else { return }
+        if chunk.isEmpty {
+            finish()
+        } else {
+            buffer.append(chunk)
+        }
+    }
+
+    /// Call with the lock held. Leaves the group exactly once.
+    private func finish() {
+        finished = true
+        handle.readabilityHandler = nil
+        group.leave()
+    }
+
+    /// Stops reading. Whatever has arrived stays in `data`.
+    func stop() {
+        lock.lock()
+        defer { lock.unlock() }
+        if !finished { finish() }
+    }
+
+    var count: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return buffer.count
+    }
+
+    var data: Data {
+        lock.lock()
+        defer { lock.unlock() }
+        return buffer
     }
 }
 
@@ -238,6 +303,10 @@ final class CLIRunner {
         }
         if request.schema != nil, cli == .claude, !parsed.hasStructuredOutput {
             throw CLIError.failed(cli, "no structured output in the reply")
+        }
+        // Finding from the test audit: an exit 0 with nothing in it would save an empty summary.
+        if request.schema == nil, (parsed.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            throw CLIError.failed(cli, "the reply was empty")
         }
         return CLIResult(
             cli: cli, model: model, text: parsed.text ?? "", apiKeySource: parsed.apiKeySource,

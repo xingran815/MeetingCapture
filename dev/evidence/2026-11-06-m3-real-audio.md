@@ -13,7 +13,7 @@ One 30-minute file, mono, made by the earlier build, so it mixes mic and system 
 | `small.en`, VAD off | 3,148 | 242 | 29 s | 84 s to transcribe |
 | `small`, VAD off (new default) | 3,131 | 265 | 22 s | 86 s to transcribe, 145 s in all |
 
-Speaker detection found 2 speakers, with 32 speaker changes. Timestamps stay in order through 29:58. **Whether the labels are right hasn't been checked;** that needs someone who knows the call.
+Speaker detection found 2 speakers, with 32 speaker changes. Timestamps stay in order through 29:58. **The owner checked the labels: they're wrong at most places on this file.** It's one mixed channel, which is the hardest case and not what M3 records, so it says little about a separated system track. The 👤 real call is the test that counts. The owner didn't want `_part2` run, so labels across parts on real speech stay untested.
 
 ## Finding: VAD lost speech after silence
 Invented audio: a short sentence placed after silence, on `small.en` and `small`.

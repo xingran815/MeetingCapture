@@ -54,36 +54,44 @@ enum Redactor {
                 edge
                     + #"(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{30,}|hf_[A-Za-z0-9]{20,}|glpat-[A-Za-z0-9_-]{16,})"#
             )),
-        Rule(type: "EMAIL", regex: rx(#"[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,255}\.[A-Za-z]{2,}"#)),
+        // CJK has no spaces, so a sentence runs straight into an address. Limiting those
+        // scripts to a name's length stops the token swallowing the words before it.
+        Rule(
+            type: "EMAIL",
+            regex: rx(
+                #"(?:[[\p{L}\p{N}._%+-]&&[^\p{Han}\p{Hiragana}\p{Katakana}\p{Hangul}]]{1,64}|[\p{Han}\p{Hiragana}\p{Katakana}\p{Hangul}]{1,4})@[A-Za-z0-9.-]{1,255}\.[A-Za-z]{2,}"#
+            )),
         Rule(
             type: "URL_TOKEN",
             regex: rx(
-                #"(?i)[?&](?:token|access_token|api_key|apikey|key|auth|sig|signature|password|secret)=([^&\s]{8,})"#),
+                #"(?i)[?&#](?:token|access_token|api_key|apikey|key|auth|sig|signature|password|secret)=([^&\s]{8,})"#),
             group: 1),
         Rule(
             type: "EMAIL_SPOKEN",
             regex: rx(
-                #"(?i)(?<![A-Za-z0-9])[a-z0-9]+(?: (?:dot|underscore|dash|hyphen) [a-z0-9]+)* at [a-z0-9]+(?: (?:dot|dash|hyphen) [a-z0-9]+)* dot (?:com|org|net|cn|io|edu|de|co|ai|uk)(?![A-Za-z0-9])"#
+                #"(?i)(?<![A-Za-z0-9])[a-z0-9]+(?: (?:dot|underscore|dash|hyphen) [a-z0-9]+){0,8} at [a-z0-9]+(?: (?:dot|dash|hyphen) [a-z0-9]+){0,8} dot (?:com|org|net|cn|io|edu|de|co|ai|uk)(?![A-Za-z0-9])"#
             )),
         Rule(
-            type: "IBAN", regex: rx(edge + #"[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,4})?"# + endEdge),
+            type: "IBAN",
+            regex: rx(edge + #"[A-Za-z]{2}\d{2}(?: ?[A-Za-z0-9]{4}){2,7}(?: ?[A-Za-z0-9]{1,4})?"# + endEdge),
             validate: ibanLength),
         Rule(
             type: "CN_ID", regex: rx(#"(?<![0-9])\d{17}[\dXx](?![0-9A-Za-z])"#),
             validate: { cnIDValid($0) ? $0.utf16.count : nil }),
         Rule(
             type: "CARD",
-            regex: rx(#"(?<![0-9])(?:\d{4}[ -]\d{6}[ -]\d{5}|(?:\d{4}[ -]){3}\d{1,7}|\d{13,19})(?![0-9])"#),
+            regex: rx(#"(?<![0-9])(?:\d{4}[ -]\d{6}[ -]\d{4,5}|(?:\d{4}[ -]){3}\d{1,7}|\d{13,19})(?![0-9])"#),
             validate: { luhnValid($0) ? $0.utf16.count : nil }),
         Rule(type: "CN_MOBILE", regex: rx(#"(?<![0-9])(?:\+?86[ -]?)?1[3-9]\d(?:[ -]?\d{4}){2}(?![0-9])"#)),
         Rule(
             type: "SSN", regex: rx(#"(?<![0-9-])\d{3}([- ])\d{2}\1\d{4}(?![0-9-])"#),
             validate: { ssnValid($0) ? $0.utf16.count : nil }),
-        // Next to another digit group it's part of a longer number, such as a mistyped card.
+        // Joined to another digit group, or among groups of four, it's part of a longer
+        // number, such as a mistyped card. Any other number beside it says nothing.
         Rule(
             type: "PHONE",
             regex: rx(
-                #"(?<![A-Za-z0-9_.])(?<![0-9][ .-])(?:\+\d{1,3}(?:[ .-]?\d){7,12}|0\d{3,4}[ .-]\d{6}|(?:\+\d{1,3}[ .-]?)?(?:\(\d{2,4}\)[ .-]?|\d{2,4}[ .-])\d{3,4}[ .-]\d{3,4})(?![0-9-])(?![ .-][0-9])"#
+                #"(?<![A-Za-z0-9_.])(?<![0-9][.-])(?<!(?:^| )\d{4} )(?:\+\d{1,3}(?:[ .-]?\d){7,12}|0\d{3,4}[ .-]\d{6}|(?:\+\d{1,3}[ .-]?|1[ .-])?(?:\(\d{2,4}\)[ .-]?|\d{2,4}[ .-])\d{3,4}[ .-]\d{3,4})(?![0-9-])(?![.-][0-9])(?! \d{4}(?![0-9]))"#
             ), validate: { phoneValid($0) ? $0.utf16.count : nil }),
     ]
 
@@ -196,7 +204,7 @@ enum Redactor {
     }
 
     static func ibanValid(_ s: String) -> Bool {
-        let compact = s.filter { $0 != " " }
+        let compact = s.filter { $0 != " " }.uppercased()
         guard (15...34).contains(compact.count) else { return false }
         let moved = String(compact.dropFirst(4) + compact.prefix(4))
         var remainder = 0
