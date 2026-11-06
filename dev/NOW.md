@@ -13,7 +13,7 @@ Done since last save:
 - Real calls: `dev/evidence/2026-11-06-m3-real-audio.md` and the report.
 
 Open loops:
-- Issue 16's M3.1 session waits to add its spec, `dev/PLAN.md` row and decision until M3 is merged. `CLAUDE.md`'s order line already includes M3.1.
+- M3.1's spec is `docs/specs/03.1-faster-checks.md` (issue 16, D-61). Its new hooks and review rules apply only once it merges.
 - M5 settles the macOS setting: `Package.swift` says 14, untested; the specs say 26 (D-51).
 - **First `push` to `main` CI run:** check that it passed; it's the first test of the `event.before` range.
 - Local `feature/coding-interview` and `feat/multi-provider-reasoning` keep old metadata and stay unpushed. `scripts/protected-commits.sha256` is a snapshot of the former.
