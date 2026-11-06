@@ -98,10 +98,14 @@ final class LLMRouter {
 
     private func markFull(_ cli: CLIKind, reason: String) {
         ruledOut.insert(cli)
-        if let limit = try? ledger.limit(cli), limit.status == "rejected", let resetsAt = limit.resetsAt, resetsAt > clock() {
+        if let limit = try? ledger.limit(cli), limit.status == "rejected", let resetsAt = limit.resetsAt,
+            resetsAt > clock()
+        {
             lastResetsAt = resetsAt
         }
         current = cli.other
-        notes.append("\(cli.label) wasn't used for the remaining steps because \(reason); \(cli.other.label) ran them if it was available.")
+        notes.append(
+            "\(cli.label) wasn't used for the remaining steps because \(reason); \(cli.other.label) ran them if it was available."
+        )
     }
 }

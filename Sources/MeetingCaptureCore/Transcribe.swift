@@ -51,10 +51,12 @@ final class Transcriber {
     }
 
     func transcribe(wavPath: String) async throws -> (text: String, segments: [Segment]) {
-        guard let pipe else { throw NSError(
-            domain: "Transcriber", code: -1,
-            userInfo: [NSLocalizedDescriptionKey: "Transcriber.load() was not called"]
-        ) }
+        guard let pipe else {
+            throw NSError(
+                domain: "Transcriber", code: -1,
+                userInfo: [NSLocalizedDescriptionKey: "Transcriber.load() was not called"]
+            )
+        }
 
         let t0 = Date()
         print("📝  Transcribing \(wavPath)…")
@@ -139,7 +141,9 @@ final class Transcriber {
     private func detectLanguage(pipe: WhisperKit, audioPath: String) async -> String? {
         do {
             let result = try await pipe.detectLanguage(audioPath: audioPath)
-            print(String(format: "🌐  Detected language: %@ (%.2f)", result.language, result.langProbs[result.language] ?? 0))
+            print(
+                String(
+                    format: "🌐  Detected language: %@ (%.2f)", result.language, result.langProbs[result.language] ?? 0))
             return result.language
         } catch {
             // Older WhisperKit versions used a different method name.

@@ -133,8 +133,8 @@ final class UsageLedger {
     }
 }
 
-private extension JSONEncoder {
-    static var ledger: JSONEncoder {
+extension JSONEncoder {
+    fileprivate static var ledger: JSONEncoder {
         let e = JSONEncoder()
         e.outputFormatting = [.prettyPrinted, .sortedKeys]
         e.dateEncodingStrategy = .secondsSince1970
@@ -142,8 +142,8 @@ private extension JSONEncoder {
     }
 }
 
-private extension JSONDecoder {
-    static var ledger: JSONDecoder {
+extension JSONDecoder {
+    fileprivate static var ledger: JSONDecoder {
         let d = JSONDecoder()
         d.dateDecodingStrategy = .secondsSince1970
         return d
@@ -154,6 +154,6 @@ private extension JSONDecoder {
 public enum UsageLedgerStress {
     public static func run(path: String, calls: Int) {
         let ledger = UsageLedger(path: URL(fileURLWithPath: path))
-        for _ in 0 ..< calls { _ = try? ledger.reserve(.claude, cap: Int.max) }
+        for _ in 0..<calls { _ = try? ledger.reserve(.claude, cap: Int.max) }
     }
 }

@@ -15,39 +15,39 @@ enum LLMRoute: String, Codable {
 struct Config: Codable, Equatable {
 
     // Capture & transcription
-    var whisperModel: String            = "openai_whisper-small.en"
+    var whisperModel: String = "openai_whisper-small.en"
     /// 2-letter language hint (e.g. "en", "zh"). nil = auto-detect (only safe for `.en` models).
-    var whisperLanguage: String?        = nil
-    var defaultDurationMinutes: Int     = 480
-    var outputDirectory: String         = "~/Documents/MeetingCapture"
-    var autoTranscribe: Bool            = true
-    var autoSummarize: Bool             = true
-    var aecEnabled: Bool                = true
-    var micEnabled: Bool                = true
+    var whisperLanguage: String? = nil
+    var defaultDurationMinutes: Int = 480
+    var outputDirectory: String = "~/Documents/MeetingCapture"
+    var autoTranscribe: Bool = true
+    var autoSummarize: Bool = true
+    var aecEnabled: Bool = true
+    var micEnabled: Bool = true
     /// Meeting-app ids eligible for SCStream auto-detection (see MeetingApp.catalog).
     /// Empty / none-running → capture falls back to all system audio.
-    var enabledMeetingAppIDs: [String]  = MeetingApp.allIDs
+    var enabledMeetingAppIDs: [String] = MeetingApp.allIDs
     /// When true, capture ALL system audio regardless of which meeting apps are
     /// running — the app auto-detection is bypassed entirely.
-    var captureAllAudio: Bool           = false
+    var captureAllAudio: Bool = false
 
     // LLM — a tree of named, switchable configurations. Each profile carries its
     // own provider/model/base URL/reasoning settings; its API key lives in
     // APIKeyStore keyed by profile.id. Exactly one profile is "active" at a time
     // (selectedLLMProfileID); Settings → LLM configurations switches between them.
-    var llmProfiles: [LLMProfile]       = []
-    var selectedLLMProfileID: String    = ""
+    var llmProfiles: [LLMProfile] = []
+    var selectedLLMProfileID: String = ""
 
     // Subscription CLIs (docs/specs/02-llm-providers.md).
-    var llmRoute: LLMRoute              = .subscription
-    var primaryCLI: CLIKind             = .claude
-    var dailyCLICallCap: Int            = UsageLedger.defaultCap
-    var claudeModels: CLITierModels     = .claudeDefault
-    var codexModels: CLITierModels      = .codexDefault
+    var llmRoute: LLMRoute = .subscription
+    var primaryCLI: CLIKind = .claude
+    var dailyCLICallCap: Int = UsageLedger.defaultCap
+    var claudeModels: CLITierModels = .claudeDefault
+    var codexModels: CLITierModels = .codexDefault
     /// Lets a CLI run even though it would bill an API key. Off unless set in config.json.
-    var allowCLIAPIBilling: Bool        = false
+    var allowCLIAPIBilling: Bool = false
     /// Replace formatted sensitive values with tokens before any LLM call.
-    var redactionEnabled: Bool          = true
+    var redactionEnabled: Bool = true
 
     static let `default` = Config()
 
@@ -125,10 +125,12 @@ struct Config: Codable, Equatable {
 
         if let profiles = try c.decodeIfPresent([LLMProfile].self, forKey: .llmProfiles) {
             llmProfiles = profiles
-            selectedLLMProfileID = try c.decodeIfPresent(String.self, forKey: .selectedLLMProfileID)
+            selectedLLMProfileID =
+                try c.decodeIfPresent(String.self, forKey: .selectedLLMProfileID)
                 ?? profiles.first?.id ?? ""
         } else if let legacy = try? decoder.container(keyedBy: LegacyKeys.self),
-                  let providerID = try legacy.decodeIfPresent(String.self, forKey: .llmProviderID) {
+            let providerID = try legacy.decodeIfPresent(String.self, forKey: .llmProviderID)
+        {
             // Pre-multi-profile config: synthesize one profile from the old flat fields.
             let customName = try legacy.decodeIfPresent(String.self, forKey: .llmCustomName) ?? ""
             let model = try legacy.decodeIfPresent(String.self, forKey: .llmModel) ?? ""
@@ -141,7 +143,8 @@ struct Config: Codable, Equatable {
             if reasoningBudget == nil {
                 reasoningBudget = try? legacy.decodeIfPresent(Int.self, forKey: .kimiThinkingBudgetTokens)
             }
-            let name = providerID == "custom"
+            let name =
+                providerID == "custom"
                 ? (customName.trimmingCharacters(in: .whitespaces).isEmpty ? "Custom" : customName)
                 : (LLMProvider.byID(providerID)?.label ?? providerID)
             let profile = LLMProfile(
@@ -150,8 +153,9 @@ struct Config: Codable, Equatable {
                 providerID: providerID,
                 model: model,
                 baseURL: baseURL,
-                reasoningEffort: LLMProfile.effort(fromLegacyEnabled: reasoning ?? false,
-                                                   budget: reasoningBudget ?? 32_000)
+                reasoningEffort: LLMProfile.effort(
+                    fromLegacyEnabled: reasoning ?? false,
+                    budget: reasoningBudget ?? 32_000)
             )
             llmProfiles = [profile]
             selectedLLMProfileID = profile.id
@@ -182,7 +186,8 @@ struct Config: Codable, Equatable {
         if !fm.fileExists(atPath: url.path), let legacyURL, fm.fileExists(atPath: legacyURL.path) {
             // One-time migration from ~/Library/Application Support → ~/.config.
             if let data = try? Data(contentsOf: legacyURL),
-               let migrated = try? JSONDecoder().decode(Config.self, from: data) {
+                let migrated = try? JSONDecoder().decode(Config.self, from: data)
+            {
                 let config = removingRemovedProviders(from: migrated)
                 try? config.save(to: url)  // best-effort; original is left in place
                 return config

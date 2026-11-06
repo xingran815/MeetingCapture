@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import MeetingCaptureCore
 
 final class ConfigMigrationTests: XCTestCase {
@@ -21,8 +22,10 @@ final class ConfigMigrationTests: XCTestCase {
         try json.write(to: configURL, atomically: true, encoding: .utf8)
     }
 
-    private let qianfanProfile = #"{"id":"default-qianfan","name":"Qianfan / Kimi","providerID":"qianfan","model":"kimi-k2.5","baseURL":"https://qianfan.baidubce.com/v2/coding","reasoningEffort":"off"}"#
-    private let deepseekProfile = #"{"id":"ds1","name":"deepseek","providerID":"custom","model":"deepseek-v4-flash","baseURL":"https://api.deepseek.com","reasoningEffort":"medium","reasoningStyleOverride":"kimi"}"#
+    private let qianfanProfile =
+        #"{"id":"default-qianfan","name":"Qianfan / Kimi","providerID":"qianfan","model":"kimi-k2.5","baseURL":"https://qianfan.baidubce.com/v2/coding","reasoningEffort":"off"}"#
+    private let deepseekProfile =
+        #"{"id":"ds1","name":"deepseek","providerID":"custom","model":"deepseek-v4-flash","baseURL":"https://api.deepseek.com","reasoningEffort":"medium","reasoningStyleOverride":"kimi"}"#
 
     func testQianfanProfileAndKeyGoAndDeepSeekStays() throws {
         APIKeyStore.write("old-fake-key", forProfile: "default-qianfan")
@@ -60,18 +63,24 @@ final class ConfigMigrationTests: XCTestCase {
     }
 
     func testFlatLegacyQianfanConfigIsRemovedToo() throws {
-        try write(#"{"llmProviderID":"qianfan","llmModel":"kimi-k2.5","llmBaseURL":"https://qianfan.baidubce.com/v2/coding"}"#)
+        try write(
+            #"{"llmProviderID":"qianfan","llmModel":"kimi-k2.5","llmBaseURL":"https://qianfan.baidubce.com/v2/coding"}"#
+        )
         XCTAssertTrue(Config.load(at: configURL, legacyURL: nil).llmProfiles.isEmpty)
     }
 
     func testFlatLegacyDeepSeekConfigStays() throws {
-        try write(#"{"llmProviderID":"custom","llmCustomName":"DS","llmModel":"deepseek-v4-flash","llmBaseURL":"https://api.deepseek.com"}"#)
+        try write(
+            #"{"llmProviderID":"custom","llmCustomName":"DS","llmModel":"deepseek-v4-flash","llmBaseURL":"https://api.deepseek.com"}"#
+        )
         let config = Config.load(at: configURL, legacyURL: nil)
         XCTAssertEqual(config.llmProfiles.map(\.model), ["deepseek-v4-flash"])
     }
 
     func testCustomProfilePointingAtQianfanIsRemoved() throws {
-        try write(#"{"llmProfiles":[{"id":"c1","name":"mine","providerID":"custom","model":"m","baseURL":"https://qianfan.baidubce.com/v2","reasoningEffort":"off"}]}"#)
+        try write(
+            #"{"llmProfiles":[{"id":"c1","name":"mine","providerID":"custom","model":"m","baseURL":"https://qianfan.baidubce.com/v2","reasoningEffort":"off"}]}"#
+        )
         XCTAssertTrue(Config.load(at: configURL, legacyURL: nil).llmProfiles.isEmpty)
     }
 

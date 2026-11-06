@@ -60,7 +60,8 @@ struct CLIRequest {
         let list = concepts.map { "- \($0)" }.joined(separator: "\n")
         return CLIRequest(
             tier: tier,
-            system: "You look up general reference sources for concepts. Reply with one reliable source URL per concept. If you aren't sure of a source, say so.",
+            system:
+                "You look up general reference sources for concepts. Reply with one reliable source URL per concept. If you aren't sure of a source, say so.",
             input: "Find a reliable general reference for each concept:\n\(list)",
             schema: nil,
             webSearch: true)
@@ -75,7 +76,8 @@ struct CLIRequest {
         }
         for concept in concepts {
             let words = concept.split(whereSeparator: \.isWhitespace)
-            let bad = concept.count > 60 || words.count > 6 || words.isEmpty
+            let bad =
+                concept.count > 60 || words.count > 6 || words.isEmpty
                 || concept.contains(where: { $0.isNumber || $0.isNewline || "@<>[]{}:/\"".contains($0) })
             if bad {
                 throw CLIError.badRequest("A concept search refused text that isn't a short concept name.")
@@ -180,7 +182,7 @@ enum CLIArguments {
         output.split(separator: "\n").compactMap { line in
             let columns = line.split(whereSeparator: \.isWhitespace).map(String.init)
             guard columns.count >= 3, let last = columns.last, last == "true" || last == "false",
-                  columns[0].range(of: "^[a-z0-9_]+$", options: .regularExpression) != nil
+                columns[0].range(of: "^[a-z0-9_]+$", options: .regularExpression) != nil
             else { return nil }
             return columns[0]
         }
@@ -252,7 +254,8 @@ enum CLIOutputParser {
 
     /// From Job Radar's `QUOTA_PATTERN`. Only ever matched against a CLI's error
     /// text, never the model's answer, which may well discuss rate limits.
-    static let quotaPattern = "(?i)rate.?limit|usage limit|session limit|hit your (?:\\w+ )?limit|limit reached|limit will reset|too many requests|quota|out of (?:credits|usage)|usage cap|insufficient_quota"
+    static let quotaPattern =
+        "(?i)rate.?limit|usage limit|session limit|hit your (?:\\w+ )?limit|limit reached|limit will reset|too many requests|quota|out of (?:credits|usage)|usage cap|insufficient_quota"
 
     static func looksLikeQuota(_ text: String) -> Bool {
         text.range(of: quotaPattern, options: .regularExpression) != nil
@@ -261,7 +264,7 @@ enum CLIOutputParser {
     private static func events(_ output: String) -> [[String: Any]] {
         output.split(separator: "\n").compactMap { line in
             guard let data = line.data(using: .utf8),
-                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
             else { return nil }
             return object
         }
@@ -282,15 +285,17 @@ enum CLIOutputParser {
             case "assistant":
                 let message = event["message"] as? [String: Any]
                 let blocks = message?["content"] as? [[String: Any]] ?? []
-                parsed.webSearchCount += blocks.filter {
-                    ($0["type"] as? String) == "tool_use" && ($0["name"] as? String) == "WebSearch"
-                }.count
+                parsed.webSearchCount +=
+                    blocks.filter {
+                        ($0["type"] as? String) == "tool_use" && ($0["name"] as? String) == "WebSearch"
+                    }.count
             case "result":
                 parsed.isError = event["is_error"] as? Bool ?? false
                 parsed.httpStatus = event["api_error_status"] as? Int
                 if let structured = event["structured_output"], !(structured is NSNull),
-                   JSONSerialization.isValidJSONObject(structured),
-                   let data = try? JSONSerialization.data(withJSONObject: structured, options: [.sortedKeys]) {
+                    JSONSerialization.isValidJSONObject(structured),
+                    let data = try? JSONSerialization.data(withJSONObject: structured, options: [.sortedKeys])
+                {
                     parsed.text = String(decoding: data, as: UTF8.self)
                     parsed.hasStructuredOutput = true
                 } else if let result = event["result"] as? String {

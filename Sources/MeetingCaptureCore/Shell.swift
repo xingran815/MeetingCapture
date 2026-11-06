@@ -50,23 +50,24 @@ final class Shell {
     // MARK: - Menu rendering
 
     private func printBanner() {
-        print("""
-        ╔════════════════════════════════════════════╗
-        ║   MeetingCapture  ·  v0.6                  ║
-        ╚════════════════════════════════════════════╝
-        """)
+        print(
+            """
+            ╔════════════════════════════════════════════╗
+            ║   MeetingCapture  ·  v0.6                  ║
+            ╚════════════════════════════════════════════╝
+            """)
     }
 
     private func mainHeader() -> String {
-        let autoTS  = config.autoTranscribe ? "on" : "off"
-        let autoSum = config.autoSummarize  ? "on" : "off"
-        let mic     = config.micEnabled ? "on" : "off"
+        let autoTS = config.autoTranscribe ? "on" : "off"
+        let autoSum = config.autoSummarize ? "on" : "off"
+        let mic = config.micEnabled ? "on" : "off"
         return """
 
-          whisper: \(config.whisperModel)   ·  llm: \(routeDescription)   ·  auto-ts: \(autoTS), auto-sum: \(autoSum)
-          output:  \(config.outputDirectory)          safety cap: \(config.defaultDurationMinutes) min   ·  mic: \(mic)
+              whisper: \(config.whisperModel)   ·  llm: \(routeDescription)   ·  auto-ts: \(autoTS), auto-sum: \(autoSum)
+              output:  \(config.outputDirectory)          safety cap: \(config.defaultDurationMinutes) min   ·  mic: \(mic)
 
-        """
+            """
     }
 
     private func promptLine(_ prompt: String = "\n> ") -> String? {
@@ -93,8 +94,7 @@ final class Shell {
 
     private func recordFlow() async {
         let base: URL
-        do { base = try config.newMeetingBase() }
-        catch {
+        do { base = try config.newMeetingBase() } catch {
             print("❌  Couldn't prepare output directory: \(error.localizedDescription)")
             return
         }
@@ -107,11 +107,12 @@ final class Shell {
             if config.captureAllAudio { return "  (all system audio)" }
             return config.micEnabled ? "" : "  (system audio only — mic off)"
         }()
-        print("""
+        print(
+            """
 
-        🔴  Recording → \(wavURL.path)\(modeHint)
-            Space+Enter to pause/resume · Enter to stop.
-        """)
+            🔴  Recording → \(wavURL.path)\(modeHint)
+                Space+Enter to pause/resume · Enter to stop.
+            """)
 
         // Install stdin-readability handler. Line is "<space>\n" → pause toggle;
         // anything else (including a bare "\n") → stop. Terminals are line-
@@ -235,15 +236,18 @@ final class Shell {
             print("🧩  Summarizing via \(backend.label)…")
             let outcome = try await SummaryPipeline(backend: backend, redaction: config.redactionEnabled)
                 .run(transcript: transcript)
-            print(outcome.style == .therapy
-                  ? "🧭  Detected a therapy session — wrote Practice Notes."
-                  : "🧭  Detected a meeting — wrote a summary.")
+            print(
+                outcome.style == .therapy
+                    ? "🧭  Detected a therapy session — wrote Practice Notes."
+                    : "🧭  Detected a meeting — wrote a summary.")
             if outcome.redactedValues > 0 {
-                print("🔒  \(outcome.redactedValues) formatted values were kept out of the request. Spoken names aren't caught.")
+                print(
+                    "🔒  \(outcome.redactedValues) formatted values were kept out of the request. Spoken names aren't caught."
+                )
             }
 
             let totalWidth = 50
-            let labelPart  = "──── summary "
+            let labelPart = "──── summary "
             let fill = String(repeating: "─", count: max(0, totalWidth - labelPart.count))
             print("\n" + labelPart + fill)
             print(renderMarkdown(outcome.report.trimmingCharacters(in: .whitespacesAndNewlines)))
@@ -284,7 +288,10 @@ final class Shell {
     /// Model names change, so they're plain text. Enter keeps the current one.
     private func promptTierModels() {
         func ask(_ kp: WritableKeyPath<Config, CLITierModels>, _ name: String) {
-            for (tier, field) in [("cheap", \CLITierModels.cheap), ("normal", \CLITierModels.normal), ("frontier", \CLITierModels.frontier)] as [(String, WritableKeyPath<CLITierModels, String>)] {
+            for (tier, field) in [
+                ("cheap", \CLITierModels.cheap), ("normal", \CLITierModels.normal),
+                ("frontier", \CLITierModels.frontier),
+            ] as [(String, WritableKeyPath<CLITierModels, String>)] {
                 let current = config[keyPath: kp][keyPath: field]
                 guard let v = askLine("\(name) \(tier) model [\(current)]"), !v.isEmpty else { continue }
                 guard CLIArguments.isSafeModelName(v) else {
@@ -310,10 +317,12 @@ final class Shell {
         func buildItems() -> [MenuItem] {
             let c = config
             let ledger = UsageLedger()
-            let aecDesc = c.micEnabled
+            let aecDesc =
+                c.micEnabled
                 ? (c.aecEnabled ? "on" : "off")
                 : "n/a — mic off"
-            let appsDesc = c.captureAllAudio
+            let appsDesc =
+                c.captureAllAudio
                 ? "all system audio"
                 : "\(c.enabledMeetingAppIDs.count) of \(MeetingApp.catalog.count) on"
             return [
@@ -325,7 +334,8 @@ final class Shell {
                 .separator("── LLM (summarization) ──────────────"),
                 MenuItem(key: "5", label: "Auto-summarize          [\(c.autoSummarize ? "on" : "off")]"),
                 MenuItem(key: "c", label: "LLM route               [\(routeDescription)]"),
-                MenuItem(key: "t", label: "CLI tier models         [\(c.claudeModels.normal) · \(c.codexModels.normal)]"),
+                MenuItem(
+                    key: "t", label: "CLI tier models         [\(c.claudeModels.normal) · \(c.codexModels.normal)]"),
                 MenuItem(key: "l", label: "Daily CLI call cap      [\(c.dailyCLICallCap) per CLI]"),
                 MenuItem(key: "x", label: "Redaction               [\(c.redactionEnabled ? "on" : "off")]"),
                 MenuItem(key: "6", label: "API configurations      [\(c.llmProfiles.count) saved]"),
@@ -348,7 +358,7 @@ final class Shell {
             case "2": promptInt(\.defaultDurationMinutes, label: "safety cap (minutes)", min: 1, max: 600)
             case "3": promptString(\.outputDirectory, label: "output directory")
             case "4": toggle(\.autoTranscribe, label: "Auto-transcribe")
-            case "5": toggle(\.autoSummarize,  label: "Auto-summarize")
+            case "5": toggle(\.autoSummarize, label: "Auto-summarize")
             case "6": llmConfigsFlow()
             case "c": cycleRoute()
             case "t": promptTierModels()
@@ -390,7 +400,10 @@ final class Shell {
             return items
         }
 
-        Menu.run(title: "\nAPI configurations (used on the API route, or when no CLI is ready)\n", items: buildItems, allowBack: true) { i in
+        Menu.run(
+            title: "\nAPI configurations (used on the API route, or when no CLI is ready)\n", items: buildItems,
+            allowBack: true
+        ) { i in
             let profileCount = config.llmProfiles.count
             if i < profileCount {
                 config.selectedLLMProfileID = config.llmProfiles[i].id
@@ -429,10 +442,11 @@ final class Shell {
         var profile: LLMProfile
         if provider.id == "custom" {
             let name = askLine("Configuration name") ?? "Custom"
-            let url  = askLine("Base URL") ?? ""
+            let url = askLine("Base URL") ?? ""
             let model = askLine("Model") ?? ""
-            profile = LLMProfile(name: name.isEmpty ? "Custom" : name, providerID: "custom",
-                                  model: model, baseURL: url)
+            profile = LLMProfile(
+                name: name.isEmpty ? "Custom" : name, providerID: "custom",
+                model: model, baseURL: url)
         } else {
             let defaultName = provider.label
             let name = askLine("Configuration name [\(defaultName)]") ?? ""
@@ -449,7 +463,8 @@ final class Shell {
         print("✓  Added \"\(profile.displayName)\" and made it active.")
 
         if let key = readSecret("API key for \"\(profile.displayName)\" (input hidden, blank to skip)"),
-           !key.isEmpty {
+            !key.isEmpty
+        {
             if APIKeyStore.write(key, forProfile: profile.id) {
                 print("✓  Stored key for \"\(profile.displayName)\".")
             } else {
@@ -469,11 +484,13 @@ final class Shell {
             let p = config.llmProfiles[idx]
             let keyStatus = Config.apiKeySource(profileID: p.id)
             let style = p.effectiveReasoningStyle
-            let reasoningDesc = style == .none
+            let reasoningDesc =
+                style == .none
                 ? "n/a — no reasoning format"
                 : "\(p.reasoningEffort.isOn ? p.reasoningEffort.rawValue : "off") · \(style.label)"
             let detected = LLMProvider.reasoningStyle(baseURL: p.baseURL, providerID: p.providerID)
-            let formatDesc = p.reasoningStyleOverride.map { "\($0.label) (override)" }
+            let formatDesc =
+                p.reasoningStyleOverride.map { "\($0.label) (override)" }
                 ?? "auto · \(detected.label)"
             return [
                 MenuItem(key: "1", label: "Name              [\(p.name.isEmpty ? p.displayName : p.name)]"),
@@ -522,7 +539,9 @@ final class Shell {
                 if config.llmProfiles[idx].supportsReasoning {
                     promptProfileReasoning(profileID: profileID)
                 } else {
-                    print("This endpoint has no reasoning format — set \"Reasoning format\" to enable it, or pick a provider that has one (e.g. DeepSeek, OpenAI, Anthropic).")
+                    print(
+                        "This endpoint has no reasoning format — set \"Reasoning format\" to enable it, or pick a provider that has one (e.g. DeepSeek, OpenAI, Anthropic)."
+                    )
                 }
             case "f": promptProfileReasoningFormat(profileID: profileID)
             case "l": promptProfileApiKey(profileID: profileID)
@@ -615,7 +634,8 @@ final class Shell {
         }
         let stored = APIKeyStore.isStored(profileID: profileID)
         var items: [MenuItem] = [
-            MenuItem(key: "s", label: stored ? "Replace stored key" : "Set new key  (stored in ~/.config/MeetingCapture)"),
+            MenuItem(
+                key: "s", label: stored ? "Replace stored key" : "Set new key  (stored in ~/.config/MeetingCapture)")
         ]
         if stored {
             items.append(MenuItem(key: "c", label: "Clear stored key"))
@@ -625,8 +645,11 @@ final class Shell {
             return
         case .selected(let i):
             if items[i].key == "c" {
-                if APIKeyStore.delete(profileID: profileID) { print("✓  Cleared stored key.") }
-                else { print("⚠  Failed to clear key file.") }
+                if APIKeyStore.delete(profileID: profileID) {
+                    print("✓  Cleared stored key.")
+                } else {
+                    print("⚠  Failed to clear key file.")
+                }
                 return
             }
             guard let key = readSecret("Paste API key (input hidden)"), !key.isEmpty else {
@@ -643,12 +666,12 @@ final class Shell {
 
     private func promptWhisperModel() {
         let models: [(id: String, blurb: String)] = [
-            ("openai_whisper-tiny.en",   "~75 MB, fastest, rough"),
-            ("openai_whisper-base.en",   "~140 MB"),
-            ("openai_whisper-small.en",  "~470 MB, default"),
+            ("openai_whisper-tiny.en", "~75 MB, fastest, rough"),
+            ("openai_whisper-base.en", "~140 MB"),
+            ("openai_whisper-small.en", "~470 MB, default"),
             ("openai_whisper-medium.en", "~1.5 GB, best for accents"),
-            ("openai_whisper-small",     "multilingual, for Chinese etc."),
-            ("openai_whisper-medium",    "multilingual"),
+            ("openai_whisper-small", "multilingual, for Chinese etc."),
+            ("openai_whisper-medium", "multilingual"),
         ]
         var items = models.enumerated().map { (i, m) in
             let marker = (m.id == config.whisperModel) ? "●" : " "
@@ -673,7 +696,8 @@ final class Shell {
                 print("✓  Whisper model: \(config.whisperModel)")
             } else {
                 guard let v = askLine("Custom Whisper model [\(config.whisperModel)]"),
-                      !v.isEmpty else { return }
+                    !v.isEmpty
+                else { return }
                 config.whisperModel = v
                 persistConfig()
             }
@@ -711,25 +735,35 @@ final class Shell {
     /// concurrency pool.
     private func testConnection(profile: LLMProfile) {
         guard let apiKey = Config.resolveApiKey(profileID: profile.id), !apiKey.isEmpty else {
-            print("❌  No API key for \"\(profile.displayName)\". Set one in this configuration's editor, or export LLM_API_KEY.")
+            print(
+                "❌  No API key for \"\(profile.displayName)\". Set one in this configuration's editor, or export LLM_API_KEY."
+            )
             return
         }
         guard let baseURL = URL(string: profile.baseURL) else {
             print("❌  Invalid LLM base URL: \(profile.baseURL)")
             return
         }
-        let summarizer = Summarizer(baseURL: baseURL, apiKeyProvider: { apiKey }, model: profile.model, apiStyle: profile.apiStyle)
+        let summarizer = Summarizer(
+            baseURL: baseURL, apiKeyProvider: { apiKey }, model: profile.model, apiStyle: profile.apiStyle)
         print("⏳  Testing \(profile.model) @ \(baseURL.host ?? profile.baseURL)…")
 
         let sem = DispatchSemaphore(value: 0)
         var result: Result<String, Error>?
-        summarizer.ping { r in result = r; sem.signal() }
+        summarizer.ping { r in
+            result = r
+            sem.signal()
+        }
         sem.wait()
 
         switch result {
         case .success(let s): print("✓  Connected — \(s)")
-        case .failure(let e): print("✗  \(e.localizedDescription)"); return
-        case .none:           print("✗  No result."); return
+        case .failure(let e):
+            print("✗  \(e.localizedDescription)")
+            return
+        case .none:
+            print("✗  No result.")
+            return
         }
 
         // Connection is good — probe whether this endpoint actually reasons.
@@ -749,7 +783,10 @@ final class Shell {
         print("⏳  Probing reasoning support…")
         let sem = DispatchSemaphore(value: 0)
         var outcome: Summarizer.ReasoningProbeOutcome?
-        summarizer.probeReasoning(hostDetected: detected) { o in outcome = o; sem.signal() }
+        summarizer.probeReasoning(hostDetected: detected) { o in
+            outcome = o
+            sem.signal()
+        }
         sem.wait()
 
         switch outcome {
@@ -759,9 +796,10 @@ final class Shell {
                 // Keep "auto" when host detection already agrees, else pin the format.
                 config.llmProfiles[idx].reasoningStyleOverride = (style == detected) ? nil : style
                 persistConfig()
-                print(style == detected
-                      ? "   Reasoning format stays auto · \(style.label)."
-                      : "   Set Reasoning format → \(style.label).")
+                print(
+                    style == detected
+                        ? "   Reasoning format stays auto · \(style.label)."
+                        : "   Set Reasoning format → \(style.label).")
                 if !config.llmProfiles[idx].reasoningEffort.isOn {
                     print("   Tip: Reasoning effort is off — set it to actually send reasoning.")
                 }
@@ -769,9 +807,10 @@ final class Shell {
                 print("   Your manual Reasoning format is \(p.effectiveReasoningStyle.label) — left unchanged.")
             }
         case .noneDetected(let inconclusive):
-            print(inconclusive
-                  ? "•  Endpoint accepted the parameter but returned no reasoning output — your model is probably not a reasoning model. You can still force a format via Reasoning format."
-                  : "•  No reasoning support detected — the endpoint rejected every reasoning parameter.")
+            print(
+                inconclusive
+                    ? "•  Endpoint accepted the parameter but returned no reasoning output — your model is probably not a reasoning model. You can still force a format via Reasoning format."
+                    : "•  No reasoning support detected — the endpoint rejected every reasoning parameter.")
         case .failed(let msg):
             print("✗  Reasoning probe failed: \(msg)")
         case .none:
@@ -786,10 +825,10 @@ final class Shell {
     private func promptMeetingApps() {
         let title = """
 
-        Audio source
-        All system audio captures everything. Otherwise capture is scoped to the
-        first enabled app that's running (or all audio if none are running).
-        """
+            Audio source
+            All system audio captures everything. Otherwise capture is scoped to the
+            first enabled app that's running (or all audio if none are running).
+            """
         // index 0 = All system audio · index 1 = separator · 2… = apps
         func buildItems() -> [MenuItem] {
             let all = config.captureAllAudio
@@ -799,10 +838,11 @@ final class Shell {
             ]
             items.append(.separator("──────────────────────"))
             for app in MeetingApp.catalog {
-                items.append(MenuItem(
-                    label: "[\(enabled.contains(app.id) ? "on" : "off")] \(app.label)",
-                    enabled: !all
-                ))
+                items.append(
+                    MenuItem(
+                        label: "[\(enabled.contains(app.id) ? "on" : "off")] \(app.label)",
+                        enabled: !all
+                    ))
             }
             return items
         }
@@ -813,7 +853,7 @@ final class Shell {
                 persistConfig()
                 return
             }
-            let appIndex = i - 2   // account for All-audio row + separator
+            let appIndex = i - 2  // account for All-audio row + separator
             guard MeetingApp.catalog.indices.contains(appIndex) else { return }
             let app = MeetingApp.catalog[appIndex]
             let enabled = Set(config.enabledMeetingAppIDs)
@@ -882,8 +922,7 @@ final class Shell {
     }
 
     private func persistConfig() {
-        do { try config.save() }
-        catch { print("⚠  Failed to save config: \(error.localizedDescription)") }
+        do { try config.save() } catch { print("⚠  Failed to save config: \(error.localizedDescription)") }
     }
 
     // MARK: - Utilities
@@ -900,8 +939,8 @@ final class Shell {
     // The .md file on disk always receives the raw markdown string.
     private func renderMarkdown(_ text: String) -> String {
         let reset = "\u{001B}[0m"
-        let bold  = "\u{001B}[1m"
-        let dim   = "\u{001B}[2m"
+        let bold = "\u{001B}[1m"
+        let dim = "\u{001B}[2m"
 
         var out: [String] = []
         var inCode = false
@@ -916,7 +955,8 @@ final class Shell {
                 continue
             }
             if inCode {
-                out.append(dim + "  " + raw + reset); continue
+                out.append(dim + "  " + raw + reset)
+                continue
             }
 
             if raw.hasPrefix("### ") {
@@ -925,7 +965,7 @@ final class Shell {
                 out.append("\n" + bold + String(raw.dropFirst(3)).uppercased() + reset)
             } else if raw.hasPrefix("# ") {
                 let title = String(raw.dropFirst(2)).uppercased()
-                let bar   = String(repeating: "─", count: min(title.count + 4, 60))
+                let bar = String(repeating: "─", count: min(title.count + 4, 60))
                 out.append("\n" + bold + bar + "\n  " + title + "\n" + bar + reset)
             } else if raw.hasPrefix("- ") || raw.hasPrefix("* ") {
                 out.append("  •  " + inlineFmt(String(raw.dropFirst(2)), bold: bold, reset: reset))
@@ -943,12 +983,15 @@ final class Shell {
     private func inlineFmt(_ text: String, bold: String, reset: String) -> String {
         let cyan = "\u{001B}[36m"
         var s = text
-        s = s.replacingOccurrences(of: #"\*\*(.+?)\*\*"#,
-                                    with: bold + "$1" + reset, options: .regularExpression)
-        s = s.replacingOccurrences(of: #"__(.+?)__"#,
-                                    with: bold + "$1" + reset, options: .regularExpression)
-        s = s.replacingOccurrences(of: #"`([^`]+)`"#,
-                                    with: cyan + "$1" + reset, options: .regularExpression)
+        s = s.replacingOccurrences(
+            of: #"\*\*(.+?)\*\*"#,
+            with: bold + "$1" + reset, options: .regularExpression)
+        s = s.replacingOccurrences(
+            of: #"__(.+?)__"#,
+            with: bold + "$1" + reset, options: .regularExpression)
+        s = s.replacingOccurrences(
+            of: #"`([^`]+)`"#,
+            with: cyan + "$1" + reset, options: .regularExpression)
         return s
     }
 }

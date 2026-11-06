@@ -15,13 +15,14 @@ enum APIKeyStore {
     static var pathOverride: URL?
 
     static var path: URL {
-        pathOverride ?? URL(fileURLWithPath: NSHomeDirectory())
+        pathOverride
+            ?? URL(fileURLWithPath: NSHomeDirectory())
             .appendingPathComponent(".config/MeetingCapture/llm_api_keys.json")
     }
 
     private static func readAll() -> [String: String] {
         guard let data = try? Data(contentsOf: path),
-              let map = try? JSONDecoder().decode([String: String].self, from: data)
+            let map = try? JSONDecoder().decode([String: String].self, from: data)
         else { return [:] }
         return map
     }

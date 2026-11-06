@@ -22,14 +22,16 @@ final class CLISummaryBackend: SummaryBackend {
     init(router: LLMRouter) { self.router = router }
 
     func detectStyle(transcript: String) async throws -> SummaryStyle {
-        let result = try await router.call(.text(
-            tier: .cheap, system: Summarizer.classifierPrompt, input: String(transcript.prefix(6000))))
+        let result = try await router.call(
+            .text(
+                tier: .cheap, system: Summarizer.classifierPrompt, input: String(transcript.prefix(6000))))
         return result.text.lowercased().contains("therapy") ? .therapy : .meeting
     }
 
     func summarize(transcript: String, style: SummaryStyle, systemSuffix: String) async throws -> String {
-        let result = try await router.call(.text(
-            tier: .normal, system: Summarizer.systemPrompt(for: style) + systemSuffix, input: transcript))
+        let result = try await router.call(
+            .text(
+                tier: .normal, system: Summarizer.systemPrompt(for: style) + systemSuffix, input: transcript))
         return result.text
     }
 }
@@ -65,7 +67,8 @@ struct SummaryOutcome {
     var report: String {
         var lines: [String] = []
         if !flaggedTokens.isEmpty {
-            lines.append("Couldn't restore these tokens, so they're left as they are: \(flaggedTokens.joined(separator: ", ")).")
+            lines.append(
+                "Couldn't restore these tokens, so they're left as they are: \(flaggedTokens.joined(separator: ", ")).")
         }
         lines += notes
         guard !lines.isEmpty else { return markdown }
@@ -78,7 +81,8 @@ struct SummaryPipeline {
     let redaction: Bool
 
     func run(transcript: String, forcedStyle: SummaryStyle? = nil) async throws -> SummaryOutcome {
-        let redacted = redaction
+        let redacted =
+            redaction
             ? Redactor.redact(transcript)
             : Redactor.Result(text: transcript, tokens: [:])
         let suffix = redacted.tokens.isEmpty ? "" : Redactor.tokenInstruction
@@ -89,7 +93,8 @@ struct SummaryPipeline {
         if style == nil { style = (try? await backend.detectStyle(transcript: redacted.text)) ?? .meeting }
 
         let answer = try await backend.summarize(transcript: redacted.text, style: style!, systemSuffix: suffix)
-        let restored = redaction
+        let restored =
+            redaction
             ? Redactor.restore(answer, tokens: redacted.tokens)
             : Redactor.Restored(text: answer, flagged: [])
         return SummaryOutcome(
@@ -142,7 +147,8 @@ enum SummaryRoute {
         let baseURLString = overrides.baseURL ?? profile.baseURL
         guard Config.resolveApiKey(profileID: profile.id, flag: overrides.apiKeyFlag) != nil else {
             throw Summarizer.SummarizerError.badResponse(
-                "No LLM API key for \"\(profile.displayName)\". Store one via Settings → LLM configurations, export LLM_API_KEY, or log in to the claude or codex CLI.")
+                "No LLM API key for \"\(profile.displayName)\". Store one via Settings → LLM configurations, export LLM_API_KEY, or log in to the claude or codex CLI."
+            )
         }
         guard let baseURL = URL(string: baseURLString) else {
             throw Summarizer.SummarizerError.badResponse("Invalid LLM base URL: \(baseURLString)")

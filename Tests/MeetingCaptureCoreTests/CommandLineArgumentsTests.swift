@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import MeetingCaptureCore
 
 final class CommandLineArgumentsTests: XCTestCase {

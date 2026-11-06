@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import MeetingCaptureCore
 
 final class CLIRunnerTests: GuardedTestCase {
@@ -67,15 +68,20 @@ final class CLIRunnerTests: GuardedTestCase {
             _ = try await runner.run(.text(tier: tier, system: "s", input: "i"), on: .claude)
             _ = try await runner.run(.text(tier: tier, system: "s", input: "i"), on: .codex)
         }
-        XCTAssertEqual(world.calls(.claude).map { $0.args[$0.args.firstIndex(of: "--model")! + 1] }, ["haiku", "sonnet", "opus"])
-        XCTAssertEqual(world.calls(.codex).map { $0.args[$0.args.firstIndex(of: "-m")! + 1] }, ["gpt-6-luna", "gpt-6.1-sol", "gpt-6-astra"])
+        XCTAssertEqual(
+            world.calls(.claude).map { $0.args[$0.args.firstIndex(of: "--model")! + 1] }, ["haiku", "sonnet", "opus"])
+        XCTAssertEqual(
+            world.calls(.codex).map { $0.args[$0.args.firstIndex(of: "-m")! + 1] },
+            ["gpt-6-luna", "gpt-6.1-sol", "gpt-6-astra"])
     }
 
     func testAPIKeyLoginIsRefusedBeforeAnyCall() async throws {
-        try world.install(.claude, answers: [.init(stdout: FakeCLIWorld.claudeOK())],
-                          authStatus: #"{"loggedIn":true,"authMethod":"api_key"}"#)
-        try world.install(.codex, answers: [.init(stdout: FakeCLIWorld.codexOK())],
-                          authStatus: "Logged in using an API key")
+        try world.install(
+            .claude, answers: [.init(stdout: FakeCLIWorld.claudeOK())],
+            authStatus: #"{"loggedIn":true,"authMethod":"api_key"}"#)
+        try world.install(
+            .codex, answers: [.init(stdout: FakeCLIWorld.codexOK())],
+            authStatus: "Logged in using an API key")
         let runner = world.runner()
         let claude = await runner.availability(.claude)
         let codex = await runner.availability(.codex)
@@ -107,7 +113,9 @@ final class CLIRunnerTests: GuardedTestCase {
 
     func testFullLimitSignals() {
         var parsed = ParsedCLIOutput()
-        XCTAssertEqual(CLIOutputParser.outcome(of: parsed, exitCode: 1, stderr: "You've hit your session limit"), .usageFull(resetsAt: nil))
+        XCTAssertEqual(
+            CLIOutputParser.outcome(of: parsed, exitCode: 1, stderr: "You've hit your session limit"),
+            .usageFull(resetsAt: nil))
         parsed.httpStatus = 429
         parsed.isError = true
         XCTAssertEqual(CLIOutputParser.outcome(of: parsed, exitCode: 1, stderr: ""), .usageFull(resetsAt: nil))
@@ -130,9 +138,9 @@ final class CLIRunnerTests: GuardedTestCase {
 
     func testWebSearchIsCountedFromToolUseEvents() {
         let stream = """
-        {"type":"assistant","message":{"content":[{"type":"tool_use","name":"WebSearch"}]}}
-        {"type":"result","is_error":false,"result":"ok","modelUsage":{"x":{"webSearchRequests":0}}}
-        """
+            {"type":"assistant","message":{"content":[{"type":"tool_use","name":"WebSearch"}]}}
+            {"type":"result","is_error":false,"result":"ok","modelUsage":{"x":{"webSearchRequests":0}}}
+            """
         XCTAssertEqual(CLIOutputParser.parseClaude(stream).webSearchCount, 1)
     }
 
@@ -155,7 +163,8 @@ final class CLIRunnerTests: GuardedTestCase {
     }
 
     func testCodexFeatureListParsing() {
-        let listed = CLIArguments.parseCodexFeatureList("shell_tool stable true\nunder_dev under development false\nnot a row\n")
+        let listed = CLIArguments.parseCodexFeatureList(
+            "shell_tool stable true\nunder_dev under development false\nnot a row\n")
         XCTAssertEqual(listed, ["shell_tool", "under_dev"])
     }
 }
@@ -178,7 +187,8 @@ final class ToolsOffTests: GuardedTestCase {
             _ = try await router.call(try .conceptSearch(tier: .cheap, concepts: ["cognitive defusion"]))
         }
 
-        var sawToolsOn = 0, sawTranscript = 0
+        var sawToolsOn = 0
+        var sawTranscript = 0
         for cli in CLIKind.allCases {
             for call in world.calls(cli) {
                 if call.toolsOn {

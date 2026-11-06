@@ -1,5 +1,5 @@
-import Foundation
 import AVFoundation
+import Foundation
 import Speexdsp
 
 // Real-time acoustic echo canceller wrapping speexdsp's MDF echo canceller.
@@ -91,15 +91,15 @@ final class EchoCanceller {
     // System audio (interleaved stereo float32 at 48 kHz from SCStream).
     func pushReference(_ buffer: AVAudioPCMBuffer) {
         guard buffer.format.isInterleaved,
-              buffer.format.channelCount == 2,
-              let src = buffer.floatChannelData?[0]
+            buffer.format.channelCount == 2,
+            let src = buffer.floatChannelData?[0]
         else { return }
 
         let frames = Int(buffer.frameLength)
         // Downmix to mono on the caller's queue while the buffer is live;
         // the Speex queue only sees a fresh [Float].
         var mono = [Float](repeating: 0, count: frames)
-        for i in 0 ..< frames {
+        for i in 0..<frames {
             mono[i] = (src[2 * i] + src[2 * i + 1]) * 0.5
         }
         queue.async { [weak self] in
@@ -133,7 +133,7 @@ final class EchoCanceller {
         let n = Self.frameSize
         while micBuf.count >= n && refBuf.count >= n {
             // Convert to int16 (Speex's native format).
-            for i in 0 ..< n {
+            for i in 0..<n {
                 micI16[i] = Self.floatToInt16(micBuf[i])
                 refI16[i] = Self.floatToInt16(refBuf[i])
             }
@@ -150,7 +150,7 @@ final class EchoCanceller {
             outI16.withUnsafeMutableBufferPointer { out in
                 _ = speex_preprocess_run(preprocessState, out.baseAddress)
             }
-            for i in 0 ..< n {
+            for i in 0..<n {
                 outF32[i] = Self.int16ToFloat(outI16[i])
             }
 

@@ -5,8 +5,8 @@ import Foundation
 // shape (x-api-key header, required max_tokens, top-level `system`, and a
 // `content[].text` response). `Summarizer` branches on this.
 enum LLMAPIStyle: String, Codable {
-    case openAIChat          // POST {base}/chat/completions, Bearer auth
-    case anthropicMessages   // POST {base}/messages, x-api-key + anthropic-version
+    case openAIChat  // POST {base}/chat/completions, Bearer auth
+    case anthropicMessages  // POST {base}/messages, x-api-key + anthropic-version
 }
 
 // How a provider expresses a reasoning/thinking request on the wire. Each shape
@@ -30,9 +30,9 @@ enum ReasoningStyle: String, Codable {
     /// field that DeepSeek speaks.
     var label: String {
         switch self {
-        case .none:      return "none"
-        case .thinking:  return "thinking (reasoning_content)"
-        case .openai:    return "reasoning_effort"
+        case .none: return "none"
+        case .thinking: return "thinking (reasoning_content)"
+        case .openai: return "reasoning_effort"
         case .anthropic: return "adaptive thinking"
         }
     }
@@ -50,10 +50,10 @@ enum ReasoningEffort: String, Codable, CaseIterable {
     /// `.thinking`-style `budget_tokens` for each level (unused when `.off`).
     var budgetTokens: Int {
         switch self {
-        case .off:    return 0
-        case .low:    return 8_000
+        case .off: return 0
+        case .low: return 8_000
         case .medium: return 16_000
-        case .high:   return 32_000
+        case .high: return 32_000
         }
     }
 }
@@ -74,10 +74,10 @@ enum ReasoningEffort: String, Codable, CaseIterable {
 // URL / model stay free-form so power users — and the --llm-base-url /
 // --llm-model flags — can override any preset.
 struct LLMProvider: Identifiable {
-    let id: String              // stable key persisted in config
-    let label: String           // human-readable name shown in Settings
-    let baseURL: String         // base endpoint; "" for custom
-    let defaultModel: String    // model to pre-fill on selection; "" for custom
+    let id: String  // stable key persisted in config
+    let label: String  // human-readable name shown in Settings
+    let baseURL: String  // base endpoint; "" for custom
+    let defaultModel: String  // model to pre-fill on selection; "" for custom
     /// Which reasoning wire format this provider speaks (`.none` if it has no
     /// reasoning mode). Host-aware resolution lives in `reasoningStyle(baseURL:providerID:)`.
     let reasoningStyle: ReasoningStyle
@@ -88,21 +88,26 @@ struct LLMProvider: Identifiable {
 
 extension LLMProvider {
     static let catalog: [LLMProvider] = [
-        LLMProvider(id: "deepseek", label: "DeepSeek",
-                    baseURL: "https://api.deepseek.com",
-                    defaultModel: "deepseek-v4-flash", reasoningStyle: .thinking),
-        LLMProvider(id: "openai", label: "OpenAI",
-                    baseURL: "https://api.openai.com/v1",
-                    defaultModel: "gpt-4o-mini", reasoningStyle: .openai),
-        LLMProvider(id: "ollama", label: "Ollama (local)",
-                    baseURL: "http://localhost:11434/v1",
-                    defaultModel: "llama3.1", reasoningStyle: .none),
-        LLMProvider(id: "anthropic", label: "Anthropic (Claude)",
-                    baseURL: "https://api.anthropic.com/v1",
-                    defaultModel: "claude-sonnet-4-6", reasoningStyle: .anthropic,
-                    apiStyle: .anthropicMessages),
-        LLMProvider(id: "custom", label: "Custom…",
-                    baseURL: "", defaultModel: "", reasoningStyle: .none),
+        LLMProvider(
+            id: "deepseek", label: "DeepSeek",
+            baseURL: "https://api.deepseek.com",
+            defaultModel: "deepseek-v4-flash", reasoningStyle: .thinking),
+        LLMProvider(
+            id: "openai", label: "OpenAI",
+            baseURL: "https://api.openai.com/v1",
+            defaultModel: "gpt-4o-mini", reasoningStyle: .openai),
+        LLMProvider(
+            id: "ollama", label: "Ollama (local)",
+            baseURL: "http://localhost:11434/v1",
+            defaultModel: "llama3.1", reasoningStyle: .none),
+        LLMProvider(
+            id: "anthropic", label: "Anthropic (Claude)",
+            baseURL: "https://api.anthropic.com/v1",
+            defaultModel: "claude-sonnet-4-6", reasoningStyle: .anthropic,
+            apiStyle: .anthropicMessages),
+        LLMProvider(
+            id: "custom", label: "Custom…",
+            baseURL: "", defaultModel: "", reasoningStyle: .none),
     ]
 
     /// All catalog ids.
@@ -144,7 +149,8 @@ extension LLMProvider {
     /// override); otherwise the provider's declared style applies.
     static func apiStyle(baseURL: String, providerID: String) -> LLMAPIStyle {
         if let host = URL(string: baseURL)?.host?.lowercased(),
-           host.contains("anthropic") {
+            host.contains("anthropic")
+        {
             return .anthropicMessages
         }
         return apiStyle(providerID)
@@ -156,9 +162,9 @@ extension LLMProvider {
 // so each provider — including any number of fully custom ones — keeps its own
 // model/base URL/reasoning settings and, via APIKeyStore, its own API key.
 struct LLMProfile: Codable, Equatable, Identifiable {
-    var id: String              // stable, assigned once at creation; keys the API-key store
-    var name: String            // user label, e.g. "Work DeepSeek", "Company-internal"
-    var providerID: String      // preset id (see LLMProvider.catalog) or "custom"
+    var id: String  // stable, assigned once at creation; keys the API-key store
+    var name: String  // user label, e.g. "Work DeepSeek", "Company-internal"
+    var providerID: String  // preset id (see LLMProvider.catalog) or "custom"
     var model: String
     var baseURL: String
     /// Unified reasoning depth: one knob each provider maps to its own param.

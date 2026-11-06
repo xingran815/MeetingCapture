@@ -24,8 +24,8 @@ enum Redactor {
     static let tokenInstruction = """
 
 
-    The text contains placeholder tokens such as <EMAIL_1> or <PHONE_2>. Each stands for a real value that was removed for privacy. Copy a token exactly when you need it, and never guess or invent the value behind it.
-    """
+        The text contains placeholder tokens such as <EMAIL_1> or <PHONE_2>. Each stands for a real value that was removed for privacy. Copy a token exactly when you need it, and never guess or invent the value behind it.
+        """
 
     private struct Rule {
         let type: String
@@ -48,17 +48,43 @@ enum Redactor {
 
     /// Earlier rules win when two match the same span.
     private static let rules: [Rule] = [
-        Rule(type: "API_KEY", regex: rx(edge + #"(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{30,}|hf_[A-Za-z0-9]{20,}|glpat-[A-Za-z0-9_-]{16,})"#)),
+        Rule(
+            type: "API_KEY",
+            regex: rx(
+                edge
+                    + #"(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{30,}|hf_[A-Za-z0-9]{20,}|glpat-[A-Za-z0-9_-]{16,})"#
+            )),
         Rule(type: "EMAIL", regex: rx(#"[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,255}\.[A-Za-z]{2,}"#)),
-        Rule(type: "URL_TOKEN", regex: rx(#"(?i)[?&](?:token|access_token|api_key|apikey|key|auth|sig|signature|password|secret)=([^&\s]{8,})"#), group: 1),
-        Rule(type: "EMAIL_SPOKEN", regex: rx(#"(?i)(?<![A-Za-z0-9])[a-z0-9]+(?: (?:dot|underscore|dash|hyphen) [a-z0-9]+)* at [a-z0-9]+(?: (?:dot|dash|hyphen) [a-z0-9]+)* dot (?:com|org|net|cn|io|edu|de|co|ai|uk)(?![A-Za-z0-9])"#)),
-        Rule(type: "IBAN", regex: rx(edge + #"[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,4})?"# + endEdge), validate: ibanLength),
-        Rule(type: "CN_ID", regex: rx(#"(?<![0-9])\d{17}[\dXx](?![0-9A-Za-z])"#), validate: { cnIDValid($0) ? $0.utf16.count : nil }),
-        Rule(type: "CARD", regex: rx(#"(?<![0-9])(?:\d{4}[ -]\d{6}[ -]\d{5}|(?:\d{4}[ -]){3}\d{1,7}|\d{13,19})(?![0-9])"#), validate: { luhnValid($0) ? $0.utf16.count : nil }),
+        Rule(
+            type: "URL_TOKEN",
+            regex: rx(
+                #"(?i)[?&](?:token|access_token|api_key|apikey|key|auth|sig|signature|password|secret)=([^&\s]{8,})"#),
+            group: 1),
+        Rule(
+            type: "EMAIL_SPOKEN",
+            regex: rx(
+                #"(?i)(?<![A-Za-z0-9])[a-z0-9]+(?: (?:dot|underscore|dash|hyphen) [a-z0-9]+)* at [a-z0-9]+(?: (?:dot|dash|hyphen) [a-z0-9]+)* dot (?:com|org|net|cn|io|edu|de|co|ai|uk)(?![A-Za-z0-9])"#
+            )),
+        Rule(
+            type: "IBAN", regex: rx(edge + #"[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,4})?"# + endEdge),
+            validate: ibanLength),
+        Rule(
+            type: "CN_ID", regex: rx(#"(?<![0-9])\d{17}[\dXx](?![0-9A-Za-z])"#),
+            validate: { cnIDValid($0) ? $0.utf16.count : nil }),
+        Rule(
+            type: "CARD",
+            regex: rx(#"(?<![0-9])(?:\d{4}[ -]\d{6}[ -]\d{5}|(?:\d{4}[ -]){3}\d{1,7}|\d{13,19})(?![0-9])"#),
+            validate: { luhnValid($0) ? $0.utf16.count : nil }),
         Rule(type: "CN_MOBILE", regex: rx(#"(?<![0-9])(?:\+?86[ -]?)?1[3-9]\d(?:[ -]?\d{4}){2}(?![0-9])"#)),
-        Rule(type: "SSN", regex: rx(#"(?<![0-9-])\d{3}([- ])\d{2}\1\d{4}(?![0-9-])"#), validate: { ssnValid($0) ? $0.utf16.count : nil }),
+        Rule(
+            type: "SSN", regex: rx(#"(?<![0-9-])\d{3}([- ])\d{2}\1\d{4}(?![0-9-])"#),
+            validate: { ssnValid($0) ? $0.utf16.count : nil }),
         // Next to another digit group it's part of a longer number, such as a mistyped card.
-        Rule(type: "PHONE", regex: rx(#"(?<![A-Za-z0-9_.])(?<![0-9][ .-])(?:\+\d{1,3}(?:[ .-]?\d){7,12}|0\d{3,4}[ .-]\d{6}|(?:\+\d{1,3}[ .-]?)?(?:\(\d{2,4}\)[ .-]?|\d{2,4}[ .-])\d{3,4}[ .-]\d{3,4})(?![0-9-])(?![ .-][0-9])"#), validate: { phoneValid($0) ? $0.utf16.count : nil }),
+        Rule(
+            type: "PHONE",
+            regex: rx(
+                #"(?<![A-Za-z0-9_.])(?<![0-9][ .-])(?:\+\d{1,3}(?:[ .-]?\d){7,12}|0\d{3,4}[ .-]\d{6}|(?:\+\d{1,3}[ .-]?)?(?:\(\d{2,4}\)[ .-]?|\d{2,4}[ .-])\d{3,4}[ .-]\d{3,4})(?![0-9-])(?![ .-][0-9])"#
+            ), validate: { phoneValid($0) ? $0.utf16.count : nil }),
     ]
 
     private static let priority: [String: Int] = Dictionary(
@@ -66,7 +92,11 @@ enum Redactor {
 
     static func redact(_ text: String) -> Result {
         let ns = text as NSString
-        struct Span { let location: Int; let length: Int; let type: String }
+        struct Span {
+            let location: Int
+            let length: Int
+            let type: String
+        }
         var spans: [Span] = []
         let whole = NSRange(location: 0, length: ns.length)
         for rule in rules {
@@ -157,7 +187,7 @@ enum Redactor {
 
     static func luhnValid(_ s: String) -> Bool {
         let d = digits(s)
-        guard (13 ... 19).contains(d.count), Set(d).count > 1 else { return false }
+        guard (13...19).contains(d.count), Set(d).count > 1 else { return false }
         var sum = 0
         for (i, digit) in d.reversed().enumerated() {
             sum += i % 2 == 1 ? (digit * 2 > 9 ? digit * 2 - 9 : digit * 2) : digit
@@ -167,11 +197,12 @@ enum Redactor {
 
     static func ibanValid(_ s: String) -> Bool {
         let compact = s.filter { $0 != " " }
-        guard (15 ... 34).contains(compact.count) else { return false }
+        guard (15...34).contains(compact.count) else { return false }
         let moved = String(compact.dropFirst(4) + compact.prefix(4))
         var remainder = 0
         for ch in moved {
-            guard ch.isASCII, let value = ch.isNumber ? ch.wholeNumberValue : ch.isLetter ? Int(ch.asciiValue!) - 55 : nil
+            guard ch.isASCII,
+                let value = ch.isNumber ? ch.wholeNumberValue : ch.isLetter ? Int(ch.asciiValue!) - 55 : nil
             else { return false }
             for digit in String(value) {
                 remainder = (remainder * 10 + digit.wholeNumberValue!) % 97
@@ -197,7 +228,7 @@ enum Redactor {
         guard chars.count == 18 else { return false }
         let weights = [7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2]
         var sum = 0
-        for i in 0 ..< 17 {
+        for i in 0..<17 {
             guard let d = chars[i].wholeNumberValue else { return false }
             sum += d * weights[i]
         }
@@ -217,6 +248,6 @@ enum Redactor {
     /// than a code like `100-200-300`.
     private static func phoneValid(_ s: String) -> Bool {
         let count = digits(s).count
-        return s.hasPrefix("+") ? (8 ... 15).contains(count) : (10 ... 15).contains(count)
+        return s.hasPrefix("+") ? (8...15).contains(count) : (10...15).contains(count)
     }
 }

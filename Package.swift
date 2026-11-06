@@ -4,7 +4,7 @@ import PackageDescription
 let package = Package(
     name: "MeetingCaptureCLI",
     platforms: [
-        .macOS(.v14)   // WhisperKit requires macOS 14+
+        .macOS(.v14)  // WhisperKit requires macOS 14+
     ],
     dependencies: [
         .package(url: "https://github.com/argmaxinc/WhisperKit.git", from: "0.9.4")

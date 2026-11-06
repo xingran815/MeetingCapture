@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+
 @testable import MeetingCaptureCore
 
 /// Writes fake `claude` and `codex` scripts into a temp folder and gives a runner
@@ -32,13 +33,15 @@ final class FakeCLIWorld {
 
     func cleanUp() { try? FileManager.default.removeItem(at: root) }
 
-    static func claudeOK(_ text: String = "fake answer", apiKeySource: String = "none", status: String = "allowed") -> String {
+    static func claudeOK(_ text: String = "fake answer", apiKeySource: String = "none", status: String = "allowed")
+        -> String
+    {
         let answer = jsonString(text)
         return """
-        {"type":"system","subtype":"init","apiKeySource":"\(apiKeySource)","model":"fake"}
-        {"type":"rate_limit_event","rate_limit_info":{"status":"\(status)","resetsAt":1800100000,"unifiedWindows":{"five_hour":{"utilization":0.07},"seven_day":{"utilization":0.66}}}}
-        {"type":"result","subtype":"success","is_error":false,"api_error_status":null,"result":\(answer)}
-        """
+            {"type":"system","subtype":"init","apiKeySource":"\(apiKeySource)","model":"fake"}
+            {"type":"rate_limit_event","rate_limit_info":{"status":"\(status)","resetsAt":1800100000,"unifiedWindows":{"five_hour":{"utilization":0.07},"seven_day":{"utilization":0.66}}}}
+            {"type":"result","subtype":"success","is_error":false,"api_error_status":null,"result":\(answer)}
+            """
     }
 
     static func codexOK(_ text: String = "fake answer") -> String {
@@ -61,33 +64,36 @@ final class FakeCLIWorld {
         for (i, answer) in answers.enumerated() {
             try answer.stdout.write(to: dir.appendingPathComponent("answer\(i).out"), atomically: true, encoding: .utf8)
             try answer.stderr.write(to: dir.appendingPathComponent("answer\(i).err"), atomically: true, encoding: .utf8)
-            try "\(answer.exit)".write(to: dir.appendingPathComponent("answer\(i).code"), atomically: true, encoding: .utf8)
+            try "\(answer.exit)".write(
+                to: dir.appendingPathComponent("answer\(i).code"), atomically: true, encoding: .utf8)
         }
-        let status = authStatus ?? (cli == .claude
-            ? #"{"loggedIn":true,"authMethod":"claude.ai"}"#
-            : "Logged in using ChatGPT")
+        let status =
+            authStatus
+            ?? (cli == .claude
+                ? #"{"loggedIn":true,"authMethod":"claude.ai"}"#
+                : "Logged in using ChatGPT")
         try status.write(to: dir.appendingPathComponent("status"), atomically: true, encoding: .utf8)
         let script = """
-        #!/usr/bin/env bash
-        dir='\(dir.path)'
-        last=\(answers.count - 1)
-        case "$1 $2" in
-          "auth status"|"login status") cat "$dir/status"; exit 0 ;;
-          "features list") printf 'shell_tool stable true\\nfast_mode stable true\\nbrand_new_tool beta false\\n'; exit 0 ;;
-        esac
-        n=$(ls "$dir" | grep -c '^call')
-        call="$dir/call$n"
-        mkdir "$call"
-        printf '%s\\n' "$@" > "$call/args"
-        cat > "$call/stdin"
-        env | cut -d= -f1 | sort > "$call/env"
-        pwd > "$call/cwd"
-        ls -A > "$call/cwdfiles"
-        i=$n; [ "$i" -gt "$last" ] && i=$last
-        cat "$dir/answer$i.out"
-        cat "$dir/answer$i.err" >&2
-        exit "$(cat "$dir/answer$i.code")"
-        """
+            #!/usr/bin/env bash
+            dir='\(dir.path)'
+            last=\(answers.count - 1)
+            case "$1 $2" in
+              "auth status"|"login status") cat "$dir/status"; exit 0 ;;
+              "features list") printf 'shell_tool stable true\\nfast_mode stable true\\nbrand_new_tool beta false\\n'; exit 0 ;;
+            esac
+            n=$(ls "$dir" | grep -c '^call')
+            call="$dir/call$n"
+            mkdir "$call"
+            printf '%s\\n' "$@" > "$call/args"
+            cat > "$call/stdin"
+            env | cut -d= -f1 | sort > "$call/env"
+            pwd > "$call/cwd"
+            ls -A > "$call/cwdfiles"
+            i=$n; [ "$i" -gt "$last" ] && i=$last
+            cat "$dir/answer$i.out"
+            cat "$dir/answer$i.err" >&2
+            exit "$(cat "$dir/answer$i.code")"
+            """
         let url = bin.appendingPathComponent(cli.rawValue)
         try script.write(to: url, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
@@ -113,7 +119,9 @@ final class FakeCLIWorld {
             .sorted { Int($0.dropFirst(4))! < Int($1.dropFirst(4))! }
         return names.map { name in
             let d = dir.appendingPathComponent(name)
-            func read(_ f: String) -> String { (try? String(contentsOf: d.appendingPathComponent(f), encoding: .utf8)) ?? "" }
+            func read(_ f: String) -> String {
+                (try? String(contentsOf: d.appendingPathComponent(f), encoding: .utf8)) ?? ""
+            }
             return Call(
                 args: read("args").split(separator: "\n", omittingEmptySubsequences: false).dropLast().map(String.init),
                 stdin: read("stdin"),

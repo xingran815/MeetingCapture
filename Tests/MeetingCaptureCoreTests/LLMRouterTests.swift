@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import MeetingCaptureCore
 
 final class LLMRouterTests: GuardedTestCase {
@@ -107,7 +108,7 @@ final class LLMRouterTests: GuardedTestCase {
     func testCall200RunsAndCall201SwitchesCLI() async throws {
         try installBoth()
         let router = world.router(cap: 3)
-        for _ in 0 ..< 3 {
+        for _ in 0..<3 {
             let r = try await router.call(plain)
             XCTAssertEqual(r.cli, .claude)
         }
@@ -121,7 +122,7 @@ final class LLMRouterTests: GuardedTestCase {
     func testRealCapValue() async throws {
         // The default itself, without starting 200 processes.
         let ledger = world.ledger()
-        for _ in 0 ..< UsageLedger.defaultCap {
+        for _ in 0..<UsageLedger.defaultCap {
             let reserved = try ledger.reserve(.claude, cap: UsageLedger.defaultCap)
             XCTAssertTrue(reserved)
         }
@@ -201,7 +202,7 @@ final class LLMRouterTests: GuardedTestCase {
         let products = Bundle(for: Self.self).bundleURL.deletingLastPathComponent()
         let binary = products.appendingPathComponent("MeetingCaptureCLI")
         XCTAssertTrue(FileManager.default.isExecutableFile(atPath: binary.path), binary.path)
-        let processes = (0 ..< 2).map { _ -> Process in
+        let processes = (0..<2).map { _ -> Process in
             let p = Process()
             p.executableURL = binary
             p.arguments = ["--usage-ledger-stress", world.ledgerPath.path, "--calls", "100"]

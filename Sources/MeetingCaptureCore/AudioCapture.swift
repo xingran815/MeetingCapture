@@ -1,7 +1,7 @@
-import Foundation
-import ScreenCaptureKit
 import AVFoundation
 import CoreMedia
+import Foundation
+import ScreenCaptureKit
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AudioCapture
@@ -15,15 +15,15 @@ import CoreMedia
 final class AudioCapture: NSObject {
 
     // Set on run(), read on fileWriteQueue
-    private var writer:        MixingWriter?
-    private var outputURL:     URL?
+    private var writer: MixingWriter?
+    private var outputURL: URL?
     private var targetDuration: Double = 0
 
     // Protected by fileWriteQueue
-    private var sampleCount:   Int  = 0
-    private var captureStart:  Date?
+    private var sampleCount: Int = 0
+    private var captureStart: Date?
 
-    private var stream:    SCStream?
+    private var stream: SCStream?
     private var micCapture: MicCapture?
     private var echo: EchoCanceller?
 
@@ -56,7 +56,10 @@ final class AudioCapture: NSObject {
         }
     }
 
-    func run(duration: Double, outputPath: String, captureAllAudio: Bool, meetingApps: [MeetingApp], enableMic: Bool, aecEnabled: Bool) async throws -> [URL] {
+    func run(
+        duration: Double, outputPath: String, captureAllAudio: Bool, meetingApps: [MeetingApp], enableMic: Bool,
+        aecEnabled: Bool
+    ) async throws -> [URL] {
         targetDuration = duration
 
         // 1. Enumerate screen content ─────────────────────────────────────────
@@ -86,11 +89,12 @@ final class AudioCapture: NSObject {
                 }
             }
             if targetApps.isEmpty {
-                print("""
-                ⚠  None of the enabled meeting apps are running.
-                   Falling back to ALL system audio.
-                   (Enable/disable apps in Settings → Meeting apps, or use --all-audio)
-                """)
+                print(
+                    """
+                    ⚠  None of the enabled meeting apps are running.
+                       Falling back to ALL system audio.
+                       (Enable/disable apps in Settings → Meeting apps, or use --all-audio)
+                    """)
             }
         }
 
@@ -115,15 +119,15 @@ final class AudioCapture: NSObject {
         print("  filter built, configuring stream…")
         // 4. Stream configuration ─────────────────────────────────────────────
         let config = SCStreamConfiguration()
-        config.capturesAudio             = true
-        config.excludesCurrentProcessAudio = true   // don't feed our own output back
-        config.sampleRate                = 48_000
-        config.channelCount              = 2
+        config.capturesAudio = true
+        config.excludesCurrentProcessAudio = true  // don't feed our own output back
+        config.sampleRate = 48_000
+        config.channelCount = 2
         // Video is required by SCStream even for audio-only capture.
         // Set minimal resolution so it barely costs anything.
-        config.width                     = 2
-        config.height                    = 2
-        config.minimumFrameInterval      = CMTime(value: 1, timescale: 1)  // 1 fps
+        config.width = 2
+        config.height = 2
+        config.minimumFrameInterval = CMTime(value: 1, timescale: 1)  // 1 fps
 
         // 5. Prepare output URL ───────────────────────────────────────────────
         let url: URL
@@ -179,16 +183,17 @@ final class AudioCapture: NSObject {
         self.echo = canceller
 
         // 7. Print summary ─────────────────────────────────────────────────────
-        print("""
-        ┌──────────────────────────────────────────┐
-        │  Capture target : \(targetLabel.padding(toLength: 22, withPad: " ", startingAt: 0))│
-        │  Mic            : \(micStatus.padding(toLength: 22, withPad: " ", startingAt: 0))│
-        │  AEC            : \(aecStatus.padding(toLength: 22, withPad: " ", startingAt: 0))│
-        │  Duration       : \("\(Int(duration))s".padding(toLength: 22, withPad: " ", startingAt: 0))│
-        │  Format         : 48 kHz · stereo · f32  │
-        │  Output         : \(url.lastPathComponent.padding(toLength: 22, withPad: " ", startingAt: 0))│
-        └──────────────────────────────────────────┘
-        """)
+        print(
+            """
+            ┌──────────────────────────────────────────┐
+            │  Capture target : \(targetLabel.padding(toLength: 22, withPad: " ", startingAt: 0))│
+            │  Mic            : \(micStatus.padding(toLength: 22, withPad: " ", startingAt: 0))│
+            │  AEC            : \(aecStatus.padding(toLength: 22, withPad: " ", startingAt: 0))│
+            │  Duration       : \("\(Int(duration))s".padding(toLength: 22, withPad: " ", startingAt: 0))│
+            │  Format         : 48 kHz · stereo · f32  │
+            │  Output         : \(url.lastPathComponent.padding(toLength: 22, withPad: " ", startingAt: 0))│
+            └──────────────────────────────────────────┘
+            """)
 
         // 8. Start the stream and await completion ────────────────────────────
         stream = SCStream(filter: filter, configuration: config, delegate: self)
@@ -236,7 +241,10 @@ final class AudioCapture: NSObject {
 
     // ─── Internal ────────────────────────────────────────────────────────────
 
-    private enum StopReason { case timerExpired, error(Error) }
+    private enum StopReason {
+        case timerExpired
+        case error(Error)
+    }
 
     private func stopRecording(reason: StopReason) {
         Task {
@@ -247,7 +255,7 @@ final class AudioCapture: NSObject {
 
             let captured = Double(sampleCount) / 48_000.0
             let files = writer?.finish() ?? []
-            writer = nil        // closing AVAudioFile flushes + finalises the WAV header
+            writer = nil  // closing AVAudioFile flushes + finalises the WAV header
 
             print("\n──────────────────────────────────────────")
             switch reason {
@@ -261,7 +269,8 @@ final class AudioCapture: NSObject {
                 let url = files[0]
                 print("   Saved to  : \(url.path)")
                 if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
-                   let size = attrs[.size] as? Int {
+                    let size = attrs[.size] as? Int
+                {
                     print(String(format: "   File size : %.1f KB", Double(size) / 1024))
                 }
             } else if files.count > 1 {
@@ -274,18 +283,19 @@ final class AudioCapture: NSObject {
 
             // Diagnose a suspiciously short capture
             if captured < 0.5 {
-                print("""
+                print(
+                    """
 
-                ⚠  VERY SHORT CAPTURE — likely a permission issue.
+                    ⚠  VERY SHORT CAPTURE — likely a permission issue.
 
-                   Fix:
-                   1. System Settings → Privacy & Security → Screen Recording
-                      Add "Terminal" (or the compiled binary's path).
-                   2. Quit and relaunch Terminal, then re-run.
-                   3. If Zoom is muted, unmute it — silence is still captured
-                      but verifies the pipeline.  Use --all-audio as a fallback
-                      to capture system sounds (e.g. play a YouTube video).
-                """)
+                       Fix:
+                       1. System Settings → Privacy & Security → Screen Recording
+                          Add "Terminal" (or the compiled binary's path).
+                       2. Quit and relaunch Terminal, then re-run.
+                       3. If Zoom is muted, unmute it — silence is still captured
+                          but verifies the pipeline.  Use --all-audio as a fallback
+                          to capture system sounds (e.g. play a YouTube video).
+                    """)
             }
 
             switch reason {
@@ -337,7 +347,10 @@ extension AudioCapture: SCStreamOutput {
 
         // Guard: don't write past the requested duration
         if let start = captureStart,
-           Date().timeIntervalSince(start) > targetDuration + 1.0 { return }
+            Date().timeIntervalSince(start) > targetDuration + 1.0
+        {
+            return
+        }
 
         // Convert CMSampleBuffer → AVAudioPCMBuffer → hand to the mixer
         guard let pcmBuffer = sampleBuffer.toPCMBuffer() else {
@@ -351,8 +364,8 @@ extension AudioCapture: SCStreamOutput {
 
     // Print a progress line every 5 seconds
     private func printProgress() {
-        let elapsed   = Double(sampleCount) / 48_000.0
-        let prevElapsed = Double(sampleCount - 1024) / 48_000.0   // approximate previous
+        let elapsed = Double(sampleCount) / 48_000.0
+        let prevElapsed = Double(sampleCount - 1024) / 48_000.0  // approximate previous
         let everyN: Double = 5
         guard Int(elapsed / everyN) > Int(prevElapsed / everyN) else { return }
 
@@ -366,7 +379,8 @@ extension AudioCapture: SCStreamOutput {
             // Traditional progress bar for short, known durations
             let progress = min(elapsed / targetDuration, 1.0)
             let filled = Int(progress * 30)
-            let bar = String(repeating: "█", count: filled)
+            let bar =
+                String(repeating: "█", count: filled)
                 + String(repeating: "░", count: 30 - filled)
             print(String(format: "  [%@] %5.1fs / %.0fs", bar, elapsed, targetDuration))
         }

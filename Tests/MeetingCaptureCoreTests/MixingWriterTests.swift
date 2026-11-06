@@ -1,5 +1,6 @@
 import AVFoundation
 import XCTest
+
 @testable import MeetingCaptureCore
 
 /// Rotation is proved with a 2-second chunk, never by waiting 30 minutes.
@@ -19,13 +20,14 @@ final class MixingWriterTests: XCTestCase {
 
     /// One second of interleaved stereo float32, the shape SCStream delivers.
     private func oneSecond(value: Float = 0.25) throws -> AVAudioPCMBuffer {
-        let format = try XCTUnwrap(AVAudioFormat(
-            commonFormat: .pcmFormatFloat32, sampleRate: MixingWriter.sampleRate,
-            channels: 2, interleaved: true))
+        let format = try XCTUnwrap(
+            AVAudioFormat(
+                commonFormat: .pcmFormatFloat32, sampleRate: MixingWriter.sampleRate,
+                channels: 2, interleaved: true))
         let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(rate)))
         buffer.frameLength = AVAudioFrameCount(rate)
         let samples = try XCTUnwrap(buffer.floatChannelData?[0])
-        for i in 0 ..< rate * 2 { samples[i] = value }
+        for i in 0..<rate * 2 { samples[i] = value }
         return buffer
     }
 
@@ -40,7 +42,7 @@ final class MixingWriterTests: XCTestCase {
                 outputURL: dir.appendingPathComponent("meeting.wav"),
                 targetDurationSeconds: target,
                 chunkFrameLimit: chunkSeconds * rate)
-            for s in 0 ..< seconds {
+            for s in 0..<seconds {
                 during(writer, s)
                 writer.pushSystem(try oneSecond())
             }

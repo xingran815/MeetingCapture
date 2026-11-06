@@ -45,7 +45,7 @@ final class Summarizer {
     /// cache the secret in an instance property — a fresh keychain read every
     /// time, so rotating / clearing the key takes effect immediately.
     let apiKeyProvider: () -> String?
-    let model:   String
+    let model: String
     let timeout: TimeInterval
     /// Which reasoning wire format to emit, and how deep. Defaults to no reasoning
     /// so existing/other callers are unaffected.
@@ -62,24 +62,26 @@ final class Summarizer {
     private static let anthropicMaxTokens = 8192
     private static let anthropicMaxTokensReasoning = 16_000
 
-    init(baseURL: URL,
-         apiKeyProvider: @escaping () -> String?,
-         model: String,
-         apiStyle: LLMAPIStyle = .openAIChat,
-         reasoningStyle: ReasoningStyle = .none,
-         reasoningEffort: ReasoningEffort = .off,
-         timeout: TimeInterval = 180)
-    {
-        self.baseURL         = baseURL
-        self.apiKeyProvider  = apiKeyProvider
-        self.model           = model
-        self.apiStyle        = apiStyle
-        self.reasoningStyle  = reasoningStyle
+    init(
+        baseURL: URL,
+        apiKeyProvider: @escaping () -> String?,
+        model: String,
+        apiStyle: LLMAPIStyle = .openAIChat,
+        reasoningStyle: ReasoningStyle = .none,
+        reasoningEffort: ReasoningEffort = .off,
+        timeout: TimeInterval = 180
+    ) {
+        self.baseURL = baseURL
+        self.apiKeyProvider = apiKeyProvider
+        self.model = model
+        self.apiStyle = apiStyle
+        self.reasoningStyle = reasoningStyle
         self.reasoningEffort = reasoningEffort
-        self.timeout         = timeout
+        self.timeout = timeout
     }
 
-    func summarize(transcript: String, style: SummaryStyle = .meeting, systemSuffix: String = "") async throws -> String {
+    func summarize(transcript: String, style: SummaryStyle = .meeting, systemSuffix: String = "") async throws -> String
+    {
         guard let apiKey = apiKeyProvider(), !apiKey.isEmpty else {
             throw SummarizerError.badResponse(
                 "No LLM API key available at request time. Set it via Settings → LLM configurations, LLM_API_KEY, or --llm-api-key."
@@ -112,18 +114,19 @@ final class Summarizer {
                 "temperature": 0.3,
                 "messages": [
                     ["role": "system", "content": Self.systemPrompt(for: style) + systemSuffix],
-                    ["role": "user",   "content": transcript]
-                ]
+                    ["role": "user", "content": transcript],
+                ],
             ]
             switch reasoningStyle {
             case .thinking:
-                b["thinking"] = reasoningOn
+                b["thinking"] =
+                    reasoningOn
                     ? ["type": "enabled", "budget_tokens": reasoningEffort.budgetTokens]
                     : ["type": "disabled"]
             case .openai:
                 if reasoningOn { b["reasoning_effort"] = reasoningEffort.rawValue }
             case .anthropic, .none:
-                break   // not an OpenAI-chat reasoning format
+                break  // not an OpenAI-chat reasoning format
             }
             body = b
         }
@@ -163,7 +166,8 @@ final class Summarizer {
         case .anthropicMessages:
             // { content: [ { type: "text", text: "…" }, … ] }
             if let blocks = json["content"] as? [[String: Any]] {
-                let text = blocks
+                let text =
+                    blocks
                     .filter { ($0["type"] as? String) == "text" }
                     .compactMap { $0["text"] as? String }
                     .joined()
@@ -172,8 +176,9 @@ final class Summarizer {
         case .openAIChat:
             // { choices: [ { message: { content: "…" } } ] }
             if let choices = json["choices"] as? [[String: Any]],
-               let message = choices.first?["message"] as? [String: Any],
-               let content = message["content"] as? String {
+                let message = choices.first?["message"] as? [String: Any],
+                let content = message["content"] as? String
+            {
                 return content
             }
         }
@@ -214,7 +219,7 @@ final class Summarizer {
                 "max_tokens": classifyMaxTokens,
                 "messages": [
                     ["role": "system", "content": Self.classifierPrompt],
-                    ["role": "user",   "content": head],
+                    ["role": "user", "content": head],
                 ],
             ]
         }
@@ -260,15 +265,19 @@ final class Summarizer {
             ]
         }
         let req: URLRequest
-        do { req = try buildRequest(apiKey: apiKey, body: body, timeout: timeout) }
-        catch { completion(.failure(error)); return }
+        do { req = try buildRequest(apiKey: apiKey, body: body, timeout: timeout) } catch {
+            completion(.failure(error))
+            return
+        }
 
         let t0 = Date()
         let task = URLSession.shared.dataTask(with: req) { data, response, error in
             if let error = error {
                 let host = self.baseURL.host ?? self.baseURL.absoluteString
-                completion(.failure(SummarizerError.badResponse(
-                    "could not reach \(host) — \(error.localizedDescription)")))
+                completion(
+                    .failure(
+                        SummarizerError.badResponse(
+                            "could not reach \(host) — \(error.localizedDescription)")))
                 return
             }
             let dt = Date().timeIntervalSince(t0)
@@ -280,11 +289,15 @@ final class Summarizer {
             case 200..<300:
                 completion(.success(String(format: "HTTP %d in %.1fs", http.statusCode, dt)))
             case 401, 403:
-                completion(.failure(SummarizerError.badResponse(
-                    "HTTP \(http.statusCode) — invalid or unauthorized API key")))
+                completion(
+                    .failure(
+                        SummarizerError.badResponse(
+                            "HTTP \(http.statusCode) — invalid or unauthorized API key")))
             case 404:
-                completion(.failure(SummarizerError.badResponse(
-                    "HTTP 404 — model not found or wrong base URL")))
+                completion(
+                    .failure(
+                        SummarizerError.badResponse(
+                            "HTTP 404 — model not found or wrong base URL")))
             default:
                 let snippet = (data.flatMap { String(data: $0, encoding: .utf8) } ?? "").prefix(300)
                 completion(.failure(SummarizerError.badResponse("HTTP \(http.statusCode): \(snippet)")))
@@ -310,7 +323,7 @@ final class Summarizer {
         var candidates: [ReasoningStyle]
         switch apiStyle {
         case .anthropicMessages: candidates = [.anthropic]
-        case .openAIChat:        candidates = [.thinking, .openai]
+        case .openAIChat: candidates = [.thinking, .openai]
         }
         if let i = candidates.firstIndex(of: hostDetected), i != 0 {
             candidates.remove(at: i)
@@ -321,18 +334,19 @@ final class Summarizer {
         var reachedEndpoint = false
         for style in candidates {
             guard let req = try? buildRequest(apiKey: apiKey, body: probeBody(for: style), timeout: timeout),
-                  let (data, response) = try? await URLSession.shared.data(for: req),
-                  let http = response as? HTTPURLResponse else {
-                continue   // network/build error — let another candidate try
+                let (data, response) = try? await URLSession.shared.data(for: req),
+                let http = response as? HTTPURLResponse
+            else {
+                continue  // network/build error — let another candidate try
             }
             reachedEndpoint = true
             guard (200..<300).contains(http.statusCode) else {
-                continue   // this format's parameter was rejected; try the next
+                continue  // this format's parameter was rejected; try the next
             }
             if let detail = reasoningSignal(in: data, style: style) {
                 return .supported(style, detail: detail)
             }
-            sawInconclusive = true   // accepted, but produced no reasoning output
+            sawInconclusive = true  // accepted, but produced no reasoning output
         }
         guard reachedEndpoint else { return .failed("could not reach the endpoint") }
         return .noneDetected(inconclusive: sawInconclusive)
@@ -340,9 +354,11 @@ final class Summarizer {
 
     /// Callback bridge to `probeReasoning`, for the synchronous Settings menu
     /// (mirrors `ping`: the caller blocks on a semaphore until `completion` fires).
-    func probeReasoning(hostDetected: ReasoningStyle,
-                        timeout: TimeInterval = 30,
-                        completion: @escaping (ReasoningProbeOutcome) -> Void) {
+    func probeReasoning(
+        hostDetected: ReasoningStyle,
+        timeout: TimeInterval = 30,
+        completion: @escaping (ReasoningProbeOutcome) -> Void
+    ) {
         Task {
             completion(await probeReasoning(hostDetected: hostDetected, timeout: timeout))
         }
@@ -389,22 +405,28 @@ final class Summarizer {
     /// reasoning output is present (the parameter was likely ignored).
     private func reasoningSignal(in data: Data, style: ReasoningStyle) -> String? {
         guard let obj = try? JSONSerialization.jsonObject(with: data),
-              let json = obj as? [String: Any] else { return nil }
+            let json = obj as? [String: Any]
+        else { return nil }
         switch style {
         case .anthropic:
             // { content: [ { type: "thinking", thinking: "…" }, … ] }
             if let blocks = json["content"] as? [[String: Any]],
-               blocks.contains(where: { ($0["type"] as? String)?.contains("thinking") == true }) {
+                blocks.contains(where: { ($0["type"] as? String)?.contains("thinking") == true })
+            {
                 return "thinking block present"
             }
         case .thinking:
             // { choices: [ { message: { reasoning_content: "…" } } ] }
             if let choices = json["choices"] as? [[String: Any]],
-               let message = choices.first?["message"] as? [String: Any] {
-                if let rc = message["reasoning_content"] as? String, !rc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                let message = choices.first?["message"] as? [String: Any]
+            {
+                if let rc = message["reasoning_content"] as? String,
+                    !rc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                {
                     return "reasoning_content present"
                 }
-                if let rc = message["reasoning"] as? String, !rc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                if let rc = message["reasoning"] as? String, !rc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                {
                     return "reasoning field present"
                 }
                 if let content = message["content"] as? String, content.contains("<think>") {
@@ -414,8 +436,9 @@ final class Summarizer {
         case .openai:
             // { usage: { completion_tokens_details: { reasoning_tokens: N } } }
             if let usage = json["usage"] as? [String: Any],
-               let details = usage["completion_tokens_details"] as? [String: Any],
-               let rt = details["reasoning_tokens"] as? Int, rt > 0 {
+                let details = usage["completion_tokens_details"] as? [String: Any],
+                let rt = details["reasoning_tokens"] as? Int, rt > 0
+            {
                 return "\(rt) reasoning tokens"
             }
         case .none:
@@ -483,57 +506,57 @@ final class Summarizer {
     /// summary styles. Constrained output ("therapy" / "meeting") so a single
     /// token settles it.
     static let classifierPrompt: String = """
-    You are a classifier. Decide whether the transcript is a one-on-one therapy or counseling session (a therapist or counselor and a client, focused on emotional or psychological support) or a general meeting. Reply with exactly one lowercase word: therapy or meeting.
-    """
+        You are a classifier. Decide whether the transcript is a one-on-one therapy or counseling session (a therapist or counselor and a client, focused on emotional or psychological support) or a general meeting. Reply with exactly one lowercase word: therapy or meeting.
+        """
 
     static let meetingPrompt: String = """
-    You are an expert at summarizing meeting transcripts. The user will give you a transcript of a recorded meeting. Produce a concise, well-structured markdown summary with these sections:
+        You are an expert at summarizing meeting transcripts. The user will give you a transcript of a recorded meeting. Produce a concise, well-structured markdown summary with these sections:
 
-    # Summary
-    Two or three sentences describing what the meeting was about.
+        # Summary
+        Two or three sentences describing what the meeting was about.
 
-    ## Key points
-    Bullet list of the most important points discussed.
+        ## Key points
+        Bullet list of the most important points discussed.
 
-    ## Decisions
-    Bullet list of concrete decisions made, or "None" if none.
+        ## Decisions
+        Bullet list of concrete decisions made, or "None" if none.
 
-    ## Action items
-    Bullet list in the form `- [ ] <action> (owner: <name or ?>)`. Only include real action items that were explicitly discussed.
+        ## Action items
+        Bullet list in the form `- [ ] <action> (owner: <name or ?>)`. Only include real action items that were explicitly discussed.
 
-    ## Open questions
-    Bullet list of unresolved questions or follow-ups, or "None" if none.
+        ## Open questions
+        Bullet list of unresolved questions or follow-ups, or "None" if none.
 
-    Write the summary in the same language as the transcript. If the transcript is in Chinese, reply in Chinese; if English, reply in English; etc. Do not invent content that isn't in the transcript. If the transcript is too short or unclear to summarize meaningfully, say so explicitly in the Summary section and leave other sections as "None".
-    """
+        Write the summary in the same language as the transcript. If the transcript is in Chinese, reply in Chinese; if English, reply in English; etc. Do not invent content that isn't in the transcript. If the transcript is too short or unclear to summarize meaningfully, say so explicitly in the Summary section and leave other sections as "None".
+        """
 
     /// Therapy / counseling style — a warm, client-facing "Practice Notes"
     /// write-up. Validated against a real session transcript before shipping.
     static let therapyPrompt: String = """
-    You are a warm, perceptive psychotherapy assistant. The user will give you a transcript of a recorded therapy or counseling session. The transcript is auto-generated and may contain transcription errors, mislabeled or unlabeled speakers, and filler — infer meaning charitably and never quote verbatim where the text is garbled.
+        You are a warm, perceptive psychotherapy assistant. The user will give you a transcript of a recorded therapy or counseling session. The transcript is auto-generated and may contain transcription errors, mislabeled or unlabeled speakers, and filler — infer meaning charitably and never quote verbatim where the text is garbled.
 
-    Read the entire transcript before writing anything. Output only the notes themselves — no preamble, sign-off, or meta-commentary about the summary.
+        Read the entire transcript before writing anything. Output only the notes themselves — no preamble, sign-off, or meta-commentary about the summary.
 
-    Open with a short, specific title for the session and a single warm line that orients the reader. Then produce two clearly separated parts, formatted as markdown.
+        Open with a short, specific title for the session and a single warm line that orients the reader. Then produce two clearly separated parts, formatted as markdown.
 
-    # Part 1 — Session summary (what happened)
-    - Identify the participants (client and therapist) and any name, background, or context that can be reasonably inferred.
-    - Summarize the situation the client brought, the main concerns raised, the key relationships or events discussed, and the emotional through-line of the session.
-    - Cover any relevant history (childhood, family, diagnoses, prior patterns) that surfaced.
-    - Write in clear, warm, non-judgmental prose. Use a few short subsections if it aids readability, but keep it readable, not a clinical form.
+        # Part 1 — Session summary (what happened)
+        - Identify the participants (client and therapist) and any name, background, or context that can be reasonably inferred.
+        - Summarize the situation the client brought, the main concerns raised, the key relationships or events discussed, and the emotional through-line of the session.
+        - Cover any relevant history (childhood, family, diagnoses, prior patterns) that surfaced.
+        - Write in clear, warm, non-judgmental prose. Use a few short subsections if it aids readability, but keep it readable, not a clinical form.
 
-    # Part 2 — Therapeutic insights (what the work was)
-    - Lay out the core ideas, frameworks, metaphors, or techniques the therapist introduced (reframes, named concepts, mnemonics, homework). Keep intact the exact words the therapist used for each, and explain each simply.
-    - Explain how each one connects to the specific situation of the client.
-    - Where the session pointed toward something to practice, gather these into a small, concrete checklist of things to try before next time (a `- [ ]` list), in plain and encouraging language — only what was actually suggested.
-    - End with the central thread: the underlying pattern and the direction of change the session pointed toward. A brief, warm closing line is welcome, and you may echo a meaningful phrase the client said.
+        # Part 2 — Therapeutic insights (what the work was)
+        - Lay out the core ideas, frameworks, metaphors, or techniques the therapist introduced (reframes, named concepts, mnemonics, homework). Keep intact the exact words the therapist used for each, and explain each simply.
+        - Explain how each one connects to the specific situation of the client.
+        - Where the session pointed toward something to practice, gather these into a small, concrete checklist of things to try before next time (a `- [ ]` list), in plain and encouraging language — only what was actually suggested.
+        - End with the central thread: the underlying pattern and the direction of change the session pointed toward. A brief, warm closing line is welcome, and you may echo a meaningful phrase the client said.
 
-    Guidelines:
-    - Warmth, respect, and compassion throughout; this is sensitive, confidential personal material. You may address the client directly as you where it reads more warmly.
-    - Be faithful to the transcript. Distinguish what was actually said from your own synthesis. Invent nothing; if something is unclear, leave it out rather than guess.
-    - Keep the language the therapist used for named concepts and metaphors.
-    - Do not diagnose, do not give medical advice, and do not take sides in any interpersonal conflict described — the transcript is one account, from the client only.
-    - Adapt length to the session: thorough but not padded.
-    - Write in the same language as the transcript.
-    """
+        Guidelines:
+        - Warmth, respect, and compassion throughout; this is sensitive, confidential personal material. You may address the client directly as you where it reads more warmly.
+        - Be faithful to the transcript. Distinguish what was actually said from your own synthesis. Invent nothing; if something is unclear, leave it out rather than guess.
+        - Keep the language the therapist used for named concepts and metaphors.
+        - Do not diagnose, do not give medical advice, and do not take sides in any interpersonal conflict described — the transcript is one account, from the client only.
+        - Adapt length to the session: thorough but not padded.
+        - Write in the same language as the transcript.
+        """
 }

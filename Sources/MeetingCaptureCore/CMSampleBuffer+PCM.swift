@@ -1,6 +1,6 @@
-import Foundation
 import AVFoundation
 import CoreMedia
+import Foundation
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CMSampleBuffer → AVAudioPCMBuffer
@@ -79,12 +79,14 @@ extension CMSampleBuffer {
 
         // 4. Destination is always interleaved float32 (WAV-friendly).
         let channelCount = Int(srcFormat.channelCount)
-        guard let dstFormat = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: srcFormat.sampleRate,
-            channels: AVAudioChannelCount(channelCount),
-            interleaved: true
-        ) else { return nil }
+        guard
+            let dstFormat = AVAudioFormat(
+                commonFormat: .pcmFormatFloat32,
+                sampleRate: srcFormat.sampleRate,
+                channels: AVAudioChannelCount(channelCount),
+                interleaved: true
+            )
+        else { return nil }
 
         guard let pcmBuffer = AVAudioPCMBuffer(pcmFormat: dstFormat, frameCapacity: frameCount) else {
             fputs("toPCMBuffer: failed to allocate AVAudioPCMBuffer\n", stderr)
@@ -106,11 +108,11 @@ extension CMSampleBuffer {
             memcpy(dstBase, src, bytes)
         } else {
             // Interleave channel-planar source into destination
-            for ch in 0 ..< min(channelCount, abl.count) {
+            for ch in 0..<min(channelCount, abl.count) {
                 guard let srcRaw = abl[ch].mData else { continue }
                 let src = srcRaw.assumingMemoryBound(to: Float.self)
                 let srcFrames = min(frames, Int(abl[ch].mDataByteSize) / MemoryLayout<Float>.size)
-                for i in 0 ..< srcFrames {
+                for i in 0..<srcFrames {
                     dstBase[i * channelCount + ch] = src[i]
                 }
             }

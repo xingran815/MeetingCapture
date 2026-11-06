@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import MeetingCaptureCore
 
 final class RedactorTests: XCTestCase {
@@ -15,7 +16,9 @@ final class RedactorTests: XCTestCase {
     /// The regression score from the spec: at least 95% of formatted values across
     /// old and new cases, no false positives. Prints every miss, by fixture id.
     func testScoreOnFixtures() throws {
-        var caught = 0, total = 0, falsePositives = 0
+        var caught = 0
+        var total = 0
+        var falsePositives = 0
         var misses: [String] = []
         for fixture in try fixtures() {
             let result = Redactor.redact(fixture.text)
@@ -34,13 +37,16 @@ final class RedactorTests: XCTestCase {
                 misses.append("\(fixture.id): decoy caught: \(decoy)")
             }
             let labelled = fixture.formatted + (fixture.spoken ?? [])
-            for (token, value) in result.tokens where !labelled.contains(where: { $0.contains(value) || value.contains($0) }) {
+            for (token, value) in result.tokens
+            where !labelled.contains(where: { $0.contains(value) || value.contains($0) }) {
                 falsePositives += 1
                 misses.append("\(fixture.id): false positive as \(token)")
             }
         }
         let score = Double(caught) / Double(max(total, 1))
-        print("REDACTION SCORE: \(caught)/\(total) = \(String(format: "%.1f", score * 100))%, false positives \(falsePositives)")
+        print(
+            "REDACTION SCORE: \(caught)/\(total) = \(String(format: "%.1f", score * 100))%, false positives \(falsePositives)"
+        )
         for miss in misses { print("  \(miss)") }
         XCTAssertGreaterThanOrEqual(score, 0.95, misses.joined(separator: "\n"))
         XCTAssertEqual(falsePositives, 0, misses.joined(separator: "\n"))
@@ -175,10 +181,12 @@ final class SummaryPipelineTests: GuardedTestCase {
         defer { world.cleanUp() }
         let email = "priya" + "@example.com"
         // The fake model copies the token, as the prompt asks.
-        try world.install(.claude, answers: [
-            .init(stdout: FakeCLIWorld.claudeOK("meeting")),
-            .init(stdout: FakeCLIWorld.claudeOK("Send it to <EMAIL_1>.")),
-        ])
+        try world.install(
+            .claude,
+            answers: [
+                .init(stdout: FakeCLIWorld.claudeOK("meeting")),
+                .init(stdout: FakeCLIWorld.claudeOK("Send it to <EMAIL_1>.")),
+            ])
         let outcome = try await SummaryPipeline(backend: CLISummaryBackend(router: world.router()), redaction: true)
             .run(transcript: "[00:00:01] You: Send the contract to \(email), please.")
 
@@ -186,9 +194,15 @@ final class SummaryPipelineTests: GuardedTestCase {
             XCTAssertFalse(call.everything.contains(email))
         }
         XCTAssertEqual(world.calls(.claude).count, 2)
-        XCTAssertEqual(world.calls(.claude)[0].args[world.calls(.claude)[0].args.firstIndex(of: "--model")! + 1], "haiku", "the classifier is cheap tier")
-        XCTAssertEqual(world.calls(.claude)[1].args[world.calls(.claude)[1].args.firstIndex(of: "--model")! + 1], "sonnet", "the summary is normal tier")
-        XCTAssertTrue(world.calls(.claude)[1].args.joined().contains("copy a token exactly") || world.calls(.claude)[1].args.joined().contains("Copy a token exactly"))
+        XCTAssertEqual(
+            world.calls(.claude)[0].args[world.calls(.claude)[0].args.firstIndex(of: "--model")! + 1], "haiku",
+            "the classifier is cheap tier")
+        XCTAssertEqual(
+            world.calls(.claude)[1].args[world.calls(.claude)[1].args.firstIndex(of: "--model")! + 1], "sonnet",
+            "the summary is normal tier")
+        XCTAssertTrue(
+            world.calls(.claude)[1].args.joined().contains("copy a token exactly")
+                || world.calls(.claude)[1].args.joined().contains("Copy a token exactly"))
         XCTAssertEqual(outcome.markdown, "Send it to \(email).")
         XCTAssertEqual(outcome.redactedValues, 1)
     }

@@ -51,71 +51,76 @@ public enum MeetingCaptureApp {
             let out = args.option("--out") ?? "dev/tmp/quality.md"
             let primary = args.option("--llm-cli").flatMap(CLIKind.init(rawValue:))
             Task {
-                exit(await QualityCompare.run(
-                    fixturesDirectory: fixtures, outputPath: out, config: Config.load(), primary: primary) ? 0 : 1)
+                exit(
+                    await QualityCompare.run(
+                        fixturesDirectory: fixtures, outputPath: out, config: Config.load(), primary: primary) ? 0 : 1)
             }
             keepRunLoopAlive()
         }
 
         if args.flag("--help") || args.flag("-h") {
-            print("""
-            MeetingCaptureCLI  —  capture, transcribe, summarize meetings, all local
+            print(
+                """
+                MeetingCaptureCLI  —  capture, transcribe, summarize meetings, all local
 
-            Usage:
-              swift run MeetingCaptureCLI [options]
+                Usage:
+                  swift run MeetingCaptureCLI [options]
 
-            Capture options:
-              --duration <sec>      Maximum capture duration          (default: 28800 = 8h safety cap)
-                                     Press Enter during recording to stop earlier
-              --output <path>       Output .wav file path             (default: meeting_<ts>.wav)
-              --all-audio           Capture ALL system audio          (default: meeting app only)
-              --no-mic              Disable mic capture               (default: mic mixed in)
-              --no-aec              Disable acoustic echo cancellation (default: AEC on)
+                Capture options:
+                  --duration <sec>      Maximum capture duration          (default: 28800 = 8h safety cap)
+                                         Press Enter during recording to stop earlier
+                  --output <path>       Output .wav file path             (default: meeting_<ts>.wav)
+                  --all-audio           Capture ALL system audio          (default: meeting app only)
+                  --no-mic              Disable mic capture               (default: mic mixed in)
+                  --no-aec              Disable acoustic echo cancellation (default: AEC on)
 
-            Transcription options:
-              --transcribe          Transcribe the WAV after capture
-              --transcribe-only P   Skip capture; transcribe existing WAV at path P
-              --model <name>        Whisper model                     (default: openai_whisper-small.en)
-              --language <code>     Pin language (en, zh, …)           (multilingual models auto-detect if omitted)
-              --model-folder <dir>  Load the Whisper model from this folder, no download
+                Transcription options:
+                  --transcribe          Transcribe the WAV after capture
+                  --transcribe-only P   Skip capture; transcribe existing WAV at path P
+                  --model <name>        Whisper model                     (default: openai_whisper-small.en)
+                  --language <code>     Pin language (en, zh, …)           (multilingual models auto-detect if omitted)
+                  --model-folder <dir>  Load the Whisper model from this folder, no download
 
-            Summarization options (subscription CLIs by default; API flags pick an API profile):
-              --summarize           Generate an LLM summary after transcription
-              --summarize-only P    Skip everything; summarize existing .txt at path P
-              --summary-style <s>   Force style: meeting | therapy      (default: auto-detected per transcript)
-              --therapy             Alias for --summary-style therapy
-              --llm-cli <name>      CLI to try first: claude | codex  (default: from Settings)
-              --no-redact           Send formatted values as they are (default: replaced with tokens)
-              --llm-profile <name>  Saved API configuration to use
-              --llm-model <name>    Override the chosen config's model
-              --llm-base-url <url>  Override the chosen config's base URL
-              --llm-api-key <key>   Override the chosen config's API key (also: $LLM_API_KEY)
+                Summarization options (subscription CLIs by default; API flags pick an API profile):
+                  --summarize           Generate an LLM summary after transcription
+                  --summarize-only P    Skip everything; summarize existing .txt at path P
+                  --summary-style <s>   Force style: meeting | therapy      (default: auto-detected per transcript)
+                  --therapy             Alias for --summary-style therapy
+                  --llm-cli <name>      CLI to try first: claude | codex  (default: from Settings)
+                  --no-redact           Send formatted values as they are (default: replaced with tokens)
+                  --llm-profile <name>  Saved API configuration to use
+                  --llm-model <name>    Override the chosen config's model
+                  --llm-base-url <url>  Override the chosen config's base URL
+                  --llm-api-key <key>   Override the chosen config's API key (also: $LLM_API_KEY)
 
-              Manage saved configurations (add/edit/delete, each with its own provider,
-              model, base URL, and API key) and run a connectivity check in the
-              interactive shell: Settings → LLM configurations.
+                  Manage saved configurations (add/edit/delete, each with its own provider,
+                  model, base URL, and API key) and run a connectivity check in the
+                  interactive shell: Settings → LLM configurations.
 
-            Misc:
-              --list                List running applications and exit
-              --help                Show this help
+                Misc:
+                  --list                List running applications and exit
+                  --help                Show this help
 
-            Permissions (once each):
-              • Screen Recording (System Settings → Privacy & Security → Screen Recording)
-              • Microphone (prompted on first mic use)
+                Permissions (once each):
+                  • Screen Recording (System Settings → Privacy & Security → Screen Recording)
+                  • Microphone (prompted on first mic use)
 
-            Examples:
-              MeetingCaptureCLI --duration 60 --transcribe --summarize --output zoom.wav
-              MeetingCaptureCLI --transcribe-only /tmp/with_mic.wav --summarize
-              MeetingCaptureCLI --summarize-only /tmp/with_mic.txt
-            """)
+                Examples:
+                  MeetingCaptureCLI --duration 60 --transcribe --summarize --output zoom.wav
+                  MeetingCaptureCLI --transcribe-only /tmp/with_mic.wav --summarize
+                  MeetingCaptureCLI --summarize-only /tmp/with_mic.txt
+                """)
             exit(0)
         }
 
         // No args → launch interactive shell. Any args (including --help) → stay in flag mode.
         if arguments.isEmpty {
             Task {
-                if #available(macOS 14.0, *) { await Shell().run() }
-                else { fputs("macOS 14+ required for the interactive shell.\n", stderr) }
+                if #available(macOS 14.0, *) {
+                    await Shell().run()
+                } else {
+                    fputs("macOS 14+ required for the interactive shell.\n", stderr)
+                }
                 exit(0)
             }
             keepRunLoopAlive()
@@ -123,26 +128,28 @@ public enum MeetingCaptureApp {
 
         let persistedConfig = Config.load()
 
-        let duration       = args.option("--duration").flatMap(Double.init) ?? Double(persistedConfig.defaultDurationMinutes * 60)
-        let outputPath     = args.option("--output") ?? "meeting_\(makeTimestamp()).wav"
-        let allAudio       = args.flag("--all-audio")
-        let noMic          = args.flag("--no-mic")
-        let noAec          = args.flag("--no-aec")
-        let listMode       = args.flag("--list")
+        let duration =
+            args.option("--duration").flatMap(Double.init) ?? Double(persistedConfig.defaultDurationMinutes * 60)
+        let outputPath = args.option("--output") ?? "meeting_\(makeTimestamp()).wav"
+        let allAudio = args.flag("--all-audio")
+        let noMic = args.flag("--no-mic")
+        let noAec = args.flag("--no-aec")
+        let listMode = args.flag("--list")
         let transcribeFlag = args.flag("--transcribe")
         let transcribeOnly = args.option("--transcribe-only")
-        let whisperModel   = args.option("--model") ?? persistedConfig.whisperModel
-        let whisperFolder  = args.option("--model-folder")
-        let whisperLang    = args.option("--language") ?? persistedConfig.whisperLanguage
-        let summarizeFlag  = args.flag("--summarize")
-        let summarizeOnly  = args.option("--summarize-only")
+        let whisperModel = args.option("--model") ?? persistedConfig.whisperModel
+        let whisperFolder = args.option("--model-folder")
+        let whisperLang = args.option("--language") ?? persistedConfig.whisperLanguage
+        let summarizeFlag = args.flag("--summarize")
+        let summarizeOnly = args.option("--summarize-only")
         let llmProfileFlag = args.option("--llm-profile")
-        let llmProfile     = llmProfileFlag.flatMap { name in
-            persistedConfig.llmProfiles.first { $0.displayName.caseInsensitiveCompare(name) == .orderedSame }
-        } ?? persistedConfig.activeLLMProfile
-        let llmCLI         = args.option("--llm-cli").flatMap(CLIKind.init(rawValue:))
-        let redaction      = persistedConfig.redactionEnabled && !args.flag("--no-redact")
-        let apiOverrides   = SummaryRoute.APIOverrides(
+        let llmProfile =
+            llmProfileFlag.flatMap { name in
+                persistedConfig.llmProfiles.first { $0.displayName.caseInsensitiveCompare(name) == .orderedSame }
+            } ?? persistedConfig.activeLLMProfile
+        let llmCLI = args.option("--llm-cli").flatMap(CLIKind.init(rawValue:))
+        let redaction = persistedConfig.redactionEnabled && !args.flag("--no-redact")
+        let apiOverrides = SummaryRoute.APIOverrides(
             profile: llmProfileFlag == nil ? nil : llmProfile,
             model: args.option("--llm-model"),
             baseURL: args.option("--llm-base-url"),
@@ -162,17 +169,22 @@ public enum MeetingCaptureApp {
         }()
 
         if let name = llmProfileFlag,
-           !persistedConfig.llmProfiles.contains(where: { $0.displayName.caseInsensitiveCompare(name) == .orderedSame }) {
-            fputs("⚠  No saved LLM configuration named \"\(name)\" — using the active one (\(llmProfile.displayName)).\n", stderr)
+            !persistedConfig.llmProfiles.contains(where: { $0.displayName.caseInsensitiveCompare(name) == .orderedSame }
+            )
+        {
+            fputs(
+                "⚠  No saved LLM configuration named \"\(name)\" — using the active one (\(llmProfile.displayName)).\n",
+                stderr)
         }
 
 
-        print("""
-        ╔════════════════════════════════════════════╗
-        ║   MeetingCaptureCLI  ·  v0.6               ║
-        ║   capture · transcribe · summarize         ║
-        ╚════════════════════════════════════════════╝
-        """)
+        print(
+            """
+            ╔════════════════════════════════════════════╗
+            ║   MeetingCaptureCLI  ·  v0.6               ║
+            ║   capture · transcribe · summarize         ║
+            ╚════════════════════════════════════════════╝
+            """)
 
 
         /// Summarize `transcript`, print it, and write it to a sibling `.md` next
@@ -183,11 +195,14 @@ public enum MeetingCaptureApp {
             print("🧩  Summarizing via \(backend.label)…")
             let outcome = try await SummaryPipeline(backend: backend, redaction: redaction)
                 .run(transcript: transcript, forcedStyle: summaryStyleFlag)
-            print(outcome.style == .therapy
-                  ? "🧭  Therapy session — wrote Practice Notes."
-                  : "🧭  Meeting — wrote a summary.")
+            print(
+                outcome.style == .therapy
+                    ? "🧭  Therapy session — wrote Practice Notes."
+                    : "🧭  Meeting — wrote a summary.")
             if outcome.redactedValues > 0 {
-                print("🔒  \(outcome.redactedValues) formatted values were kept out of the request. Spoken names aren't caught.")
+                print(
+                    "🔒  \(outcome.redactedValues) formatted values were kept out of the request. Spoken names aren't caught."
+                )
             }
 
             print("\n──── summary ─────────────────────────────")
@@ -212,7 +227,8 @@ public enum MeetingCaptureApp {
 
                 // Transcribe-only: skip capture, transcribe a .wav, optionally summarize
                 if let path = transcribeOnly {
-                    let text = try await runTranscription(wavPaths: [path], model: whisperModel, modelFolder: whisperFolder, language: whisperLang)
+                    let text = try await runTranscription(
+                        wavPaths: [path], model: whisperModel, modelFolder: whisperFolder, language: whisperLang)
                     if summarizeFlag {
                         try await runSummarization(transcript: text, sourcePath: path)
                     }
@@ -229,7 +245,8 @@ public enum MeetingCaptureApp {
                     duration: duration,
                     outputPath: outputPath,
                     captureAllAudio: allAudio,
-                    meetingApps: allAudio ? [] : MeetingApp.catalog.filter { persistedConfig.enabledMeetingAppIDs.contains($0.id) },
+                    meetingApps: allAudio
+                        ? [] : MeetingApp.catalog.filter { persistedConfig.enabledMeetingAppIDs.contains($0.id) },
                     enableMic: !noMic,
                     aecEnabled: !noAec && persistedConfig.aecEnabled
                 )
@@ -238,7 +255,8 @@ public enum MeetingCaptureApp {
                     let wavPaths = wavFiles.map { $0.path }
 
                     // --summarize implies transcription (we need text to summarize)
-                    let text = try await runTranscription(wavPaths: wavPaths, model: whisperModel, modelFolder: whisperFolder, language: whisperLang)
+                    let text = try await runTranscription(
+                        wavPaths: wavPaths, model: whisperModel, modelFolder: whisperFolder, language: whisperLang)
                     if summarizeFlag {
                         // Use first file's base name for the summary
                         let firstPath = wavPaths[0]
@@ -268,11 +286,15 @@ public enum MeetingCaptureApp {
     }
 
     @available(macOS 14.0, *)
-    private static func runTranscription(wavPaths: [String], model: String, modelFolder: String?, language: String?) async throws -> String {
+    private static func runTranscription(wavPaths: [String], model: String, modelFolder: String?, language: String?)
+        async throws -> String
+    {
         guard !wavPaths.isEmpty else {
-            throw NSError(domain: "Transcription", code: -1, userInfo: [
-                NSLocalizedDescriptionKey: "No WAV files to transcribe"
-            ])
+            throw NSError(
+                domain: "Transcription", code: -1,
+                userInfo: [
+                    NSLocalizedDescriptionKey: "No WAV files to transcribe"
+                ])
         }
 
         let transcriber = Transcriber(model: model, language: language, modelFolder: modelFolder)

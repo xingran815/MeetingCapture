@@ -21,9 +21,10 @@ enum ProcessExec {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async {
                 do {
-                    continuation.resume(returning: try runBlocking(
-                        executable: executable, arguments: arguments, stdin: stdin, cwd: cwd,
-                        environment: environment, timeout: timeout))
+                    continuation.resume(
+                        returning: try runBlocking(
+                            executable: executable, arguments: arguments, stdin: stdin, cwd: cwd,
+                            environment: environment, timeout: timeout))
                 } catch {
                     continuation.resume(throwing: error)
                 }
@@ -43,7 +44,9 @@ enum ProcessExec {
         process.arguments = arguments
         process.currentDirectoryURL = cwd
         process.environment = environment
-        let inPipe = Pipe(), outPipe = Pipe(), errPipe = Pipe()
+        let inPipe = Pipe()
+        let outPipe = Pipe()
+        let errPipe = Pipe()
         process.standardInput = inPipe
         process.standardOutput = outPipe
         process.standardError = errPipe
@@ -51,7 +54,8 @@ enum ProcessExec {
 
         // Drain everything at once, or a full pipe deadlocks parent and child.
         let group = DispatchGroup()
-        var outData = Data(), errData = Data()
+        var outData = Data()
+        var errData = Data()
         group.enter()
         DispatchQueue.global().async {
             outData = outPipe.fileHandleForReading.readDataToEndOfFile()
@@ -70,7 +74,9 @@ enum ProcessExec {
         let lock = NSLock()
         var timedOut = false
         let killer = DispatchWorkItem {
-            lock.lock(); timedOut = true; lock.unlock()
+            lock.lock()
+            timedOut = true
+            lock.unlock()
             process.terminate()
         }
         DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: killer)
@@ -78,7 +84,8 @@ enum ProcessExec {
         killer.cancel()
         group.wait()
 
-        lock.lock(); defer { lock.unlock() }
+        lock.lock()
+        defer { lock.unlock() }
         return ProcessOutput(
             status: process.terminationStatus,
             stdout: String(decoding: outData, as: UTF8.self),
@@ -149,15 +156,16 @@ final class CLIRunner {
         guard let dir = try? makeTempDir() else { return .missing(.failed(cli, "no temp folder")) }
         defer { try? FileManager.default.removeItem(at: dir) }
         let arguments = cli == .claude ? ["auth", "status"] : ["login", "status"]
-        guard let out = try? await ProcessExec.run(
-            executable: path, arguments: arguments, cwd: dir, environment: environment, timeout: 20)
+        guard
+            let out = try? await ProcessExec.run(
+                executable: path, arguments: arguments, cwd: dir, environment: environment, timeout: 20)
         else { return .missing(.notLoggedIn(cli)) }
 
         switch cli {
         case .claude:
             guard let data = out.stdout.data(using: .utf8),
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  json["loggedIn"] as? Bool == true
+                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                json["loggedIn"] as? Bool == true
             else { return .missing(.notLoggedIn(cli)) }
             let method = json["authMethod"] as? String ?? "unknown"
             if method == "claude.ai" || allowAPIBilling { return .ready }
@@ -208,7 +216,8 @@ final class CLIRunner {
             environment: environment, timeout: timeout)
         if output.timedOut { throw CLIError.timedOut(cli) }
 
-        let parsed = cli == .claude
+        let parsed =
+            cli == .claude
             ? CLIOutputParser.parseClaude(output.stdout)
             : CLIOutputParser.parseCodex(output.stdout)
 
@@ -249,7 +258,8 @@ final class CLIRunner {
             env["CODEX_HOME"] = home.path
             if let out = try? await ProcessExec.run(
                 executable: path, arguments: ["features", "list"], cwd: home, environment: env, timeout: 15),
-               out.status == 0 {
+                out.status == 0
+            {
                 listed = CLIArguments.parseCodexFeatureList(out.stdout)
             }
         }

@@ -1,6 +1,7 @@
 import Foundation
+
 #if canImport(Darwin)
-import Darwin
+    import Darwin
 #endif
 
 // Interactive list picker. Uses termios cbreak mode + ANSI redraws to let the
@@ -73,8 +74,9 @@ enum Menu {
         if !items[index].enabled { index = step(items, from: index, by: 1) }
         var drawnLines = 0
 
-        renderBlock(title: title, header: header, items: items,
-                    index: index, allowBack: allowBack, drawnLines: &drawnLines, first: true)
+        renderBlock(
+            title: title, header: header, items: items,
+            index: index, allowBack: allowBack, drawnLines: &drawnLines, first: true)
 
         while true {
             var byte: UInt8 = 0
@@ -82,17 +84,21 @@ enum Menu {
             if n <= 0 { return allowBack ? .back : .selected(index) }
 
             switch byte {
-            case 0x0A, 0x0D:                     // Enter
+            case 0x0A, 0x0D:  // Enter
                 return .selected(index)
-            case 0x1B:                           // ESC or escape sequence
+            case 0x1B:  // ESC or escape sequence
                 if let seq = readEscapeSequence() {
                     switch seq {
-                    case "[A": index = step(items, from: index, by: -1)
-                               renderBlock(title: title, header: header, items: items,
-                                           index: index, allowBack: allowBack, drawnLines: &drawnLines, first: false)
-                    case "[B": index = step(items, from: index, by: 1)
-                               renderBlock(title: title, header: header, items: items,
-                                           index: index, allowBack: allowBack, drawnLines: &drawnLines, first: false)
+                    case "[A":
+                        index = step(items, from: index, by: -1)
+                        renderBlock(
+                            title: title, header: header, items: items,
+                            index: index, allowBack: allowBack, drawnLines: &drawnLines, first: false)
+                    case "[B":
+                        index = step(items, from: index, by: 1)
+                        renderBlock(
+                            title: title, header: header, items: items,
+                            index: index, allowBack: allowBack, drawnLines: &drawnLines, first: false)
                     default: break
                     }
                 } else {
@@ -100,12 +106,14 @@ enum Menu {
                 }
             case UInt8(ascii: "k"):
                 index = step(items, from: index, by: -1)
-                renderBlock(title: title, header: header, items: items,
-                            index: index, allowBack: allowBack, drawnLines: &drawnLines, first: false)
+                renderBlock(
+                    title: title, header: header, items: items,
+                    index: index, allowBack: allowBack, drawnLines: &drawnLines, first: false)
             case UInt8(ascii: "j"):
                 index = step(items, from: index, by: 1)
-                renderBlock(title: title, header: header, items: items,
-                            index: index, allowBack: allowBack, drawnLines: &drawnLines, first: false)
+                renderBlock(
+                    title: title, header: header, items: items,
+                    index: index, allowBack: allowBack, drawnLines: &drawnLines, first: false)
             case UInt8(ascii: "q"):
                 return allowBack ? .back : .selected(items.count - 1)  // root: last item is Quit
             case UInt8(ascii: "b"):
@@ -115,8 +123,9 @@ enum Menu {
                 let ch = Character(UnicodeScalar(byte))
                 if let hit = items.firstIndex(where: { $0.key == ch && $0.enabled }) {
                     index = hit
-                    renderBlock(title: title, header: header, items: items,
-                                index: index, allowBack: allowBack, drawnLines: &drawnLines, first: false)
+                    renderBlock(
+                        title: title, header: header, items: items,
+                        index: index, allowBack: allowBack, drawnLines: &drawnLines, first: false)
                     return .selected(hit)
                 }
             }
@@ -154,8 +163,9 @@ enum Menu {
 
         enterRaw(&original)
         let prevSigint = installSigintRestore()
-        renderBlock(title: title, header: header, items: current,
-                    index: index, allowBack: allowBack, drawnLines: &drawnLines, first: true)
+        renderBlock(
+            title: title, header: header, items: current,
+            index: index, allowBack: allowBack, drawnLines: &drawnLines, first: true)
         defer {
             var r = original
             _ = tcsetattr(fileno(stdin), TCSANOW, &r)
@@ -174,11 +184,13 @@ enum Menu {
             onSelect(i)
 
             current = items()
-            index = current.indices.contains(index) && current[index].enabled
+            index =
+                current.indices.contains(index) && current[index].enabled
                 ? index : firstEnabled(current)
             enterRaw(&original)
-            renderBlock(title: title, header: header, items: current,
-                        index: index, allowBack: allowBack, drawnLines: &drawnLines, first: true)
+            renderBlock(
+                title: title, header: header, items: current,
+                index: index, allowBack: allowBack, drawnLines: &drawnLines, first: true)
         }
 
         while true {
@@ -187,17 +199,21 @@ enum Menu {
             if n <= 0 { return }
 
             switch byte {
-            case 0x0A, 0x0D:                     // Enter
+            case 0x0A, 0x0D:  // Enter
                 dispatch(index)
-            case 0x1B:                           // ESC or escape sequence
+            case 0x1B:  // ESC or escape sequence
                 if let seq = readEscapeSequence() {
                     switch seq {
-                    case "[A": index = step(current, from: index, by: -1)
-                               renderBlock(title: title, header: header, items: current,
-                                           index: index, allowBack: allowBack, drawnLines: &drawnLines, first: false)
-                    case "[B": index = step(current, from: index, by: 1)
-                               renderBlock(title: title, header: header, items: current,
-                                           index: index, allowBack: allowBack, drawnLines: &drawnLines, first: false)
+                    case "[A":
+                        index = step(current, from: index, by: -1)
+                        renderBlock(
+                            title: title, header: header, items: current,
+                            index: index, allowBack: allowBack, drawnLines: &drawnLines, first: false)
+                    case "[B":
+                        index = step(current, from: index, by: 1)
+                        renderBlock(
+                            title: title, header: header, items: current,
+                            index: index, allowBack: allowBack, drawnLines: &drawnLines, first: false)
                     default: break
                     }
                 } else {
@@ -205,12 +221,14 @@ enum Menu {
                 }
             case UInt8(ascii: "k"):
                 index = step(current, from: index, by: -1)
-                renderBlock(title: title, header: header, items: current,
-                            index: index, allowBack: allowBack, drawnLines: &drawnLines, first: false)
+                renderBlock(
+                    title: title, header: header, items: current,
+                    index: index, allowBack: allowBack, drawnLines: &drawnLines, first: false)
             case UInt8(ascii: "j"):
                 index = step(current, from: index, by: 1)
-                renderBlock(title: title, header: header, items: current,
-                            index: index, allowBack: allowBack, drawnLines: &drawnLines, first: false)
+                renderBlock(
+                    title: title, header: header, items: current,
+                    index: index, allowBack: allowBack, drawnLines: &drawnLines, first: false)
             case UInt8(ascii: "q"):
                 return
             case UInt8(ascii: "b"):
@@ -242,7 +260,10 @@ enum Menu {
             fputs("\u{1B}[\(drawnLines)A", stdout)
         }
         var lines = 0
-        func emit(_ s: String) { fputs("\u{1B}[2K\(s)\n", stdout); lines += 1 }
+        func emit(_ s: String) {
+            fputs("\u{1B}[2K\(s)\n", stdout)
+            lines += 1
+        }
 
         if let title = title {
             for line in title.split(separator: "\n", omittingEmptySubsequences: false) { emit(String(line)) }
@@ -262,7 +283,8 @@ enum Menu {
             let label = (i == index) ? "\u{1B}[1m\(item.label)\u{1B}[0m" : item.label
             emit("\(marker)\(keyHint)\(label)")
         }
-        let footer = allowBack
+        let footer =
+            allowBack
             ? "  ↑↓ move · enter select · b back · q quit"
             : "  ↑↓ move · enter select · q quit"
         emit("\u{1B}[2m\(footer)\u{1B}[0m")
@@ -340,7 +362,10 @@ enum Menu {
         if let title = title { print(title) }
         if let header = header { print(header) }
         for (i, item) in items.enumerated() {
-            if !item.enabled { print("     \(item.label)"); continue }
+            if !item.enabled {
+                print("     \(item.label)")
+                continue
+            }
             let k = item.key.map { "\($0)) " } ?? "\(i + 1)) "
             print("  \(k)\(item.label)")
         }
@@ -372,7 +397,10 @@ enum Menu {
             if let title = title { print(title) }
             if let header = header { print(header) }
             for (i, item) in current.enumerated() {
-                if !item.enabled { print("     \(item.label)"); continue }
+                if !item.enabled {
+                    print("     \(item.label)")
+                    continue
+                }
                 let k = item.key.map { "\($0)) " } ?? "\(i + 1)) "
                 print("  \(k)\(item.label)")
             }
@@ -381,7 +409,8 @@ enum Menu {
             let s = raw.trimmingCharacters(in: .whitespaces).lowercased()
             if s.isEmpty || s == "b" || s == "back" || s == "q" || s == "quit" { return }
             if let ch = s.first, let hit = current.firstIndex(where: { $0.key == ch && $0.enabled }) {
-                onSelect(hit); continue
+                onSelect(hit)
+                continue
             }
             if let n = Int(s), n >= 1, n <= current.count, current[n - 1].enabled {
                 onSelect(n - 1)

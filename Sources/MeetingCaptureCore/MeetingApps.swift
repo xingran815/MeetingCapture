@@ -10,27 +10,38 @@ import Foundation
 // Google Meet has no app of its own — it runs inside Chrome/Safari, so capturing
 // the browser captures Meet's audio as well.
 struct MeetingApp: Identifiable {
-    let id: String            // stable key persisted in config
-    let label: String         // human-readable name shown in Settings
-    let bundleIDs: [String]   // bundle identifiers matched against running apps
+    let id: String  // stable key persisted in config
+    let label: String  // human-readable name shown in Settings
+    let bundleIDs: [String]  // bundle identifiers matched against running apps
 }
 
 extension MeetingApp {
     static let catalog: [MeetingApp] = [
-        MeetingApp(id: "zoom",   label: "Zoom",
-                   bundleIDs: ["us.zoom.xos",
-                               "us.zoom.xos.ZoomMTRunning",
-                               "us.zoom.xos.ZoomAudio"]),
-        MeetingApp(id: "teams",  label: "Microsoft Teams",
-                   bundleIDs: ["com.microsoft.teams",
-                               "com.microsoft.teams2"]),
-        MeetingApp(id: "webex",  label: "Webex",
-                   bundleIDs: ["Cisco-Systems.Spark",
-                               "com.cisco.webexmeetings"]),
-        MeetingApp(id: "chrome", label: "Google Chrome (Meet)",
-                   bundleIDs: ["com.google.Chrome"]),
-        MeetingApp(id: "safari", label: "Safari (Meet)",
-                   bundleIDs: ["com.apple.Safari"]),
+        MeetingApp(
+            id: "zoom", label: "Zoom",
+            bundleIDs: [
+                "us.zoom.xos",
+                "us.zoom.xos.ZoomMTRunning",
+                "us.zoom.xos.ZoomAudio",
+            ]),
+        MeetingApp(
+            id: "teams", label: "Microsoft Teams",
+            bundleIDs: [
+                "com.microsoft.teams",
+                "com.microsoft.teams2",
+            ]),
+        MeetingApp(
+            id: "webex", label: "Webex",
+            bundleIDs: [
+                "Cisco-Systems.Spark",
+                "com.cisco.webexmeetings",
+            ]),
+        MeetingApp(
+            id: "chrome", label: "Google Chrome (Meet)",
+            bundleIDs: ["com.google.Chrome"]),
+        MeetingApp(
+            id: "safari", label: "Safari (Meet)",
+            bundleIDs: ["com.apple.Safari"]),
     ]
 
     /// All catalog ids — the default "everything enabled" set.

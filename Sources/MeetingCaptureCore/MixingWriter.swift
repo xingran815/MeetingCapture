@@ -1,5 +1,5 @@
-import Foundation
 import AVFoundation
+import Foundation
 
 // Writes mixed (system + mic) audio to interleaved 48 kHz mono int16 WAV files.
 //
@@ -32,18 +32,18 @@ final class MixingWriter {
 
     // Settings dict for AVAudioFile — interleaved mono int16 LPCM.
     private static let fileSettings: [String: Any] = [
-        AVFormatIDKey:           kAudioFormatLinearPCM,
-        AVSampleRateKey:         sampleRate,
-        AVNumberOfChannelsKey:   1,
-        AVLinearPCMBitDepthKey:  16,
-        AVLinearPCMIsFloatKey:   false,
-        AVLinearPCMIsBigEndianKey:    false,
-        AVLinearPCMIsNonInterleaved:  false,
+        AVFormatIDKey: kAudioFormatLinearPCM,
+        AVSampleRateKey: sampleRate,
+        AVNumberOfChannelsKey: 1,
+        AVLinearPCMBitDepthKey: 16,
+        AVLinearPCMIsFloatKey: false,
+        AVLinearPCMIsBigEndianKey: false,
+        AVLinearPCMIsNonInterleaved: false,
     ]
 
     // Mono mic FIFO: one float per frame.
     private var micFIFO: [Float] = []
-    private let maxMicSamples = Int(sampleRate)   // 1 s of mono
+    private let maxMicSamples = Int(sampleRate)  // 1 s of mono
 
     private(set) var framesWritten: Int = 0
 
@@ -67,7 +67,8 @@ final class MixingWriter {
     ) throws {
         self.baseURL = outputURL
         self.chunkFrameLimit = chunkFrameLimit
-        self.targetDurationFrames = targetDurationSeconds > 0
+        self.targetDurationFrames =
+            targetDurationSeconds > 0
             ? Int(targetDurationSeconds * Self.sampleRate)
             : 0
         format = AVAudioFormat(
@@ -88,8 +89,8 @@ final class MixingWriter {
     // Called from SCStream callback queue.
     func pushSystem(_ buffer: AVAudioPCMBuffer) {
         guard buffer.format.isInterleaved,
-              buffer.format.channelCount == 2,
-              let src = buffer.floatChannelData?[0]
+            buffer.format.channelCount == 2,
+            let src = buffer.floatChannelData?[0]
         else { return }
 
         let frames = Int(buffer.frameLength)
@@ -107,7 +108,7 @@ final class MixingWriter {
         let micTake = min(frames, micFIFO.count)
         // Downmix stereo system → mono by averaging L+R, sum mic where present,
         // then convert float → int16 with hard clamp.
-        for f in 0 ..< frames {
+        for f in 0..<frames {
             let sysMono = (src[2 * f] + src[2 * f + 1]) * 0.5
             let mic = f < micTake ? micFIFO[f] : 0
             let mixed = sysMono + mic
@@ -143,7 +144,7 @@ final class MixingWriter {
             return
         }
         micFIFO.reserveCapacity(micFIFO.count + frameCount)
-        for i in 0 ..< frameCount {
+        for i in 0..<frameCount {
             micFIFO.append(samples[i])
         }
         if micFIFO.count > maxMicSamples {

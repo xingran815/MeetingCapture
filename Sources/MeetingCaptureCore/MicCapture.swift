@@ -1,5 +1,5 @@
-import Foundation
 import AVFoundation
+import Foundation
 
 // Microphone capture via AVAudioEngine.
 //
@@ -34,22 +34,27 @@ final class MicCapture {
 
         inputFormat = engine.inputNode.outputFormat(forBus: 0)
         guard inputFormat.sampleRate > 0 else {
-            throw NSError(domain: "MicCapture", code: -1, userInfo: [
-                NSLocalizedDescriptionKey: "No input device available (sample rate = 0)"
-            ])
+            throw NSError(
+                domain: "MicCapture", code: -1,
+                userInfo: [
+                    NSLocalizedDescriptionKey: "No input device available (sample rate = 0)"
+                ])
         }
 
         if inputFormat.sampleRate == targetFormat.sampleRate
             && inputFormat.channelCount == targetFormat.channelCount
             && inputFormat.isInterleaved == targetFormat.isInterleaved
-            && inputFormat.commonFormat == targetFormat.commonFormat {
+            && inputFormat.commonFormat == targetFormat.commonFormat
+        {
             converter = nil
         } else {
             converter = AVAudioConverter(from: inputFormat, to: targetFormat)
             if converter == nil {
-                throw NSError(domain: "MicCapture", code: -2, userInfo: [
-                    NSLocalizedDescriptionKey: "Could not build converter \(inputFormat) → \(targetFormat)"
-                ])
+                throw NSError(
+                    domain: "MicCapture", code: -2,
+                    userInfo: [
+                        NSLocalizedDescriptionKey: "Could not build converter \(inputFormat) → \(targetFormat)"
+                    ])
             }
         }
 
@@ -84,9 +89,10 @@ final class MicCapture {
         if let converter {
             // Estimate output capacity
             let ratio = targetFormat.sampleRate / inputFormat.sampleRate
-            let capacity = AVAudioFrameCount(
-                Double(inputBuffer.frameLength) * ratio
-            ) + 1024
+            let capacity =
+                AVAudioFrameCount(
+                    Double(inputBuffer.frameLength) * ratio
+                ) + 1024
             guard let out = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: capacity)
             else { return }
 
