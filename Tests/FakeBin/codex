@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Stand-in for the real CLI, first on PATH during tests. Never calls a model.
+echo "FAKE-CLI: no recorded reply for this call" >&2
+exit 3

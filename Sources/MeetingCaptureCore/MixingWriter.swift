@@ -22,8 +22,9 @@ final class MixingWriter {
 
     static let sampleRate: Double = 48_000
 
-    // 30 minutes of frames at 48 kHz
-    static let chunkFrameLimit: Int = 30 * 60 * Int(sampleRate)
+    // 30 minutes of frames at 48 kHz. Tests inject a shorter limit rather than wait.
+    static let defaultChunkFrameLimit: Int = 30 * 60 * Int(sampleRate)
+    private let chunkFrameLimit: Int
 
     private var currentFile: AVAudioFile
     private let format: AVAudioFormat
@@ -59,8 +60,13 @@ final class MixingWriter {
     // 0 means unlimited; set to prevent spurious chunks at the recording boundary.
     private let targetDurationFrames: Int
 
-    init(outputURL: URL, targetDurationSeconds: Double = 0) throws {
+    init(
+        outputURL: URL,
+        targetDurationSeconds: Double = 0,
+        chunkFrameLimit: Int = MixingWriter.defaultChunkFrameLimit
+    ) throws {
         self.baseURL = outputURL
+        self.chunkFrameLimit = chunkFrameLimit
         self.targetDurationFrames = targetDurationSeconds > 0
             ? Int(targetDurationSeconds * Self.sampleRate)
             : 0
@@ -118,7 +124,7 @@ final class MixingWriter {
             chunkFrames += frames
 
             // Rotate to new chunk if limit reached
-            if chunkFrames >= Self.chunkFrameLimit {
+            if chunkFrames >= chunkFrameLimit {
                 try rotateChunk()
             }
         } catch {

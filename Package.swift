@@ -30,13 +30,23 @@ let package = Package(
                 .define("EXPORT", to: ""),
             ]
         ),
-        .executableTarget(
-            name: "MeetingCaptureCLI",
+        .target(
+            name: "MeetingCaptureCore",
             dependencies: [
                 .product(name: "WhisperKit", package: "WhisperKit"),
                 "Speexdsp",
             ],
+            path: "Sources/MeetingCaptureCore"
+        ),
+        .executableTarget(
+            name: "MeetingCaptureCLI",
+            dependencies: ["MeetingCaptureCore"],
             path: "Sources/MeetingCaptureCLI"
-        )
+        ),
+        .testTarget(
+            name: "MeetingCaptureCoreTests",
+            dependencies: ["MeetingCaptureCore"],
+            path: "Tests/MeetingCaptureCoreTests"
+        ),
     ]
 )

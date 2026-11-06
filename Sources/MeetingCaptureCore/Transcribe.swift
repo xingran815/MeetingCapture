@@ -14,14 +14,17 @@ final class Transcriber {
 
     let modelName: String
     let language: String?
+    let modelFolder: String?
     private var pipe: WhisperKit?
 
     /// `language` is a 2-letter code like "en" or "zh". Pass nil to let
     /// WhisperKit auto-detect via a one-shot detection pass (`detectLanguage:
     /// true`). `.en` models ignore both — they're English-only.
-    init(model: String, language: String? = nil) {
+    /// `modelFolder` loads an already-downloaded model and skips the download.
+    init(model: String, language: String? = nil, modelFolder: String? = nil) {
         self.modelName = model
         self.language = language
+        self.modelFolder = modelFolder
     }
 
     private var isMultilingual: Bool { !modelName.contains(".en") }
@@ -29,7 +32,13 @@ final class Transcriber {
     func load() async throws {
         let t0 = Date()
         print("🧠  Loading model \(modelName)… (first run may download ~ hundreds of MB)")
-        let config = WhisperKitConfig(model: modelName, verbose: false, logLevel: .error)
+        let config = WhisperKitConfig(
+            model: modelName,
+            modelFolder: modelFolder,
+            verbose: false,
+            logLevel: .error,
+            download: modelFolder == nil
+        )
         pipe = try await WhisperKit(config)
         let dt = Date().timeIntervalSince(t0)
         print(String(format: "   ready in %.1fs", dt))
