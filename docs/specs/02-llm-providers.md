@@ -37,6 +37,8 @@ codex exec --json --output-schema <file> --sandbox read-only --skip-git-repo-che
 ```
 Take Codex's feature-off list from Job Radar's `src/lib/ai/providers/codex-features.ts`. Without it, Codex loaded about 17k input tokens of user context for a one-word answer. Refuse to run if `apiKeySource` is set or `codex login status` doesn't say ChatGPT, unless the user opted into API billing.
 
+**Codex search needs one feature on.** With every feature off, search fails with `code-mode host is disabled` and the model answers from memory with an unverified URL. Search calls keep only `code_mode_host` on, with the shell off. Plain calls keep all of them off. Measured on 2026-11-06: 2,884 input tokens for a trimmed plain call, against 30,185 with no trim.
+
 **Tools stay off for any call containing transcript text.** Web search is a separate call: `--tools WebSearch --allowedTools WebSearch` or `codex --search exec`, whose prompt holds only generic concept names and never a name, quote or personal detail. Claude's result reported `web_search_requests: 0` even though the tool was called, so count tool-use events instead.
 
 ## Knowing usage is full

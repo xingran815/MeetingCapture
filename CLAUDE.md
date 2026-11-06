@@ -137,6 +137,20 @@ The Settings menu is grouped with dimmed `MenuItem.separator(...)` header rows (
 | **Never put email, keys, tokens or real transcripts in code, fixtures, issues, PRs, logs or prompts.** Fixtures are invented; read secrets from the environment and mask output. | Public repo, sensitive sessions. |
 | **Tests never use a real model, network or 30-minute audio by default.** Fake CLIs on `PATH`, injected clocks and chunk lengths, and 5–30 second `say` fixtures. `--live` is opt-in. | Fast tests that don't spend subscription usage. |
 | **Say when unsure,** in code comments, reports and LLM prompts alike. | User's rule for the product and for us. |
+| **Close every milestone with a report and rules on disk, then start the next one without waiting.** Steps below. | User's rule; only what's in files survives a session. |
+
+### Closing a milestone, then starting the next
+Order: M1 → M2 → M2.1 → M3 → M4 → M5 → M6.
+
+1. **Save, on the milestone branch, once the verifier (and deep review, where required) has passed:**
+   - `dev/evidence/<date>-m<n>-report.md`: what landed, each Done-when with its evidence, every verifier and review finding with the test it became, surprises, what's still unsure, and what the next milestone needs to know.
+   - New rules go in this file, decisions in `dev/DECISIONS.md`, status in `dev/PLAN.md`, and the next milestone's exact first step in `dev/NOW.md`. Use the `lesson` skill where something hurt.
+   - Reports are public: invented data only, and the sweeps apply.
+2. **Commit, merge and close the issues,** using the rules above.
+3. **Check nothing lives only in the conversation:** `git status` is clean, `main` matches `origin/main`, and `dev/NOW.md` names the next step.
+4. **Start the next milestone in this same session.** Don't start a new session or clear this one. Don't try to compact on purpose either; the app may still compact on its own when context runs long, which is why step 1 comes first.
+
+**Starting automatically never skips a gate.** Stop and ask at a 👤 check, a decision only the user can make, or a failure you can't fix. A milestone with an open 👤 check isn't closed, and the next one doesn't start. Only one session builds at a time.
 
 Long commands run in the background with a time limit and a log in `dev/tmp/`; macOS has no `timeout`, so use the Bash tool's timeout or `perl -e 'alarm shift; exec @ARGV'`.
 <!-- devkit:end -->

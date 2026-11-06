@@ -27,3 +27,8 @@ One line per decision: `D-NN · date · decision · why · by`.
 - D-23 · 2026-11-06 · Injected clock waits for M3, where retention first needs it; M1's Done-when needs only the chunk length · Assumed
 - D-24 · 2026-11-06 · History rewrite and force-push done; pre-rewrite bundle kept at `~/Documents/Projects/MeetingCapture-pre-rewrite.bundle`, outside the repo · per D-05 · by user
 - D-25 · 2026-11-06 · M1 closed after a verifier PASS on every Done-when item · by Claude, per the milestone rules
+- D-26 · 2026-11-06 · Codex limits come from error text only; `app-server` reading is cut · first on the plan's cut order, and the Done-when list doesn't need it · Assumed
+- D-27 · 2026-11-06 · The daily cap counts model calls only; `auth status`, `login status` and `features list` don't count · they start no model and use no quota · Assumed
+- D-28 · 2026-11-06 · A bare nine-digit SSN isn't redacted · with no separators or context it can't be told from an order number, and catching it would add false positives · Assumed
+- D-29 · 2026-11-06 · Flag mode's `--llm-*` API flags pick the API route; `--llm-cli` picks the first CLI; `--no-redact` turns redaction off for a run · Assumed
+- D-30 · 2026-11-06 · Selecting a DeepSeek-only config moves to the CLI route by default; the API route is a setting · matches D-07's order, but it changes where an existing user's summaries run · Assumed
