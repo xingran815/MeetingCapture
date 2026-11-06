@@ -36,5 +36,5 @@ One line per decision: `D-NN · date · decision · why · by`.
 - D-32 · 2026-11-06 · `main` requires CI, for the admin too, turned on only after every required job has passed on the M2.1 PR · by user, issue #12
 - D-33 · 2026-11-06 · Force-push and deletion on `main` are blocked by ruleset `protect-main`, with required checks added to that same ruleset; a future approved force-push needs the ruleset changed first · by user, issue #12
 - D-34 · 2026-11-06 · CI knows the protected branch's commits as SHA-256 hashes of their ids, because plain ids would point at pre-rewrite commits GitHub still serves with the old email; the list is a snapshot, and the pre-push hook stays the live check · Assumed
-- D-35 · 2026-11-06 · Dependabot PRs are notices only: their commits can't pass the identity job, so updates are redone locally and pass the normal gates · simpler than a bot exception in a rule that protects the email · Assumed
+- D-35 · 2026-11-06 · No Dependabot and no CodeQL; both are dropped from M2.1 · by user
 - D-36 · 2026-11-06 · CI's E2E uses `openai_whisper-tiny` at a pinned revision; local runs keep the cached `small.en`. The tokenizer still comes from WhisperKit's own download, unpinned · Assumed

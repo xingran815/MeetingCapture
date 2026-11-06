@@ -6,19 +6,16 @@ set -uo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT" || exit 2
 
-# Prints one line per broken rule. Only the CodeQL job may write, and only its findings.
+# Prints one line per broken rule.
 check_file() {
-    local file="$1" name
-    name="$(basename "$file")"
+    local file="$1"
     grep -E '^[[:space:]-]*uses:' "$file" | grep -vE '@[0-9a-f]{40}([[:space:]]|$)' > /dev/null \
         && echo "$file: action not pinned by full SHA"
     grep -q 'pull_request_target' "$file" && echo "$file: pull_request_target"
     grep -q 'secrets\.' "$file" && echo "$file: uses a secret"
     grep -qE '^permissions:' "$file" || echo "$file: no top-level permissions"
     grep -qE '^[[:space:]]+contents: read' "$file" || echo "$file: contents isn't read-only"
-    grep -E '^[[:space:]]+[a-z-]+: write|write-all' "$file" | {
-        if [ "$name" = "codeql.yml" ]; then grep -vE 'security-events: write'; else cat; fi
-    } | grep -q . && echo "$file: write permission"
+    grep -qE '^[[:space:]]+[a-z-]+: write|write-all' "$file" && echo "$file: write permission"
     grep -E 'runs-on:' "$file" | grep -qE -- '-(large|xlarge)' && echo "$file: paid runner"
     local jobs limits
     jobs="$(grep -cE '^[[:space:]]+runs-on:' "$file")"
