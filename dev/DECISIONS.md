@@ -32,3 +32,4 @@ One line per decision: `D-NN · date · decision · why · by`.
 - D-28 · 2026-11-06 · A bare nine-digit SSN isn't redacted · with no separators or context it can't be told from an order number, and catching it would add false positives · Assumed
 - D-29 · 2026-11-06 · Flag mode's `--llm-*` API flags pick the API route; `--llm-cli` picks the first CLI; `--no-redact` turns redaction off for a run · Assumed
 - D-30 · 2026-11-06 · Selecting a DeepSeek-only config moves to the CLI route by default; the API route is a setting · matches D-07's order, but it changes where an existing user's summaries run · Assumed
+- D-31 · 2026-11-06 · M2 closed after a verifier PASS on every Done-when item; caveats are Lows and are listed in the M2 report · by Claude, per the milestone rules
