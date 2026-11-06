@@ -1,8 +1,8 @@
 # Now
 Updated: 2026-11-06 · milestone 3 · issues #5, #6
 
-**Next step:** the user chose transcribe and flag for noise-like tracks (D-56). Finish its tests, push, and re-check the changed lines alongside CI. Then the 👤 check: the user records one short real call on the new build, and says whether it sounds right and labels correctly.
-**Re-checks on `8156d1d`:** CI green; verifier PASS on changed lines; security nothing at the bar; deep review one should-fix, which D-56 answers. Its lows are D-57.
+**Next step:** the 👤 check. Two real calls had audible speaker echo, now fixed by D-58 but unproven on a real call. The user records one more short real call on the new build, and says whether the echo is gone and the labels are right. Measure the mic-after-system delay on it with 10 ms envelopes. Then write the M3 report, add the two lows below to D-57, merge, close #5 and #6, and stop.
+**Re-checks on `ce4d8c1`:** verifier PASS on changed lines; deep review approve; security nothing at the bar. Lows to add at close: re-transcribing can print "won't be deleted" on a recording retention can still delete; the "part 2" speaker note can appear with no such label in the transcript. Test gap: no test of a system-side noise track with a throwing detector, and no `noise-only-system` E2E case; one manual run on white noise passed.
 **How to check:** `scripts/check.sh` passes; CI green on the exact commit; verifier, deep review and `/security-review` pass; the user's yes.
 
 **Stop after M3 closes.** The user said so on 2026-11-06: don't start M4 until they say to. This overrides "start the next milestone" for this one close.

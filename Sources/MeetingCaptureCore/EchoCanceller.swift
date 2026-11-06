@@ -24,22 +24,44 @@ import Speexdsp
 // different capture queues. All buffer mutation and processing is serialized
 // onto an internal serial queue. The onCleanMic callback fires on that queue.
 //
-// Alignment: this first cut relies on Speex's adaptive delay tracker
-// (robust to ~75 ms of initial offset) rather than explicit timestamp
-// alignment between SCStream's CMSampleBuffer PTS and AVAudioEngine's
-// AVAudioTime. AVAudioEngine input typically starts within tens of ms of
-// SCStream, well inside Speex's tracking range. If real recordings show
-// unconvergent residual in the first ~500 ms, add timestamp anchoring.
+// Alignment: samples are paired by count, not by timestamp, so whatever gap the two
+// sources start with stays for the whole recording, and the echo arrives that much
+// later. Speex can only remove an echo inside its tail. `MicStartGate` removes the
+// start gap, and the tail covers the rest. It isn't anchored to timestamps, so up to
+// one mic buffer, about 85 ms, can remain. That's unsure rather than measured.
+/// Holds back the mic until system audio starts. The mic starts first, and everything
+/// it buffered until then would stay as a permanent lag behind system audio, on both
+/// the echo canceller's pairing and the mic track itself.
+final class MicStartGate {
+    private let lock = NSLock()
+    private var isOpen = false
+
+    func open() {
+        lock.lock()
+        isOpen = true
+        lock.unlock()
+    }
+
+    var passes: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return isOpen
+    }
+}
+
 final class EchoCanceller {
 
     // 10 ms frames at 48 kHz.
     static let frameSize: Int = 480
     static let sampleRate: Int = 48_000
 
-    // 150 ms tail covers typical speaker→mic round-trip + processing latency
-    // for built-in mac speakers and mic. Longer tail = more CPU and slower
-    // convergence for marginal cancellation benefit.
-    static let tailMs: Int = 150
+    // Measured on invented speech through an invented room (D-58). A 150 ms tail took
+    // off about 1 dB of an echo at 200 ms or later, which real calls reached at 260 to
+    // 290 ms, so you could hear it. 500 ms took off 34 to 41 dB at every delay up to
+    // 450 ms, and kept the other voice just as well. Slower speakers such as Bluetooth
+    // need that margin. 800 ms took off less, at 31 to 36 dB. A real room will do worse
+    // than these figures. CPU use at 500 ms wasn't measured separately.
+    static let tailMs: Int = 500
     static let tailSamples: Int = sampleRate * tailMs / 1000
 
     // Cap each ring buffer at 1 s. Past that, we're losing sync — drop oldest
@@ -63,8 +85,8 @@ final class EchoCanceller {
 
     private let queue = DispatchQueue(label: "EchoCanceller.serial")
 
-    init() {
-        echoState = speex_echo_state_init(Int32(Self.frameSize), Int32(Self.tailSamples))
+    init(tailSamples: Int = EchoCanceller.tailSamples) {
+        echoState = speex_echo_state_init(Int32(Self.frameSize), Int32(tailSamples))
         preprocessState = speex_preprocess_state_init(Int32(Self.frameSize), Int32(Self.sampleRate))
 
         // Speex assumes 8 kHz until told otherwise, which skews its filter timing.

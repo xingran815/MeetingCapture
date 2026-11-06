@@ -28,6 +28,7 @@ final class AudioCapture: NSObject {
     private var stream: SCStream?
     private var micCapture: MicCapture?
     private var echo: EchoCanceller?
+    private let micGate = MicStartGate()
 
     // Continuation that run() awaits; resumed when capture ends
     private var stopCont: CheckedContinuation<[URL], Error>?
@@ -164,13 +165,15 @@ final class AudioCapture: NSObject {
                     c.onCleanMic = { [weak writer] ptr, frames in
                         writer?.pushMic(mono: ptr, frameCount: frames)
                     }
-                    m.onSamples = { [weak c] ptr, frames in
+                    m.onSamples = { [weak c, micGate] ptr, frames in
+                        guard micGate.passes else { return }
                         c?.pushMic(ptr, frameCount: frames)
                     }
                     canceller = c
-                    aecStatus = "on (Speex, 150 ms tail)"
+                    aecStatus = "on (Speex, \(EchoCanceller.tailMs) ms tail)"
                 } else {
-                    m.onSamples = { [weak writer] ptr, frames in
+                    m.onSamples = { [weak writer, micGate] ptr, frames in
+                        guard micGate.passes else { return }
                         writer?.pushMic(mono: ptr, frameCount: frames)
                     }
                 }
@@ -389,6 +392,7 @@ extension AudioCapture: SCStreamOutput {
         guard let pcmBuffer = sampleBuffer.toPCMBuffer() else {
             return
         }
+        micGate.open()
         writer?.pushSystem(pcmBuffer)
         echo?.pushReference(pcmBuffer)
         printProgress(frameLength: Int(pcmBuffer.frameLength))
