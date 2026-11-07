@@ -460,7 +460,7 @@ final class ReportSkimTests: XCTestCase {
         XCTAssertFalse(html.contains("EMAIL_1"))
         XCTAssertTrue(ReportRenderer.markdown(outcome.report).contains("**\(email)**"))
         XCTAssertTrue(
-            ReportRenderer.terminalSummary(outcome.report, ansi: true).contains("\u{1B}[1m\(email)\u{1B}[22m"))
+            ReportRenderer.terminalSummary(outcome.report, ansi: true).contains("\u{1B}[33m\(email)\u{1B}[39m"))
     }
 
     func testAKeywordWithATokenInsideALongerPhraseIsRestoredToo() async throws {
@@ -542,10 +542,10 @@ final class ReportSkimTests: XCTestCase {
         XCTAssertTrue(out.contains("by Friday"), "keywords are plain text")
     }
 
-    func testWithAnsiOnTheOnlyEscapesAreBalancedBoldOnAndOff() {
+    func testWithAnsiOnTheOnlyEscapesAreBalancedHighlightOnAndOff() {
         let out = ReportRenderer.terminalSummary(hostileTerminalReport(), ansi: true)
-        let on = "\(esc)[1m"
-        let off = "\(esc)[22m"
+        let on = "\(esc)[33m"
+        let off = "\(esc)[39m"
         // Walk the output: every ESC must start one of the two sequences, and they must alternate.
         var rest = Substring(out)
         var depth = 0
@@ -560,11 +560,11 @@ final class ReportSkimTests: XCTestCase {
                 depth -= 1
                 rest = rest.dropFirst(off.count)
             } else {
-                return XCTFail("an escape sequence that is not bold: \(rest.prefix(8).debugDescription)")
+                return XCTFail("an escape sequence that is not a highlight: \(rest.prefix(8).debugDescription)")
             }
-            XCTAssertTrue((0...1).contains(depth), "bold must not nest or close twice")
+            XCTAssertTrue((0...1).contains(depth), "highlight must not nest or close twice")
         }
-        XCTAssertEqual(depth, 0, "every bold is closed")
+        XCTAssertEqual(depth, 0, "every highlight is closed")
         XCTAssertGreaterThan(opens, 0)
 
         let stripped = out.replacingOccurrences(of: on, with: "").replacingOccurrences(of: off, with: "")
@@ -575,11 +575,31 @@ final class ReportSkimTests: XCTestCase {
             out.contains("\(on)[31mred\(off)"), "the control byte inside a keyword is stripped, the text kept")
     }
 
-    func testWithAnsiOffAndOnTheTextIsTheSameOnceTheBoldIsTaken_Out() {
+    func testWithAnsiOffAndOnTheTextIsTheSameOnceTheHighlightIsTaken_Out() {
         let r = hostileTerminalReport()
         let on = ReportRenderer.terminalSummary(r, ansi: true)
-            .replacingOccurrences(of: "\(esc)[1m", with: "").replacingOccurrences(of: "\(esc)[22m", with: "")
+            .replacingOccurrences(of: "\(esc)[33m", with: "").replacingOccurrences(of: "\(esc)[39m", with: "")
         XCTAssertEqual(on, ReportRenderer.terminalSummary(r, ansi: false))
+    }
+
+    func testHighlightIsColorNotBoldInTheHtmlCss() throws {
+        // The user asked for a color highlight, not bold: the mark rule must not set font-weight.
+        let html = ReportRenderer.html(report([sec("a", .bullets, [item("Deploy Friday", keywords: ["Friday"])])]))
+        // The bare element rule, not the unrelated `.mark{` badge class.
+        let start = try XCTUnwrap(
+            html.range(of: #"(?<![.\w-])mark\{"#, options: .regularExpression), "the HTML has a mark rule")
+        let end = try XCTUnwrap(html[start.upperBound...].firstIndex(of: "}"))
+        let rule = String(html[start.lowerBound..<end])
+        XCTAssertFalse(rule.contains("font-weight"), rule)
+        XCTAssertTrue(rule.contains("background") || rule.contains("color"), rule)
+    }
+
+    func testTerminalKeywordsAreYellowAndNeverBold() {
+        let out = ReportRenderer.terminalSummary(
+            report([sec("a", .bullets, [item("Deploy Friday", priority: "high", keywords: ["Friday"])])]), ansi: true)
+        XCTAssertTrue(out.contains("\(esc)[33mFriday\(esc)[39m"))
+        XCTAssertFalse(out.contains("\(esc)[1m"), "no bold escape")
+        XCTAssertFalse(out.contains("\(esc)[22m"), "no bold-off escape")
     }
 }
 

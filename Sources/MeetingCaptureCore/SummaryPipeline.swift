@@ -351,7 +351,7 @@ struct SummaryPipeline {
         - insights: your own view in "text", "source" "ai".
 
         So the reader can skim, every item also has:
-        - "priority": "high" for the few things the reader must not miss (decisions, deadlines, commitments, risks, what changes next), "low" for background, otherwise "normal". Keep "high" rare: about one item in five at most, and none if nothing stands out.
+        - "priority": "high" for the few things the reader must not miss (decisions, deadlines, commitments, risks, what changes next), "low" for background, otherwise "normal". Keep "high" very rare: one or two items in the whole report at most, and none if nothing stands out.
         - "keywords": one to three short phrases copied exactly from this item's "text" or "answer" that carry its meaning, such as a decision, a date, a number, an owner or a named thing; an empty list if none stand out.
         """
 

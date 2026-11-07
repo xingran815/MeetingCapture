@@ -21,7 +21,7 @@ Templates are data (one JSON file each), so adding a scenario needs no code. Low
 | Scenario | Sections |
 |---|---|
 | `meeting` (company) | Summary · Who said what (bullets by speaker) · Open questions, each with an AI answer or "I don't know" · Actions and to-dos, with owner and due date · AI insights: what you can do |
-| `therapy` | Summary · Issues raised by the client · Therapist's suggestions or inspirations per issue · To-dos and actions · SMART goals made with the client's words · Concepts to explore: what the therapist said, what the AI understands, more detailed explanation, sources · AI insights on each issue, marked as AI, not as clinical advice |
+| `therapy` | Summary · Issues raised by the client · Therapist's suggestions or inspirations per issue · To-dos and actions · S.M.A.R.T. goals made with the client's words · Concepts to explore: what the therapist said, what the AI understands, more detailed explanation, sources · AI insights on each issue, marked as AI, not as clinical advice |
 | `interview` | Summary · Questions asked · How you answered · Gaps and stronger answers · Follow-ups · AI insights |
 | `one_on_one` | Summary · Feedback given · Commitments by each side · Career and growth topics · Follow-ups · AI insights |
 | `lecture` | Summary · Key concepts · Explanations and sources · Questions to study · AI insights |

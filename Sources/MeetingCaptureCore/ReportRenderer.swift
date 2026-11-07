@@ -317,7 +317,7 @@ enum ReportRenderer {
     }
 
     private static let css = """
-        :root{--hl:#fff1a8;--key:#c2410c;--bg:#fbfaf8;--fg:#1d1d1f;--muted:#6b6b70;--line:#e3e1dc;--card:#fff;--ai:#5b4bb7;--ai-bg:#f3f0ff;--warn:#9a5b00;--warn-bg:#fff4e0;--link:#0a58ca}
+        :root{--hl:#ffe680;--key:#c2410c;--bg:#fbfaf8;--fg:#1d1d1f;--muted:#6b6b70;--line:#e3e1dc;--card:#fff;--ai:#5b4bb7;--ai-bg:#f3f0ff;--warn:#9a5b00;--warn-bg:#fff4e0;--link:#0a58ca}
         @media (prefers-color-scheme:dark){:root{--hl:#5c4a00;--key:#fb923c;--bg:#161618;--fg:#ececee;--muted:#a0a0a8;--line:#2e2e33;--card:#1f1f23;--ai:#b9adff;--ai-bg:#26223a;--warn:#ffc46b;--warn-bg:#33270f;--link:#8ab4ff}}
         *{box-sizing:border-box}
         body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB",sans-serif;padding:24px 16px 64px}
@@ -346,7 +346,7 @@ enum ReportRenderer {
         .doubt{margin:.25rem 0 0;font-size:.88rem;color:var(--warn)}
         .mark{display:inline-block;font-weight:700;font-size:.72rem;background:var(--warn-bg);color:var(--warn);border:1px dashed var(--warn);border-radius:4px;padding:0 5px;margin-right:4px}
         .unsure{outline:1px dashed var(--warn);outline-offset:3px;border-radius:4px}
-        mark{background:var(--hl);color:inherit;font-weight:600;border-radius:3px;padding:0 2px}
+        mark{background:var(--hl);color:inherit;border-radius:3px;padding:0 2px}
         .pri{display:inline-block;font-size:.7rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--bg);background:var(--key);border-radius:4px;padding:1px 5px;margin-right:4px;vertical-align:1px}
         li.high,div.high,.qa.high,.concept.high{border-left:3px solid var(--key);padding-left:8px}
         li.high{margin-left:-11px}
@@ -469,12 +469,12 @@ enum ReportRenderer {
 
     /// The summary for the terminal: plain text, sections in order, unsure items marked.
     /// Every piece of model text goes through `terminalSafe`; the only escape codes
-    /// in the output are the bold ones added here, and only on a real terminal.
+    /// in the output are the yellow highlight ones added here, and only on a real terminal.
     static func terminalSummary(_ report: Report, ansi: Bool = isatty(STDOUT_FILENO) != 0) -> String {
         func t(_ s: String?) -> String { terminalSafe(oneLine(s)) }
-        func bold(_ s: String?, _ keywords: [String]?) -> String {
+        func hl(_ s: String?, _ keywords: [String]?) -> String {
             ansi
-                ? wrap(oneLine(s), keywords, open: "\u{1B}[1m", close: "\u{1B}[22m", piece: terminalSafe)
+                ? wrap(oneLine(s), keywords, open: "\u{1B}[33m", close: "\u{1B}[39m", piece: terminalSafe)
                 : t(s)
         }
         var out = "\(t(report.topic))  [\(t(report.scenarioTitle))\(report.reviewed ? "" : ", NOT REVIEWED")]\n"
@@ -482,7 +482,7 @@ enum ReportRenderer {
         if !key.isEmpty {
             out += "\nAT A GLANCE\n"
             for (section, item) in key {
-                var line = "  ▶ \(bold(item.text, item.keywords))"
+                var line = "  ▶ \(hl(item.text, item.keywords))"
                 if let o = item.owner, !o.isEmpty { line += " (owner: \(t(o)))" }
                 if let d = item.due, !d.isEmpty { line += " (due: \(t(d)))" }
                 if item.isUnsure { line += " (unsure)" }
@@ -499,11 +499,11 @@ enum ReportRenderer {
                 var line = item.isHigh ? "  ▶ KEY " : "  • "
                 if let s = item.speaker, !s.isEmpty, section.kind == .bullets { line += "\(t(s)): " }
                 if section.kind == .insights || item.isAI && section.kind != .qa { line += "[AI] " }
-                line += bold(item.text, item.keywords)
+                line += hl(item.text, item.keywords)
                 if section.kind == .qa {
                     line +=
                         "\n      [AI] "
-                        + ((item.answer ?? "").isEmpty ? "I don't know." : bold(item.answer, item.keywords))
+                        + ((item.answer ?? "").isEmpty ? "I don't know." : hl(item.answer, item.keywords))
                 }
                 if let o = item.owner, !o.isEmpty { line += " (owner: \(t(o)))" }
                 if let d = item.due, !d.isEmpty { line += " (due: \(t(d)))" }

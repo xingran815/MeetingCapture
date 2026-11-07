@@ -28,7 +28,7 @@ The client described fear of failing an upcoming **presentation**, with a tight 
 - [ ] **Key:** Write down three actions this week that fit being honest and **prepared**
 - [ ] **Practise** the defusion phrase twice a day
 
-## SMART goals
+## S.M.A.R.T. goals
 
 - **Practise** the defusion phrase twice a day and rehearse the opening of the talk out loud three times before Friday. — “Twice a day and three rehearsals by Friday. I can do that.” (by: Friday)
 

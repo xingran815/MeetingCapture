@@ -70,7 +70,7 @@ final class ScenarioTemplateTests: XCTestCase {
             XCTAssertFalse(t.description.isEmpty)
         }
         XCTAssertTrue(titles("meeting").contains("Actions and to-dos"))
-        XCTAssertTrue(titles("therapy").contains("SMART goals"))
+        XCTAssertTrue(titles("therapy").contains("S.M.A.R.T. goals"))
     }
 
     func testOnlyTherapyAndLectureSearchForConcepts() {
