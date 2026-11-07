@@ -107,8 +107,17 @@ final class LibraryTests: AudioTestCase {
     }
 
     func testARecordingWhoseProcessIsStillRunningIsNotUnfinished() throws {
+        // M5 review finding 2: this process's own pid no longer counts as "running"; another live one does.
+        let sleeper = Process()
+        sleeper.executableURL = URL(fileURLWithPath: "/bin/sleep")
+        sleeper.arguments = ["60"]
+        try sleeper.run()
+        defer {
+            sleeper.terminate()
+            sleeper.waitUntilExit()
+        }
         var s = RecordingSidecar(createdAt: now, state: .recording)
-        s.pid = getpid()
+        s.pid = sleeper.processIdentifier
         s.audioFiles = ["meeting_live.wav"]
         try saveSidecar("meeting_live", s)
         try wav("meeting_live.wav")

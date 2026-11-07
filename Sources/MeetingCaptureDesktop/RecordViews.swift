@@ -141,27 +141,32 @@ struct ProcessingView: View {
         if let job = model.job {
             ScrollView {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(job.finished ? (job.failure == nil ? "Done" : "Stopped") : "Making the report")
-                        .font(.title.weight(.bold))
-                    Text(
-                        job.finished
-                            ? (job.failure ?? "Everything finished.")
-                            : "The audio is saved already. You can record again or close this window; the work goes on."
-                    )
-                    .foregroundStyle(job.failure == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.red))
-                    .padding(.bottom, 14)
+                    Text(heading(job)).font(.title.weight(.bold))
+                    Text(job.finished ? (job.failure ?? "Everything finished.") : explanation(job))
+                        .foregroundStyle(job.failure == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.red))
+                        .padding(.bottom, 14)
                     GroupBox {
                         VStack(spacing: 0) {
                             ForEach(Array(job.steps.enumerated()), id: \.element.id) { index, step in
                                 if index > 0 { Divider() }
                                 StepRow(
-                                    step: step, fraction: job.fraction,
+                                    step: step, job: job,
                                     cancel: job.finished ? nil : { model.cancelJob() })
                             }
                         }
                         .padding(.horizontal, 6)
                     }
                     .frame(maxWidth: 620)
+                    if model.waitingCount > 0 {
+                        Label(
+                            model.waitingCount == 1
+                                ? "1 more is waiting and starts after this one."
+                                : "\(model.waitingCount) more are waiting and start after this one.",
+                            systemImage: "clock"
+                        )
+                        .font(.callout).foregroundStyle(.secondary)
+                        .padding(.top, 12)
+                    }
                     if !job.notes.isEmpty {
                         VStack(alignment: .leading, spacing: 6) {
                             ForEach(job.notes, id: \.self) {
@@ -178,10 +183,39 @@ struct ProcessingView: View {
         }
     }
 
+    private func heading(_ job: AppModel.Job) -> String {
+        if job.finished { return job.failure == nil ? "Done" : "Stopped" }
+        switch job.kind {
+        case .newRecording: return "Making the report"
+        case .transcript: return "Transcribing again"
+        case .report: return "Writing the report"
+        }
+    }
+
+    private func explanation(_ job: AppModel.Job) -> String {
+        switch job.kind {
+        case .newRecording:
+            return "The audio is saved already. You can record again or close this window; the work goes on."
+        case .transcript:
+            return "The audio stays as it is. The new transcript replaces the old one when it's done."
+        case .report:
+            return "The transcript is saved. Only its text is sent, with names and emails hidden. "
+                + "This takes a minute or two; you can keep using the app."
+        }
+    }
+
     private struct StepRow: View {
         let step: AppModel.StepState
-        let fraction: Double
+        let job: AppModel.Job
         let cancel: (() -> Void)?
+
+        private var detail: String {
+            if step.stage == .writingReport, step.status == .running, let current = job.reportStep {
+                let via = job.reportBackend.map { " · \($0)" } ?? ""
+                return "\(current.title) (\(current.rawValue) of \(ReportStep.allCases.count))\(via)"
+            }
+            return step.detail
+        }
 
         var body: some View {
             HStack(alignment: .top, spacing: 12) {
@@ -190,11 +224,13 @@ struct ProcessingView: View {
                     HStack {
                         Text(step.stage.title).fontWeight(.semibold)
                             .foregroundStyle(step.status == .waiting || step.status == .skipped ? .secondary : .primary)
-                        if !step.detail.isEmpty { Text("· \(step.detail)").foregroundStyle(.secondary) }
+                        if !detail.isEmpty { Text("· \(detail)").foregroundStyle(.secondary) }
                     }
                     if step.status == .running {
                         if step.stage == .transcribing {
-                            ProgressView(value: min(max(fraction, 0), 1))
+                            ProgressView(value: min(max(job.fraction, 0), 1))
+                        } else if step.stage == .writingReport, let current = job.reportStep {
+                            ProgressView(value: current.fraction + 0.5 / Double(ReportStep.allCases.count))
                         } else {
                             ProgressView().progressViewStyle(.linear)
                         }

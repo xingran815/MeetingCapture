@@ -25,17 +25,33 @@ final class AppModel {
 
     /// One after-call run, shown while it works and kept until the next one.
     struct Job: Equatable {
+        enum Kind { case newRecording, transcript, report }
+        var kind: Kind
         var base: URL
         var title: String
         var steps: [StepState]
+        /// Transcription of the current file, 0…1.
         var fraction: Double = 0
+        /// Where the report is, while it's being written.
+        var reportStep: ReportStep?
+        /// Which CLI or API writes the report, such as "Claude CLI".
+        var reportBackend: String?
         var finished = false
         var failure: String?
         var notes: [String] = []
     }
 
+    /// A job asked for while another runs. It waits its turn; a finished recording is
+    /// never dropped. From the M5 review.
+    private struct Waiting {
+        let base: URL
+        let start: () -> Void
+    }
+
     // Settings and library
     var settings = AppSettings.load()
+    /// The settings as last loaded or saved, so a save writes only what changed.
+    private var savedSettings = AppSettings.load()
     var entries: [LibraryEntry] = []
     var selection: LibraryEntry.ID?
     var showsJob = false
@@ -54,6 +70,10 @@ final class AppModel {
     // After the call
     var job: Job?
     private var jobTask: Task<Void, Never>?
+    private var waiting: [Waiting] = []
+    var waitingCount: Int { waiting.count }
+    /// Set when the user quits during a recording: runs once the files are closed.
+    private var quitWhenStopped: (() -> Void)?
 
     // First run
     var needsSetup: Bool
@@ -75,7 +95,15 @@ final class AppModel {
     var selectedEntry: LibraryEntry? { entries.first { $0.id == selection } }
 
     func reload() {
-        entries = Library.entries(in: settings.resolvedOutputDirectory)
+        entries = Library.entries(in: settings.resolvedOutputDirectory, busy: busyBases)
+    }
+
+    /// Recordings this app is still working on, so the library doesn't offer them as unfinished.
+    private var busyBases: Set<String> {
+        var bases = Set(waiting.map { $0.base.lastPathComponent })
+        if let recorder { bases.insert(recorder.base.lastPathComponent) }
+        if let job, !job.finished { bases.insert(job.base.lastPathComponent) }
+        return bases
     }
 
     // MARK: Recording
@@ -99,11 +127,20 @@ final class AppModel {
         Task {
             do {
                 let parts = try await recorder.start()
+                if let quit = quitWhenStopped {
+                    // The files are closed; the next launch offers them as unfinished.
+                    quit()
+                    return
+                }
                 finishedRecording(parts: parts, base: recorder.base)
             } catch {
                 stopMeters()
                 phase = .idle
                 self.recorder = nil
+                if let quit = quitWhenStopped {
+                    quit()
+                    return
+                }
                 recordError = "Recording failed: \(error.localizedDescription)"
                 reload()
             }
@@ -117,6 +154,26 @@ final class AppModel {
 
     func stopRecording() {
         recorder?.stop()
+    }
+
+    /// Quitting: a recording is stopped and its files closed first, then `done` runs.
+    /// Work after the call is left; the audio is kept and offered again next time.
+    func stopEverythingForQuit(_ done: @escaping () -> Void) {
+        jobTask?.cancel()
+        waiting.removeAll()
+        if phase != .idle, recorder != nil {
+            quitWhenStopped = done
+            recorder?.stop()
+        } else {
+            done()
+        }
+    }
+
+    /// What the quit question should say, or nil when quitting loses nothing.
+    var quitWarning: String? {
+        if phase != .idle { return "A recording is in progress." }
+        if isProcessing { return "The report is still being made." }
+        return nil
     }
 
     private func startMeters() {
@@ -163,11 +220,8 @@ final class AppModel {
 
     func process(parts: [URL], base: URL) {
         let processor = MeetingProcessor()
-        var stages: [ProcessingStage] = []
-        if processor.autoTranscribe { stages += [.removingEcho, .transcribing, .labellingSpeakers] }
-        stages.append(.savingAudio)
-        if processor.autoSummarize && processor.autoTranscribe { stages.append(.writingReport) }
-        startJob(base: base, title: Self.title(for: base), stages: stages) { onEvent in
+        startJob(kind: .newRecording, base: base, title: Self.title(for: base), stages: processor.plannedStages) {
+            onEvent in
             await processor.finish(parts: parts, base: base, onEvent: onEvent)
         }
     }
@@ -175,7 +229,7 @@ final class AppModel {
     func transcribeAgain(_ entry: LibraryEntry) {
         guard let first = entry.audioFiles.first else { return }
         startJob(
-            base: entry.base, title: entry.topic ?? Self.title(for: entry.base),
+            kind: .transcript, base: entry.base, title: entry.topic ?? Self.title(for: entry.base),
             stages: [.removingEcho, .transcribing, .labellingSpeakers]
         ) { onEvent in
             await MeetingProcessor().transcribe(audio: first, onEvent: onEvent)
@@ -183,7 +237,9 @@ final class AppModel {
     }
 
     func writeReportAgain(_ entry: LibraryEntry) {
-        startJob(base: entry.base, title: entry.topic ?? Self.title(for: entry.base), stages: [.writingReport]) {
+        startJob(
+            kind: .report, base: entry.base, title: entry.topic ?? Self.title(for: entry.base), stages: [.writingReport]
+        ) {
             onEvent in
             await MeetingProcessor().summarize(transcriptAt: entry.transcriptURL, onEvent: onEvent)
         }
@@ -200,11 +256,18 @@ final class AppModel {
     }
 
     private func startJob(
-        base: URL, title: String, stages: [ProcessingStage],
+        kind: Job.Kind, base: URL, title: String, stages: [ProcessingStage],
         run: @escaping (@escaping (MeetingProcessor.Event) -> Void) async -> MeetingProcessor.Result
     ) {
-        guard !isProcessing else { return }
-        job = Job(base: base, title: title, steps: stages.map { StepState(stage: $0) })
+        if isProcessing {
+            waiting.append(
+                Waiting(base: base) { [weak self] in
+                    self?.startJob(kind: kind, base: base, title: title, stages: stages, run: run)
+                })
+            reload()
+            return
+        }
+        job = Job(kind: kind, base: base, title: title, steps: stages.map { StepState(stage: $0) })
         showsJob = true
         selection = nil
         jobTask = Task {
@@ -231,6 +294,12 @@ final class AppModel {
             if stage == .transcribing { job.fraction = 0 }
         case .progress(let fraction):
             job.fraction = fraction
+        case .reportStep(let step):
+            job.reportStep = step
+        case .reportBackend(let label):
+            job.reportBackend = label
+        case .transcribed:
+            break
         }
         self.job = job
     }
@@ -250,6 +319,11 @@ final class AppModel {
             }
         }
         self.job = job
+        if !waiting.isEmpty {
+            waiting.removeFirst().start()
+            reload()
+            return
+        }
         reload()
         if result.failure == nil, result.reportJSON != nil {
             showsJob = false
@@ -262,13 +336,27 @@ final class AppModel {
     var settingsError: String?
 
     func saveSettings() {
+        guard settings != savedSettings else { return }
         do {
-            try settings.save()
+            try settings.save(changedFrom: savedSettings)
+            savedSettings = AppSettings.load()
+            settings = savedSettings
             settingsError = nil
             reload()
         } catch {
             settingsError = error.localizedDescription
         }
+    }
+
+    /// The terminal may have changed settings while the app was in the background.
+    func refreshFromDisk() {
+        refreshPermissions()
+        guard settings == savedSettings else { return }
+        let fresh = AppSettings.load()
+        guard fresh != savedSettings else { return }
+        settings = fresh
+        savedSettings = fresh
+        reload()
     }
 
     // MARK: Permissions

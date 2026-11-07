@@ -135,15 +135,26 @@ final class Shell {
     private func finishRecording(parts: [URL], base: URL) async {
         let processor = MeetingProcessor(config: config)
         let result = await processor.finish(parts: parts, base: base, onEvent: Self.printEvent)
-        report(result, processor: processor, printTranscript: true)
+        // The transcript was printed as it arrived, before the report's wait.
+        report(result, processor: processor, printTranscript: false)
         if result.transcript == nil, result.failure == nil, config.autoSummarize {
             print("ℹ  Skipping summary: auto-transcribe is off, no transcript available.")
         }
     }
 
-    /// Prints a stage once as it starts. Progress is left to the app.
+    /// Prints the transcript as soon as it's written, so it can be read during the
+    /// report's wait, and which backend writes the report. Progress is left to the app.
     private static func printEvent(_ event: MeetingProcessor.Event) {
-        if case .stage(.writingReport, _, _) = event { print("🧩  Writing the report…") }
+        switch event {
+        case .transcribed(let text):
+            print("\n──── transcript ──────────────────────────")
+            print(text)
+            print("──────────────────────────────────────────")
+        case .reportBackend(let label):
+            print("🧩  Writing the report via \(label)…")
+        default:
+            break
+        }
     }
 
     /// `printTranscript` prints the transcript text first; `transcriptInReport` has the
@@ -451,6 +462,10 @@ final class Shell {
         }
 
         Menu.run(title: "\nSettings\n", items: buildItems, allowBack: true) { i in
+            // The desktop app may have saved a change since this menu was drawn; start
+            // from the file, so saving this change doesn't put the old value back.
+            // From the M5 review.
+            self.config = Config.load()
             let items = buildItems()
             guard items.indices.contains(i) else { return }
             switch items[i].key {

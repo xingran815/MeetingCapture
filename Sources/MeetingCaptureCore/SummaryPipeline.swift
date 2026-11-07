@@ -94,8 +94,30 @@ enum ReportError: Error, LocalizedError, Equatable {
     }
 }
 
+/// Where a report is, for a progress line. Concepts are looked up only for some
+/// scenarios, so that step may be skipped.
+public enum ReportStep: Int, CaseIterable, Sendable {
+    case choosingType = 1
+    case writingSections, lookingUpConcepts, reviewing, finishing
+
+    public var title: String {
+        switch self {
+        case .choosingType: return "Choosing the kind of report"
+        case .writingSections: return "Writing the sections"
+        case .lookingUpConcepts: return "Looking up concepts"
+        case .reviewing: return "Reviewing the draft"
+        case .finishing: return "Putting names back and saving"
+        }
+    }
+
+    /// 0…1, the share of the report's steps done when this one starts.
+    public var fraction: Double { Double(rawValue - 1) / Double(Self.allCases.count) }
+}
+
 struct SummaryPipeline {
     let backend: SummaryBackend
+    /// Told as each step starts, so the app and terminal can show where it is.
+    var onStep: (ReportStep) -> Void = { _ in }
     let redaction: Bool
     var catalog: ScenarioCatalog = .builtIn
     var now: () -> Date = Date.init
@@ -129,6 +151,7 @@ struct SummaryPipeline {
         var notices: [String] = []
 
         // 1. Classify. Any failure falls back to `general`; a full limit shows up below.
+        onStep(.choosingType)
         var template = forced ?? catalog.general
         var topic = ""
         var language = ""
@@ -153,6 +176,7 @@ struct SummaryPipeline {
         }
 
         // 2. Sections. One retry on a malformed reply, then a clear failure.
+        onStep(.writingSections)
         let sectionsSchema = Self.sectionsSchema(template, review: false)
         let sectionsSystem = Self.sectionsPrompt(template, language: Self.safeLanguage(language)) + suffix
         let draft = try await withOneRetry(step: "sections") { retryNote in
@@ -175,6 +199,7 @@ struct SummaryPipeline {
                     "\(skipped) concept name(s) weren't looked up, because they looked like more than a generic term.")
             }
             if !names.isEmpty {
+                onStep(.lookingUpConcepts)
                 do {
                     if let reply = try await backend.searchConcepts(Array(names.prefix(8)), schema: Self.conceptSchema)
                     {
@@ -212,6 +237,7 @@ struct SummaryPipeline {
         var suggestions: [Int: String] = [:]
         let numbered = TranscriptParser.parse(redacted.text)
         if review {
+            onStep(.reviewing)
             do {
                 let reviewSchema = Self.sectionsSchema(template, review: true)
                 let system = Self.reviewPrompt(template, language: Self.safeLanguage(language)) + suffix
@@ -249,6 +275,7 @@ struct SummaryPipeline {
             suggestions = [:]
         }
 
+        onStep(.finishing)
         var report = Report(
             topic: topic.isEmpty ? template.title : topic,
             scenario: template.name, scenarioTitle: template.title,

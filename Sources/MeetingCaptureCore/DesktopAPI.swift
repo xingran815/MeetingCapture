@@ -42,19 +42,32 @@ public struct AppSettings: Equatable, Sendable {
         try save(to: Config.path)
     }
 
-    func save(to url: URL) throws {
+    /// Writes only the fields that differ from `original`, the settings as they were
+    /// loaded, over the config on disk now. So a change the terminal made meanwhile to
+    /// another field isn't put back. From the M5 review.
+    public func save(changedFrom original: AppSettings) throws {
+        try save(to: Config.path, changedFrom: original)
+    }
+
+    func save(to url: URL, changedFrom original: AppSettings? = nil) throws {
         guard AudioRetention.isValid(days: audioRetentionDays) else { throw SettingsError.badRetention }
         guard let cli = CLIKind(rawValue: primaryCLI) else { throw SettingsError.badCLI }
         guard WhisperModelCatalog.isValidID(whisperModel) else { throw SettingsError.badModel }
+        if let original, original == self { return }
+        func changed<T: Equatable>(_ path: KeyPath<AppSettings, T>) -> Bool {
+            original.map { $0[keyPath: path] != self[keyPath: path] } ?? true
+        }
         var c = Config.load(at: url, legacyURL: nil)
-        c.outputDirectory = outputDirectory
-        c.audioRetentionDays = audioRetentionDays
-        c.whisperModel = whisperModel
-        c.captureAllAudio = captureAllAudio
-        c.enabledMeetingAppIDs = enabledMeetingAppIDs.filter { MeetingApp.allIDs.contains($0) }
-        c.micEnabled = micEnabled
-        c.primaryCLI = cli
-        c.redactionEnabled = redactionEnabled
+        if changed(\.outputDirectory) { c.outputDirectory = outputDirectory }
+        if changed(\.audioRetentionDays) { c.audioRetentionDays = audioRetentionDays }
+        if changed(\.whisperModel) { c.whisperModel = whisperModel }
+        if changed(\.captureAllAudio) { c.captureAllAudio = captureAllAudio }
+        if changed(\.enabledMeetingAppIDs) {
+            c.enabledMeetingAppIDs = enabledMeetingAppIDs.filter { MeetingApp.allIDs.contains($0) }
+        }
+        if changed(\.micEnabled) { c.micEnabled = micEnabled }
+        if changed(\.primaryCLI) { c.primaryCLI = cli }
+        if changed(\.redactionEnabled) { c.redactionEnabled = redactionEnabled }
         try c.save(to: url)
     }
 
@@ -215,6 +228,12 @@ public final class MeetingProcessor {
         case stage(ProcessingStage, part: Int, parts: Int)
         /// Transcription of the current file, 0…1.
         case progress(Double)
+        /// The transcript is written; the report, if any, comes next.
+        case transcribed(String)
+        /// The report is being written by this backend, such as "Claude CLI".
+        case reportBackend(String)
+        /// A step inside writing the report.
+        case reportStep(ReportStep)
     }
 
     public struct Result: Sendable {
@@ -240,6 +259,15 @@ public final class MeetingProcessor {
     public var autoTranscribe: Bool { config.autoTranscribe }
     public var autoSummarize: Bool { config.autoSummarize }
 
+    /// The stages `finish` will go through with these settings, for a progress list.
+    public var plannedStages: [ProcessingStage] {
+        var stages: [ProcessingStage] = []
+        if config.autoTranscribe { stages += [.removingEcho, .transcribing, .labellingSpeakers] }
+        stages.append(.savingAudio)
+        if config.autoTranscribe && config.autoSummarize { stages.append(.writingReport) }
+        return stages
+    }
+
     /// Finishes a new recording: transcript, M4A, then the report when the settings say so.
     /// A transcription failure keeps the WAVs, and the next launch offers them again.
     public func finish(parts: [URL], base: URL, onEvent: @escaping (Event) -> Void = { _ in }) async -> Result {
@@ -256,6 +284,7 @@ public final class MeetingProcessor {
                 result.transcript = transcript.formatted
                 result.transcriptURL = base.appendingPathExtension("txt")
                 result.notes = transcript.notes
+                onEvent(.transcribed(transcript.formatted))
             }
         } catch {
             result.failure =
@@ -314,13 +343,17 @@ public final class MeetingProcessor {
         onEvent(.stage(.writingReport, part: 1, parts: 1))
         do {
             let backend = try await SummaryRoute.backend(config: config)
+            onEvent(.reportBackend(backend.label))
             let scenarios = ScenarioCatalog.load()
             result.notes += scenarios.warnings
-            let outcome = try await SummaryPipeline(
-                backend: backend, redaction: config.redactionEnabled, catalog: scenarios.catalog
-            ).run(transcript: transcript)
-            let written = try ReportFiles.write(outcome.report, nextTo: source, fileTopic: outcome.fileTopic)
+            var pipeline = SummaryPipeline(
+                backend: backend, redaction: config.redactionEnabled, catalog: scenarios.catalog)
+            pipeline.onStep = { onEvent(.reportStep($0)) }
+            let outcome = try await pipeline.run(transcript: transcript)
+            // Kept before the write: if writing fails, the terminal can still show the
+            // report the calls paid for. From the M5 review.
             lastReport = outcome.report
+            let written = try ReportFiles.write(outcome.report, nextTo: source, fileTopic: outcome.fileTopic)
             result.reportJSON = written.json
             result.reportHTML = written.html
             result.reportMarkdown = written.markdown
@@ -398,6 +431,20 @@ public struct LibraryEntry: Identifiable, Hashable, Sendable {
         return true
     }
 
+    /// Renames several speakers at once, each from its label as it is now, so a swap
+    /// (Speaker 1 to Speaker 2 and back) stays a swap. Returns false, changing nothing,
+    /// when any name isn't allowed. From the M5 review.
+    public func applySpeakerNames(_ mapping: [String: String]) throws -> Bool {
+        var names: [String: String] = [:]
+        for (from, raw) in mapping {
+            guard let name = SpeakerLabels.validName(raw) else { return false }
+            if name != from { names[from] = name }
+        }
+        guard !names.isEmpty else { return true }
+        try SpeakerLabels.rename(names, transcriptAt: transcriptURL)
+        return true
+    }
+
     /// The first part of an unfinished recording's audio, to process it.
     public var unfinishedParts: [URL] {
         guard let first = audioFiles.first else { return [] }
@@ -408,13 +455,19 @@ public struct LibraryEntry: Identifiable, Hashable, Sendable {
 public enum Library {
     /// Every recording with a sidecar in `directory`, newest first, plus reports made
     /// from a transcript alone (`<base>.report.json` with no sidecar).
-    public static func entries(in directory: URL) -> [LibraryEntry] {
+    ///
+    /// `busy` names the bases this process is still recording or processing. Any other
+    /// recording this process left in the recording state (a cancelled or failed job)
+    /// counts as unfinished, so it can be processed again without a relaunch. A sidecar
+    /// from another process that is still running is left alone. From the M5 review.
+    public static func entries(in directory: URL, busy: Set<String> = []) -> [LibraryEntry] {
         let fm = FileManager.default
         guard let names = try? fm.contentsOfDirectory(atPath: directory.path) else { return [] }
+        let me = getpid()
         let unfinished = Set(
-            AudioRetention.unfinished(in: directory).map {
-                RecordingFiles.baseName(of: $0.deletingPathExtension().lastPathComponent)
-            })
+            AudioRetention.unfinished(in: directory, isRunning: { $0 != me && AudioRetention.isRunning(pid: $0) })
+                .map { RecordingFiles.baseName(of: $0.deletingPathExtension().lastPathComponent) }
+        ).subtracting(busy)
         var bases = Set<String>()
         for name in names {
             if name.hasSuffix(".mcmeta.json") { bases.insert(String(name.dropLast(".mcmeta.json".count))) }

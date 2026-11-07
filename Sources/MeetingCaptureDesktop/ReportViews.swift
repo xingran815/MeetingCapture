@@ -143,14 +143,14 @@ struct SpeakersSheet: View {
         .onAppear { speakers = entry.speakers() }
     }
 
+    /// All names at once, so swapping two speakers stays a swap and a bad name
+    /// changes nothing. From the M5 review.
     private func save() {
         do {
-            for speaker in speakers {
-                guard let new = names[speaker], new != speaker else { continue }
-                if try !entry.renameSpeaker(speaker, to: new) {
-                    error = "A name can't be empty or contain a colon."
-                    return
-                }
+            let changes = names.filter { speakers.contains($0.key) && $0.value != $0.key }
+            if try !entry.applySpeakerNames(changes) {
+                error = "A name can't be empty or contain a colon."
+                return
             }
             model.reload()
             dismiss()

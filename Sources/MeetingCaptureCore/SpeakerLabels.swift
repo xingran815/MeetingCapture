@@ -169,6 +169,12 @@ enum SpeakerLabels {
     /// Renames a speaker throughout a transcript. Renaming to a name already in use
     /// merges the two. Only the label is touched, never what was said.
     static func rename(_ from: String, to: String, in transcript: String) -> String {
+        rename([from: to], in: transcript)
+    }
+
+    /// Every label in `names` is replaced at once, matched against the text as it was,
+    /// so a swap stays a swap.
+    static func rename(_ names: [String: String], in transcript: String) -> String {
         let prefix = try! NSRegularExpression(
             pattern: #"^(\[\d{2}:\d{2}:\d{2}\] )(.+?)(: )"#, options: .anchorsMatchLines)
         let ns = transcript as NSString
@@ -176,7 +182,7 @@ enum SpeakerLabels {
         var cursor = 0
         for match in prefix.matches(in: transcript, range: NSRange(location: 0, length: ns.length)) {
             let label = match.range(at: 2)
-            guard ns.substring(with: label) == from else { continue }
+            guard let to = names[ns.substring(with: label)] else { continue }
             out += ns.substring(with: NSRange(location: cursor, length: label.location - cursor)) + to
             cursor = label.location + label.length
         }
@@ -192,13 +198,21 @@ enum SpeakerLabels {
 
     /// Renames in the file, and remembers it in the recording's sidecar if it has one.
     static func rename(_ from: String, to: String, transcriptAt url: URL) throws {
+        try rename([from: to], transcriptAt: url)
+    }
+
+    static func rename(_ names: [String: String], transcriptAt url: URL) throws {
         let text = try String(contentsOf: url, encoding: .utf8)
-        try rename(from, to: to, in: text).write(to: url, atomically: true, encoding: .utf8)
+        try rename(names, in: text).write(to: url, atomically: true, encoding: .utf8)
         let sidecarURL = RecordingSidecar.url(forBase: url.deletingPathExtension())
         if var sidecar = RecordingSidecar.load(at: sidecarURL) {
-            // The first label stays the key, so a second rename updates it.
-            let first = sidecar.speakerNames.first { $0.value == from }?.key ?? from
-            sidecar.speakerNames[first] = to
+            // The first label stays the key, so a second rename updates it. Keys are
+            // found from the names as they were, before any of this rename.
+            let before = sidecar.speakerNames
+            for (from, to) in names {
+                let first = before.first { $0.value == from }?.key ?? from
+                sidecar.speakerNames[first] = to
+            }
             try sidecar.save(to: sidecarURL)
         }
     }

@@ -67,7 +67,7 @@ struct RecordingPipeline {
     struct Transcript {
         let segments: [LabelledSegment]
         /// Things the user should know, such as speaker detection failing.
-        let notes: [String]
+        var notes: [String]
         /// A track sounded like only noise, so its lines may be invented and only the
         /// audio can settle it. Finding from the deep-review re-check, D-54 and D-56.
         var hasDoubtfulTrack = false
@@ -314,7 +314,14 @@ struct RecordingPipeline {
             sidecar.transcribedAt = now
         }
         try sidecar.save(to: sidecarURL)
-        for line in archived.kept + cleaned.kept { print("⚠  \(line)") }
+        // With a transcript these go in its notes, so the app shows them too; the terminal
+        // prints notes. From the M5 review.
+        let kept = archived.kept + cleaned.kept
+        if transcript != nil {
+            transcript?.notes += kept
+        } else {
+            for line in kept { print("⚠  \(line)") }
+        }
         return transcript
     }
 }

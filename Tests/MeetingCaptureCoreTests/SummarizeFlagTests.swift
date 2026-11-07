@@ -121,6 +121,8 @@ final class SummarizeFlagTests: XCTestCase {
         let t = try writeTranscript()
         let r = try run(["--summarize-only", t.path])
         XCTAssertEqual(r.status, 0, r.out + r.err)
+        // M5 review finding 10: the terminal says which backend writes the report.
+        XCTAssertTrue(r.out.contains("Writing the report via subscription CLI…"), r.out)
 
         let names = files(in: work)
         XCTAssertTrue(names.contains("m.md"), "\(names)")

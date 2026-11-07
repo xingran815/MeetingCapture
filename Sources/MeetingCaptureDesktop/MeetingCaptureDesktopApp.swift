@@ -11,6 +11,7 @@ struct MeetingCaptureDesktopApp: App {
             ContentView()
                 .environment(model)
                 .frame(minWidth: 860, minHeight: 560)
+                .task { delegate.model = model }
         }
         .defaultSize(width: 1160, height: 740)
         .commands {
@@ -44,11 +45,36 @@ struct MeetingCaptureDesktopApp: App {
     }
 }
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    weak var model: AppModel?
+
     func applicationWillFinishLaunching(_ notification: Notification) {
         // Opened from Finder, the app has a short PATH; the summary CLIs live in the user's folders.
         LaunchEnvironment.addUserToolFolders()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        model?.refreshFromDisk()
+    }
+
+    /// ⌘Q during a recording would cut it off; ask first, then close the files before
+    /// quitting. From the M5 review.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let model, let warning = model.quitWarning else { return .terminateNow }
+        let alert = NSAlert()
+        alert.messageText = "Quit MeetingCapture?"
+        alert.informativeText =
+            warning + " The audio recorded so far is kept, and the app offers to finish it next time."
+        alert.addButton(withTitle: "Keep Working")
+        alert.addButton(withTitle: "Quit")
+        alert.alertStyle = .warning
+        guard alert.runModal() == .alertSecondButtonReturn else { return .terminateCancel }
+        model.stopEverythingForQuit {
+            NSApp.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
 }
