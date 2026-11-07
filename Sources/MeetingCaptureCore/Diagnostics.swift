@@ -410,7 +410,7 @@ enum QualityCompare {
                             let (withRegex, without) = redactedIsA ? (ra, rb) : (rb, ra)
                             cells.append("\(id) \(withRegex)/\(without)")
                             sectionRows.append(
-                                "| \(fixture.id) | \(id) | \(withRegex) | \(without) | \(pair["note"] as? String ?? "") |"
+                                "| \(fixture.id) | \(id) | \(withRegex) | \(without) | \(redactedIsA ? "with regex" : "without") | \(pair["note"] as? String ?? "") |"
                             )
                             if withRegex < without {
                                 worse.append("\(fixture.id) · \(id): \(withRegex) with regex, \(without) without")
@@ -439,7 +439,7 @@ enum QualityCompare {
             "| Transcript | Expected | Scenario | Topic | Sections filled | Facts kept | Tokens restored | Unsure items | Reviewed |\n|---|---|---|---|---|---|---|---|---|\n"
         doc += rows.joined(separator: "\n") + "\n\n"
         doc +=
-            "## Section ratings\n\n| Transcript | Section | With regex | Without | Rater's note |\n|---|---|---|---|---|\n"
+            "## Section ratings\n\n| Transcript | Section | With regex | Without | A was | Rater's note (A and B as the rater saw them) |\n|---|---|---|---|---|---|\n"
         doc += sectionRows.joined(separator: "\n") + "\n\n"
         doc +=
             worse.isEmpty
