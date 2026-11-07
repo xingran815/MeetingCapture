@@ -21,7 +21,7 @@ For its owner, a professional meeting helper (terminal and macOS app): speaker-l
 | 3 | M4A, retention, speakers, bug fixes | #5 #6 | `m3-audio-speakers` | yes | **yes** | short real call; echo moved to M3.2 (D-59) | done |
 | 3.1 | Lighter hooks, test levels and CI | #16 | `m3.1-faster-checks` | yes | reviewer and `/security-review` (D-61) | no | done |
 | 3.2 | Remove speaker echo, keep the user's voice | #17 | `m3.2-echo` | yes | reviewer subagent (D-59), deep review and `/security-review` by risk | **records a test call; final listen and labels** | done (listen passed, D-78) |
-| 4 | Scenario summaries and HTML | #7 #8 | `m4-summaries-html` | yes | **yes** | reads a live report | todo |
+| 4 | Scenario summaries and HTML | #7 #8 | `m4-summaries-html` | yes | **yes** | reads a live report | done (read passed, D-88) |
 | 5 | Six designs, then the app | #9 | `m5-desktop` | yes | no | **picks a design** | todo |
 | 6 | Docs, security pass, SpeexDSP removal | #10 | `m6-docs-release` | yes | **yes** | no | todo |
 
