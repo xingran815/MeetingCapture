@@ -127,7 +127,8 @@ struct RecordingPipeline {
                                     "\(part.lastPathComponent): the delay between the tracks moved during this part, "
                                         + "so some of the other side's voice may remain under You.")
                             }
-                        } else {
+                        } else if tracks.soundsLikeNoise.isEmpty {
+                            // A noise track has its own note, and wouldn't show an echo anyway.
                             notes.append(
                                 "\(part.lastPathComponent): no echo showed up between the tracks, "
                                     + "so the mic was used as recorded.")
