@@ -177,7 +177,7 @@ The Settings menu is grouped with dimmed `MenuItem.separator(...)` header rows (
 | **Close every milestone with a report and rules on disk, then start the next one, in a new session, without waiting.** Steps below. | User's rule; only what's in files survives a session. |
 
 ### Closing a milestone, then starting the next
-Order: M1 → M2 → M2.1 → M3 → M3.1 → M3.2 → M4 → M5 → M6.
+Order: M1 → M2 → M2.1 → M3 → M3.1 → M3.2 → M4 → M5 → M5.1 → M5.2 → M6.
 
 1. **Save, on the milestone branch, once the verifier (and deep review, where required) has passed:**
    - `dev/evidence/<date>-m<n>-report.md`: what landed, each Done-when with its evidence, every verifier and review finding with the test it became, surprises, what's still unsure, and what the next milestone needs to know.
