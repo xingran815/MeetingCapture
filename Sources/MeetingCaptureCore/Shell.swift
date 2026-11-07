@@ -173,8 +173,8 @@ final class Shell {
         }
         for note in result.notes { print("⚠  \(note)") }
         if let txt = result.transcriptURL, result.transcript != nil { print("   txt:  \(txt.path)") }
-        if let report = processor.lastReport {
-            ReportConsole.print(report, showTranscript: transcriptInReport)
+        if let page = processor.lastPage {
+            ReportConsole.print(page.report, showTranscript: transcriptInReport, notes: page.notes)
             if let html = result.reportHTML, let md = result.reportMarkdown, let json = result.reportJSON {
                 ReportConsole.printPaths(ReportFiles.Written(html: html, markdown: md, json: json))
             }
@@ -234,7 +234,13 @@ final class Shell {
             MenuItem(key: "t", label: "Transcribe again", enabled: !entry.audioFiles.isEmpty),
             MenuItem(key: "w", label: "Write the report again", enabled: entry.hasTranscript),
             MenuItem(key: "s", label: "Rename or merge speakers", enabled: entry.hasTranscript),
+            MenuItem(key: "r", label: "Rename the title"),
+            MenuItem(key: "n", label: "Notes: open in your editor"),
+            MenuItem(
+                key: "l",
+                label: "Send notes to the LLM when writing the report  [\(entry.sendsNotesToLLM ? "on" : "off")]"),
             MenuItem(key: "f", label: "Show in Finder"),
+            MenuItem(key: "d", label: "Delete: move to the Trash", enabled: !entry.isUnfinished),
         ]
         guard
             case .selected(let a) = Menu.pick(
@@ -243,6 +249,10 @@ final class Shell {
         switch actions[a].key {
         case "o":
             guard let html = entry.reportHTML() else { return }
+            let stale = entry.staleEditCount()
+            if stale > 0 {
+                print("⚠  \(stale) of your edits no longer match the report. Keep or drop them in the app.")
+            }
             let url = FileManager.default.temporaryDirectory.appendingPathComponent(
                 "\(entry.base.lastPathComponent).html")
             do {
@@ -252,13 +262,101 @@ final class Shell {
         case "t":
             if let first = entry.audioFiles.first { await runTranscribe(wavPaths: [first.path]) }
         case "w":
-            await runSummarize(transcript: "", sourcePath: entry.transcriptURL.path, showTranscript: false)
+            var keep = true
+            if entry.hasContentEdits {
+                guard
+                    let answer = askLine("Keep your edits to this report? Edits whose text changed are reported [Y/n]")
+                else { return }
+                keep = !answer.lowercased().hasPrefix("n")
+            }
+            await runSummarize(
+                transcript: "", sourcePath: entry.transcriptURL.path, showTranscript: false, keepEdits: keep)
+        case "r":
+            renameFlow(entry)
+        case "n":
+            notesFlow(entry)
+        case "l":
+            do {
+                try entry.setSendNotesToLLM(!entry.sendsNotesToLLM)
+                print(
+                    entry.sendsNotesToLLM
+                        ? "✓  Notes go to the LLM, redacted like the transcript, when this report is written again."
+                        : "✓  Notes stay on this Mac.")
+            } catch { print("❌  \(error.localizedDescription)") }
+        case "d":
+            trashFlow(entry)
         case "s":
             speakersFlow(transcript: entry.transcriptURL)
         case "f":
             openWithSystem(["-R", (entry.audioFiles.first ?? entry.transcriptURL).path])
         default: break
         }
+    }
+
+    private func renameFlow(_ entry: LibraryEntry) {
+        print("Now: \(entry.topic ?? entry.base.lastPathComponent)")
+        guard let title = askLine("New title (empty = the report's own topic)") else { return }
+        do {
+            try entry.rename(to: title)
+            print(title.isEmpty ? "✓  Back to the report's own topic." : "✓  Renamed.")
+        } catch { print("❌  \(error.localizedDescription)") }
+    }
+
+    /// `$EDITOR` when set (it can have arguments, such as `code -w`; run without a shell),
+    /// else the default text editor via `open -t`, which returns at once.
+    private func notesFlow(_ entry: LibraryEntry) {
+        let url = entry.notesURL
+        if !FileManager.default.fileExists(atPath: url.path) {
+            do { try "".write(to: url, atomically: true, encoding: .utf8) } catch {
+                print("❌  Couldn't make the notes file: \(error.localizedDescription)")
+                return
+            }
+        }
+        let editor = (ProcessInfo.processInfo.environment["EDITOR"] ?? "").split(separator: " ").map(String.init)
+        if editor.isEmpty {
+            openWithSystem(["-t", url.path])
+            print("📝  Notes are open in your text editor: \(url.path). Save them there; the report shows them.")
+            return
+        }
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        p.arguments = editor + [url.path]
+        do {
+            try p.run()
+            p.waitUntilExit()
+        } catch {
+            print("❌  Couldn't start \(editor[0]): \(error.localizedDescription)")
+            return
+        }
+        // Saved through the core, so empty notes leave no file and the page is redrawn.
+        do { try entry.saveNotes(entry.notes()) } catch { print("❌  \(error.localizedDescription)") }
+        print("✓  Notes saved.")
+    }
+
+    private func trashFlow(_ entry: LibraryEntry) {
+        let plan: TrashPlan
+        do { plan = try entry.trashPlan() } catch {
+            print("❌  \(error.localizedDescription)")
+            return
+        }
+        guard !plan.files.isEmpty else {
+            print("Nothing of this recording's is listed to move.")
+            for note in plan.notes { print("ℹ  \(note)") }
+            return
+        }
+        print("\nThese files go to the Trash (nothing is deleted for good):")
+        for url in plan.files { print("   \(url.lastPathComponent)") }
+        for note in plan.notes { print("ℹ  \(note)") }
+        guard let answer = askLine("Move \(plan.files.count) file(s) to the Trash? [y/N]"),
+            answer.lowercased().hasPrefix("y")
+        else {
+            print("↩  Nothing moved.")
+            return
+        }
+        do {
+            let done = try entry.moveToTrash()
+            print("🗑  Moved \(done.files.count) file(s) to the Trash.")
+        } catch { print("❌  \(error.localizedDescription)") }
     }
 
     /// `/usr/bin/open` with plain arguments, no shell.
@@ -365,9 +463,12 @@ final class Shell {
         return result.transcript
     }
 
-    private func runSummarize(transcript: String, sourcePath: String, showTranscript: Bool) async {
+    private func runSummarize(
+        transcript: String, sourcePath: String, showTranscript: Bool, keepEdits: Bool = true
+    ) async {
         let processor = MeetingProcessor(config: config)
-        let result = await processor.summarize(transcriptAt: URL(fileURLWithPath: sourcePath), onEvent: Self.printEvent)
+        let result = await processor.summarize(
+            transcriptAt: URL(fileURLWithPath: sourcePath), keepEdits: keepEdits, onEvent: Self.printEvent)
         report(result, processor: processor, printTranscript: false, transcriptInReport: showTranscript)
     }
 

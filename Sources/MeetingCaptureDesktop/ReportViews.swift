@@ -8,8 +8,14 @@ struct EntryDetail: View {
     let entry: LibraryEntry
 
     var body: some View {
+        // Read so a change to the title, edits or notes draws the page again.
+        let _ = model.reportRevision
         if let html = entry.reportHTML() {
-            ReportWebView(html: html)
+            VStack(spacing: 0) {
+                let stale = entry.staleEditCount()
+                if stale > 0 { StaleEditsBanner(entry: entry, count: stale) }
+                ReportWebView(html: html)
+            }
         } else {
             VStack(spacing: 12) {
                 Image(systemName: entry.isUnfinished ? "exclamationmark.circle" : "doc.text")

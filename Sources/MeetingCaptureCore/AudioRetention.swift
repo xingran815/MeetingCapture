@@ -24,6 +24,13 @@ struct RecordingSidecar: Codable, Equatable {
     var audioFiles: [String]?
     /// Start times of mic lines left out as leftover echo. Never their words.
     var leftOutLines: [String]?
+    /// The dated report pages (`<stamp>_<topic>.html`) written for this recording, oldest
+    /// first, so delete finds them without matching names (D-44, D-93). Nil on a sidecar
+    /// written before M5.1: its pages were never recorded, and nothing guesses them.
+    var reportFiles: [String]?
+    /// True when a report existed before `reportFiles` started, so a page from then is
+    /// unrecorded and delete says it leaves it.
+    var olderPagesUnrecorded: Bool?
 
     /// The sidecar for a recording this process is about to start.
     static func started(now: Date = Date()) -> RecordingSidecar {

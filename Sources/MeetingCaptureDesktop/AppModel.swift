@@ -55,6 +55,10 @@ final class AppModel {
     var entries: [LibraryEntry] = []
     var selection: LibraryEntry.ID?
     var showsJob = false
+    /// Bumped when the user's layer changes (title, edits, notes), so the page is drawn again.
+    var reportRevision = 0
+    /// Something to tell the user after a notebook action, such as a page that was left.
+    var notebookMessage: String?
 
     // Recording
     var phase: Phase = .idle
@@ -242,14 +246,47 @@ final class AppModel {
         }
     }
 
-    func writeReportAgain(_ entry: LibraryEntry) {
+    func writeReportAgain(_ entry: LibraryEntry, keepEdits: Bool = true) {
         startJob(
             kind: .report, base: entry.base, title: entry.topic ?? Self.title(for: entry.base), stages: [.writingReport]
         ) {
             onEvent in
-            await MeetingProcessor().summarize(transcriptAt: entry.transcriptURL, onEvent: onEvent)
+            await MeetingProcessor().summarize(
+                transcriptAt: entry.transcriptURL, keepEdits: keepEdits, onEvent: onEvent)
         }
     }
+
+    // MARK: Notebook (M5.1)
+
+    /// Runs a change to the user's layer, then redraws. Errors go to `notebookMessage`.
+    /// `redraw` false (notes while typing) saves without reloading the page, which would
+    /// lose the reader's place; the page catches up when the notes close.
+    func notebook(redraw: Bool = true, _ change: () throws -> Void) {
+        do { try change() } catch { notebookMessage = error.localizedDescription }
+        guard redraw else { return }
+        reportRevision += 1
+        reload()
+    }
+
+    func trashPlan(_ entry: LibraryEntry) -> TrashPlan? {
+        do { return try entry.trashPlan(busy: busyBases) } catch {
+            notebookMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    func moveToTrash(_ entry: LibraryEntry) {
+        do {
+            let done = try entry.moveToTrash(busy: busyBases)
+            if selection == entry.id { selection = nil }
+            if !done.notes.isEmpty { notebookMessage = done.notes.joined(separator: "\n\n") }
+        } catch {
+            notebookMessage = error.localizedDescription
+        }
+        reload()
+    }
+
+    func isBusy(_ entry: LibraryEntry) -> Bool { busyBases.contains(entry.base.lastPathComponent) }
 
     func processUnfinished(_ entry: LibraryEntry) {
         let parts = entry.unfinishedParts

@@ -15,6 +15,11 @@ Spec 05: the terminal has every desktop feature, plus finer settings. Check this
 | Process an unfinished recording | Process Now | Offered at start |
 | Show in Finder | Toolbar | Library › f |
 | Rename and merge speakers | Speakers sheet | Main menu 4, Library › s |
+| Rename the title | More › Rename…, Recording menu | Library › r |
+| Notes | Notes button (⌥⌘N), edited in place | Library › n opens them in `$EDITOR`, else the default text editor |
+| Send notes to the LLM (off by default) | Notes › Use notes when writing the report | Library › l |
+| Write the report again, keeping or dropping edits | Asked when the report has edits | Asked when the report has edits |
+| Delete a recording, to the Trash | More › Move to Trash…, ⌘⌫ | Library › d |
 | Primary CLI | Settings › Summaries | Settings › c LLM route |
 | Usage today | Settings › Summaries | Settings, the two usage lines |
 | Connection test | Settings › Summaries › Test | Settings › k Test CLI connection |
@@ -23,5 +28,7 @@ Spec 05: the terminal has every desktop feature, plus finer settings. Check this
 | Whisper model | Settings › General | Settings › 1 |
 | Redaction on or off | Settings › Summaries | Settings › x |
 | Download models with progress, cancel, resume | First-run screen | Downloaded on first transcribe |
+
+Desktop only: editing the report's text (More › Edit Report…), and keeping or dropping edits that no longer match (D-93). The terminal shows edits and says when some no longer match.
 
 Terminal only: per-tier CLI models, reasoning, API profiles, `--scenario`, language pin, echo removal settings, chunk length, daily call cap, safety cap, auto-transcribe and auto-summarize, flags for scripting.

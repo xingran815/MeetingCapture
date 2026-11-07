@@ -5,6 +5,7 @@ import SwiftUI
 struct MeetingCaptureDesktopApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @State private var model = AppModel()
+    @FocusedValue(\.notebookActions) private var notebook
 
     var body: some Scene {
         Window("MeetingCapture", id: "main") {
@@ -29,8 +30,17 @@ struct MeetingCaptureDesktopApp: App {
                 Divider()
                 Button("Transcribe Again") { if let e = model.selectedEntry { model.transcribeAgain(e) } }
                     .disabled(model.selectedEntry?.audioFiles.isEmpty ?? true || model.isProcessing)
-                Button("Write the Report Again") { if let e = model.selectedEntry { model.writeReportAgain(e) } }
-                    .disabled(!(model.selectedEntry?.hasTranscript ?? false) || model.isProcessing)
+                Button("Write the Report Again") { notebook?.writeAgain() }
+                    .disabled(!(model.selectedEntry?.hasTranscript ?? false) || model.isProcessing || notebook == nil)
+                Divider()
+                Button("Rename…") { notebook?.rename() }.disabled(notebook == nil)
+                Button("Edit Report…") { notebook?.edit?() }.disabled(notebook?.edit == nil)
+                Button("Show Notes") { notebook?.notes() }
+                    .keyboardShortcut("n", modifiers: [.command, .option])
+                    .disabled(notebook == nil)
+                Button("Move to Trash…") { notebook?.trash?() }
+                    .keyboardShortcut(.delete, modifiers: .command)
+                    .disabled(notebook?.trash == nil)
             }
             CommandGroup(after: .sidebar) {
                 Button("Reload Library") { model.reload() }

@@ -321,7 +321,11 @@ public final class MeetingProcessor {
     }
 
     /// Writes the report for a transcript file (a re-run, or `--summarize-only`'s work).
-    public func summarize(transcriptAt source: URL, onEvent: @escaping (Event) -> Void = { _ in }) async -> Result {
+    /// `keepEdits` false drops the user's content edits once the new report is written;
+    /// their title and notes always stay (D-93).
+    public func summarize(
+        transcriptAt source: URL, keepEdits: Bool = true, onEvent: @escaping (Event) -> Void = { _ in }
+    ) async -> Result {
         var result = Result()
         guard let text = try? String(contentsOf: source, encoding: .utf8) else {
             result.failure = "Couldn't read \(source.lastPathComponent)."
@@ -331,11 +335,22 @@ public final class MeetingProcessor {
         result.transcript = text
         result.transcriptURL = source
         await writeReport(transcript: text, source: source, into: &result, onEvent: onEvent)
+        if !keepEdits, result.failure == nil {
+            let base = source.deletingPathExtension()
+            do {
+                try Notebook.dropContentEdits(base: base)
+                if let report = lastReport { lastPage = Notebook.page(for: report, base: base) }
+            } catch {
+                result.notes.append("Your edits couldn't be dropped: \(error.localizedDescription)")
+            }
+        }
         return result
     }
 
     /// The report itself, kept for the terminal, which prints it.
     var lastReport: Report?
+    /// The same report with the user's title, edits and notes, as the terminal prints it.
+    var lastPage: Notebook.Page?
 
     private func writeReport(
         transcript: String, source: URL, into result: inout Result, onEvent: @escaping (Event) -> Void
@@ -349,10 +364,14 @@ public final class MeetingProcessor {
             var pipeline = SummaryPipeline(
                 backend: backend, redaction: config.redactionEnabled, catalog: scenarios.catalog)
             pipeline.onStep = { onEvent(.reportStep($0)) }
-            let outcome = try await pipeline.run(transcript: transcript)
+            let base = source.deletingPathExtension()
+            // Notes go out only when the user turned that on for this report (D-93).
+            let notes = Notebook.sendsNotesToLLM(base: base) ? Notebook.loadNotes(base: base) : nil
+            let outcome = try await pipeline.run(transcript: transcript, notes: notes)
             // Kept before the write: if writing fails, the terminal can still show the
             // report the calls paid for. From the M5 review.
             lastReport = outcome.report
+            lastPage = Notebook.page(for: outcome.report, base: base)
             let written = try ReportFiles.write(outcome.report, nextTo: source, fileTopic: outcome.fileTopic)
             result.reportJSON = written.json
             result.reportHTML = written.html
@@ -395,8 +414,11 @@ public struct LibraryEntry: Identifiable, Hashable, Sendable {
     public let base: URL
     public var id: String { base.path }
     public let createdAt: Date
-    /// The report's topic, or nil before there is a report.
+    /// The title to show: the user's own (M5.1), else the report's topic; nil when
+    /// there is neither.
     public let topic: String?
+    /// The title the user gave it, if any. The model's topic is kept in the report.
+    public var userTitle: String? = nil
     public let scenarioTitle: String?
     public let durationSeconds: Double?
     public let hasTranscript: Bool
@@ -409,12 +431,45 @@ public struct LibraryEntry: Identifiable, Hashable, Sendable {
     public var transcriptURL: URL { base.appendingPathExtension("txt") }
     public var reportJSONURL: URL { base.appendingPathExtension("report.json") }
 
-    /// The report page, rendered from `<base>.report.json` the same way the terminal writes it.
-    public func reportHTML() -> String? {
-        guard let data = try? Data(contentsOf: reportJSONURL),
-            let report = try? JSONDecoder().decode(Report.self, from: data)
-        else { return nil }
-        return ReportRenderer.html(report)
+    public var notesURL: URL { Notebook.notesURL(forBase: base) }
+
+    /// The report page, rendered from `<base>.report.json` the same way the terminal writes
+    /// it, with the user's title, edits and notes merged in.
+    public func reportHTML() -> String? { Notebook.html(base: base) }
+
+    // MARK: Notebook (M5.1)
+
+    /// An empty title goes back to the report's own topic.
+    public func rename(to title: String) throws { try Notebook.rename(base: base, to: title) }
+
+    /// The user's notes as written, or empty.
+    public func notes() -> String { (try? String(contentsOf: notesURL, encoding: .utf8)) ?? "" }
+    public func saveNotes(_ text: String) throws { try Notebook.saveNotes(base: base, text) }
+
+    /// Off by default; when on, a report written again sends the notes, redacted.
+    public var sendsNotesToLLM: Bool { Notebook.sendsNotesToLLM(base: base) }
+    public func setSendNotesToLLM(_ on: Bool) throws { try Notebook.setSendNotesToLLM(base: base, on) }
+
+    /// Desktop only (D-93): the parts of the report that can be edited.
+    public func editableFields() -> [EditableField] { Notebook.editableFields(base: base) }
+    /// New text by `EditableField.id`. The model's own text removes the edit.
+    public func saveEdits(_ changes: [String: String]) throws { try Notebook.saveEdits(base: base, changes) }
+    public var hasContentEdits: Bool { Notebook.hasContentEdits(base: base) }
+    /// Edits whose original text is no longer in the report.
+    public func staleEditCount() -> Int { Notebook.staleEdits(base: base) }
+    /// Keep puts each stale edit back over the text now at its place; drop removes them.
+    public func resolveStaleEdits(keep: Bool) throws { try Notebook.resolveStale(base: base, keep: keep) }
+
+    /// What a delete would move to the Trash, sidecar last, and what it leaves.
+    public func trashPlan(busy: Set<String> = []) throws -> TrashPlan {
+        try Notebook.trashPlan(base: base, busy: busy)
+    }
+
+    /// Moves the recording's own listed files to the Trash, sidecar last. Nothing is
+    /// deleted for good. Returns what moved and what was left, with why.
+    @discardableResult
+    public func moveToTrash(busy: Set<String> = []) throws -> TrashPlan {
+        try Notebook.trash(base: base, busy: busy)
     }
 
     /// Speaker labels in the transcript, such as You, Speaker 1.
@@ -477,8 +532,9 @@ public enum Library {
         for name in bases {
             let base = directory.appendingPathComponent(name)
             let sidecar = RecordingSidecar.load(at: RecordingSidecar.url(forBase: base))
-            let report = (try? Data(contentsOf: base.appendingPathExtension("report.json")))
-                .flatMap { try? JSONDecoder().decode(Report.self, from: $0) }
+            let report = Notebook.loadReport(base: base)
+            let userTitle = (try? ReportEdits.load(at: ReportEdits.url(forBase: base)))?.userTitle
+                .flatMap { $0.isEmpty ? nil : $0 }
             let created =
                 sidecar?.createdAt
                 ?? (try? fm.attributesOfItem(atPath: base.appendingPathExtension("report.json").path)[.creationDate]
@@ -495,7 +551,8 @@ public enum Library {
             if audio.isEmpty, !hasTranscript, report == nil, !unfinished.contains(name) { continue }
             entries.append(
                 LibraryEntry(
-                    base: base, createdAt: created, topic: report?.topic, scenarioTitle: report?.scenarioTitle,
+                    base: base, createdAt: created, topic: userTitle ?? report?.topic,
+                    userTitle: userTitle, scenarioTitle: report?.scenarioTitle,
                     durationSeconds: report?.durationSeconds,
                     hasTranscript: hasTranscript, hasReport: report != nil, isUnfinished: unfinished.contains(name),
                     audioFiles: audio))

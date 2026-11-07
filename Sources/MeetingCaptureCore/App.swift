@@ -297,10 +297,14 @@ public enum MeetingCaptureApp {
                 config: persistedConfig, primary: llmCLI, overrides: apiOverrides)
             print("🧩  Writing the report via \(backend.label)…")
             let outcome: SummaryOutcome
+            // The user's notes go out only when they turned that on for this report (D-93).
+            let notesBase = URL(fileURLWithPath: sourcePath).deletingPathExtension()
             do {
                 outcome = try await SummaryPipeline(
                     backend: backend, redaction: redaction, catalog: scenarioLoad.catalog
-                ).run(transcript: transcript, forcedScenario: scenarioFlag)
+                ).run(
+                    transcript: transcript, forcedScenario: scenarioFlag,
+                    notes: Notebook.sendsNotesToLLM(base: notesBase) ? Notebook.loadNotes(base: notesBase) : nil)
             } catch {
                 // From --transcribe-only the source is the audio; the transcript is the .txt beside it.
                 let source = URL(fileURLWithPath: sourcePath)
@@ -314,7 +318,9 @@ public enum MeetingCaptureApp {
                 throw Summarizer.SummarizerError.badResponse(
                     "\(error.localizedDescription) The transcript is kept at \(kept).")
             }
-            ReportConsole.print(outcome.report, showTranscript: showTranscript)
+            ReportConsole.print(
+                outcome.report, showTranscript: showTranscript,
+                base: URL(fileURLWithPath: sourcePath).deletingPathExtension())
             let written = try ReportFiles.write(
                 outcome.report, nextTo: URL(fileURLWithPath: sourcePath), fileTopic: outcome.fileTopic)
             ReportConsole.printPaths(written)

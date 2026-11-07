@@ -168,6 +168,55 @@ final class ParityTests: XCTestCase {
         }
     }
 
+    // MARK: M5.1 notebook (spec 05.1 Done-when: parity checklist)
+
+    func testLibraryActionsForRenameNotesSendNotesAndDeleteExistAndTheDocNamesThem() throws {
+        let doc = try parityDoc()
+        for key in ["r", "n", "l", "d"] {
+            XCTAssertTrue(doc.contains("Library › \(key)"), "parity.md doesn't name Library › \(key)")
+        }
+        XCTAssertTrue(doc.contains("Desktop only"), "editing content is documented as the desktop-only exception")
+        let r = try shell(["6", "1", "b", "q"])
+        XCTAssertFalse(r.timedOut, r.out)
+        let lines = r.out.components(separatedBy: "\n")
+        for (key, label) in [
+            ("r", "Rename the title"), ("n", "Notes"), ("l", "Send notes to the LLM"), ("d", "Delete"),
+        ] {
+            XCTAssertTrue(
+                lines.contains { $0.hasPrefix("  \(key)) ") && $0.contains(label) }, "Library › \(key) \(label)")
+        }
+    }
+
+    func testLibraryDeleteListsTheFilesAndAnsweringNoMovesNothing() throws {
+        let before = try FileManager.default.contentsOfDirectory(atPath: out.path).sorted()
+        // Library, the entry, d, then "n" to "Move N file(s)?", then quit. Never answers y: the real Trash isn't used.
+        let r = try shell(["6", "1", "d", "n", "q"])
+        XCTAssertFalse(r.timedOut, r.out)
+        XCTAssertTrue(r.out.contains("These files go to the Trash"), r.out)
+        XCTAssertTrue(r.out.contains("meeting_20261107_124800.m4a"), r.out)
+        XCTAssertTrue(r.out.contains("Nothing moved"), r.out)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: out.path).sorted(), before)
+        let listed = r.out.components(separatedBy: "\n").filter { $0.hasPrefix("   meeting_20261107_124800") }
+        XCTAssertEqual(
+            listed.last?.trimmingCharacters(in: .whitespaces), "meeting_20261107_124800.mcmeta.json", "sidecar last")
+    }
+
+    func testLibrarySendNotesToggleFlipsAndShowsInTheMenuNextTime() throws {
+        let r = try shell(["6", "1", "l", "6", "1", "b", "q"])
+        XCTAssertFalse(r.timedOut, r.out)
+        XCTAssertTrue(r.out.contains("Notes go to the LLM"), r.out)
+        XCTAssertTrue(r.out.contains("[on]"), "the menu shows the new state: \(r.out)")
+        let edits = out.appendingPathComponent("meeting_20261107_124800.edits.json")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: edits.path))
+    }
+
+    func testLibraryRenameChangesTheTitleTheLibraryShows() throws {
+        let r = try shell(["6", "1", "r", "Renamed from the shell", "6", "b", "q"])
+        XCTAssertFalse(r.timedOut, r.out)
+        XCTAssertTrue(r.out.contains("Renamed."), r.out)
+        XCTAssertTrue(r.out.contains("Renamed from the shell"), "the library lists the new title: \(r.out)")
+    }
+
     // MARK: Settings › k Test CLI connection
 
     func testCLIConnectionTestPrintsOneLinePerCLIAndReturns() throws {

@@ -5,6 +5,11 @@ import SwiftUI
 struct ContentView: View {
     @Environment(AppModel.self) private var model
     @State private var showSpeakers = false
+    @State private var showNotes = false
+    @State private var showRename = false
+    @State private var showEdit = false
+    @State private var trash: TrashRequest?
+    @State private var askKeepEdits = false
 
     var body: some View {
         @Bindable var model = model
@@ -17,6 +22,17 @@ struct ContentView: View {
                         .navigationSplitViewColumnWidth(min: 220, ideal: 250, max: 320)
                 } detail: {
                     detail
+                        .inspector(isPresented: $showNotes) {
+                            if let entry = model.selectedEntry, model.phase == .idle, !model.showsJob {
+                                NotesInspector(entry: entry)
+                                    .inspectorColumnWidth(min: 220, ideal: 280, max: 420)
+                            } else {
+                                Text("Pick a recording to see its notes.").foregroundStyle(.secondary).padding()
+                            }
+                        }
+                        .onChange(of: showNotes) { _, open in
+                            if !open { model.reportRevision += 1 }
+                        }
                         .toolbar { toolbarItems }
                         .navigationTitle(title)
                         .navigationSubtitle(subtitle)
@@ -26,6 +42,36 @@ struct ContentView: View {
         .sheet(isPresented: $showSpeakers) {
             if let entry = model.selectedEntry { SpeakersSheet(entry: entry) }
         }
+        .sheet(isPresented: $showRename) {
+            if let entry = model.selectedEntry { RenameSheet(entry: entry) }
+        }
+        .sheet(isPresented: $showEdit) {
+            if let entry = model.selectedEntry { EditReportSheet(entry: entry) }
+        }
+        .sheet(item: $trash) { request in
+            TrashConfirmation(entry: request.entry, plan: request.plan)
+        }
+        .confirmationDialog(
+            "Keep your edits?", isPresented: $askKeepEdits, titleVisibility: .visible, presenting: model.selectedEntry
+        ) { entry in
+            Button("Keep Edits") { model.writeReportAgain(entry, keepEdits: true) }
+            Button("Drop Edits", role: .destructive) { model.writeReportAgain(entry, keepEdits: false) }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text(
+                "The report is written again from the transcript. Kept edits apply only where the text they replaced is still there; the rest are listed so you can keep or drop them. Your title and notes stay either way."
+            )
+        }
+        .alert(
+            "Notebook",
+            isPresented: Binding(
+                get: { model.notebookMessage != nil }, set: { if !$0 { model.notebookMessage = nil } })
+        ) {
+            Button("OK") { model.notebookMessage = nil }
+        } message: {
+            Text(model.notebookMessage ?? "")
+        }
+        .focusedSceneValue(\.notebookActions, notebookActions)
         .alert(
             "Couldn't record",
             isPresented: Binding(get: { model.recordError != nil }, set: { if !$0 { model.recordError = nil } })
@@ -46,6 +92,24 @@ struct ContentView: View {
         } else {
             IdleView()
         }
+    }
+
+    private func writeAgain(_ entry: LibraryEntry) {
+        if entry.hasContentEdits { askKeepEdits = true } else { model.writeReportAgain(entry) }
+    }
+
+    private func askTrash(_ entry: LibraryEntry) {
+        if let plan = model.trashPlan(entry) { trash = TrashRequest(entry: entry, plan: plan) }
+    }
+
+    private var notebookActions: NotebookActions? {
+        guard let entry = model.selectedEntry, model.phase == .idle, !model.showsJob else { return nil }
+        return NotebookActions(
+            rename: { showRename = true },
+            edit: entry.hasReport ? { showEdit = true } : nil,
+            notes: { showNotes.toggle() },
+            writeAgain: { writeAgain(entry) },
+            trash: entry.isUnfinished || model.isBusy(entry) ? nil : { askTrash(entry) })
     }
 
     private var title: String {
@@ -79,7 +143,7 @@ struct ContentView: View {
                 Menu {
                     Button("Transcribe Again") { model.transcribeAgain(entry) }
                         .disabled(entry.audioFiles.isEmpty || model.isProcessing)
-                    Button("Write the Report Again") { model.writeReportAgain(entry) }
+                    Button("Write the Report Again") { writeAgain(entry) }
                         .disabled(!entry.hasTranscript || model.isProcessing)
                 } label: {
                     Label("Re-run", systemImage: "arrow.clockwise")
@@ -91,6 +155,22 @@ struct ContentView: View {
                 } label: {
                     Label("Show in Finder", systemImage: "folder")
                 }
+                Menu {
+                    Button("Rename…") { showRename = true }
+                    Button("Edit Report…") { showEdit = true }.disabled(!entry.hasReport)
+                    Divider()
+                    Button("Move to Trash…", role: .destructive) { askTrash(entry) }
+                        .disabled(entry.isUnfinished || model.isBusy(entry))
+                } label: {
+                    Label("More", systemImage: "ellipsis.circle")
+                }
+                .help("Rename, edit or delete")
+                Button {
+                    showNotes.toggle()
+                } label: {
+                    Label("Notes", systemImage: "note.text")
+                }
+                .help("Show or hide notes (⌥⌘N)")
             }
         }
         ToolbarSpacer(.fixed)
@@ -186,6 +266,32 @@ struct LibrarySidebar: View {
         let s = Int(seconds)
         return s >= 3600
             ? String(format: "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60) : String(format: "%d:%02d", s / 60, s % 60)
+    }
+}
+
+struct TrashRequest: Identifiable {
+    let entry: LibraryEntry
+    let plan: TrashPlan
+    var id: String { entry.id }
+}
+
+/// The selected recording's notebook actions, for the menu bar's commands.
+struct NotebookActions {
+    var rename: () -> Void
+    var edit: (() -> Void)?
+    var notes: () -> Void
+    var writeAgain: () -> Void
+    var trash: (() -> Void)?
+}
+
+struct NotebookActionsKey: FocusedValueKey {
+    typealias Value = NotebookActions
+}
+
+extension FocusedValues {
+    var notebookActions: NotebookActions? {
+        get { self[NotebookActionsKey.self] }
+        set { self[NotebookActionsKey.self] = newValue }
     }
 }
 

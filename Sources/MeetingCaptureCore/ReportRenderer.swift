@@ -43,7 +43,9 @@ enum ReportRenderer {
 
     // MARK: - HTML
 
-    static func html(_ report: Report) -> String {
+    /// `notes` are the user's own (`<base>.notes.md`), shown as plain text: escaped like
+    /// everything else, with blank lines as paragraphs. Markdown in them isn't rendered.
+    static func html(_ report: Report, notes: String? = nil) -> String {
         var body = ""
         body += "<header><p class=\"kind\">\(escape(report.scenarioTitle))</p>"
         body += "<h1>\(escape(report.topic))</h1>"
@@ -74,9 +76,11 @@ enum ReportRenderer {
         }
         body += "<nav><ul>"
         for s in report.sections { body += "<li><a href=\"#s-\(escape(s.id))\">\(escape(s.title))</a></li>" }
+        if notes != nil { body += "<li><a href=\"#notes\">Your notes</a></li>" }
         body += "<li><a href=\"#transcript\">Transcript</a></li></ul></nav>\n<main>\n"
 
         for section in report.sections { body += sectionHTML(section) }
+        if let notes { body += "<section id=\"notes\" class=\"notes\"><h2>Your notes</h2>\(para(notes))</section>\n" }
 
         if !report.reviewChanges.isEmpty {
             body +=
@@ -385,7 +389,7 @@ enum ReportRenderer {
 
     // MARK: - Markdown, for tools that read `.md`
 
-    static func markdown(_ report: Report) -> String {
+    static func markdown(_ report: Report, notes: String? = nil) -> String {
         var md = "# \(mdLine(report.topic))\n\n_\(mdLine(report.scenarioTitle)) · \(mdLine(metaLine(report)))_\n"
         if !report.reviewed {
             md += "\n> **Not reviewed.** The frontier review didn't run, so this is the first draft.\n"
@@ -409,6 +413,9 @@ enum ReportRenderer {
             }
             md += "\n"
             for item in section.items { md += markdownItem(item, kind: section.kind) }
+        }
+        if let notes {
+            md += "\n## Your notes\n\n" + mdSafe(notes.trimmingCharacters(in: .whitespacesAndNewlines)) + "\n"
         }
         if !report.reviewChanges.isEmpty {
             md += "\n## What the review changed\n\n"
@@ -495,7 +502,9 @@ enum ReportRenderer {
     /// The summary for the terminal: plain text, sections in order, unsure items marked.
     /// Every piece of model text goes through `terminalSafe`; the only escape codes
     /// in the output are the yellow highlight ones added here, and only on a real terminal.
-    static func terminalSummary(_ report: Report, ansi: Bool = isatty(STDOUT_FILENO) != 0) -> String {
+    static func terminalSummary(
+        _ report: Report, notes: String? = nil, ansi: Bool = isatty(STDOUT_FILENO) != 0
+    ) -> String {
         func t(_ s: String?) -> String { terminalSafe(oneLine(s)) }
         func hl(_ s: String?, _ keywords: [String]?) -> String {
             ansi
@@ -536,6 +545,12 @@ enum ReportRenderer {
                     line += "\n      ? unsure: \((item.reason ?? "").isEmpty ? "no reason given" : t(item.reason))"
                 }
                 out += line + "\n"
+            }
+        }
+        if let notes {
+            out += "\nYOUR NOTES\n"
+            for line in notes.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: .newlines) {
+                out += "  " + terminalSafe(line) + "\n"
             }
         }
         for n in report.notices { out += "\n⚠  \(terminalSafe(n))" }
@@ -632,13 +647,19 @@ enum ReportFiles {
             md = base.appendingPathExtension("report.md")
         }
         let json = base.appendingPathExtension("report.json")
-        try (ReportRenderer.markdown(report)).write(to: md, atomically: true, encoding: .utf8)
+        let hadReport = FileManager.default.fileExists(atPath: json.path)
+        // The user's title, edits and notes (M5.1) are merged into the pages; the JSON
+        // keeps only what the model wrote, so a re-run never overwrites the user's layer.
+        let page = Notebook.page(for: report, base: base)
+        try (ReportRenderer.markdown(page.report, notes: page.notes)).write(to: md, atomically: true, encoding: .utf8)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         try encoder.encode(report).write(to: json, options: .atomic)
         let html = ReportFileName.freeURL(
             in: source.deletingLastPathComponent(), topic: fileTopic ?? report.topic, date: date)
-        try ReportRenderer.html(report).write(to: html, atomically: true, encoding: .utf8)
+        try ReportRenderer.html(page.report, notes: page.notes).write(to: html, atomically: true, encoding: .utf8)
+        // Recorded so delete finds it without matching names (D-44, D-93).
+        Notebook.recordReportFile(html.lastPathComponent, base: base, now: date, hadReport: hadReport)
         return Written(html: html, markdown: md, json: json)
     }
 }
@@ -646,7 +667,7 @@ enum ReportFiles {
 /// What the terminal shows after a report: the transcript with time and speaker
 /// (unless it was just printed), then the summary, then where the files went.
 enum ReportConsole {
-    static func text(_ report: Report, showTranscript: Bool) -> String {
+    static func text(_ report: Report, showTranscript: Bool, notes: String? = nil) -> String {
         var out = ""
         if showTranscript {
             out += "\n──── transcript ──────────────────────────\n"
@@ -656,13 +677,19 @@ enum ReportConsole {
             }
         }
         out += "\n──── summary ─────────────────────────────\n"
-        out += ReportRenderer.terminalSummary(report)
+        out += ReportRenderer.terminalSummary(report, notes: notes)
         out += "\n──────────────────────────────────────────\n"
         return out
     }
 
-    static func print(_ report: Report, showTranscript: Bool) {
-        Swift.print(text(report, showTranscript: showTranscript), terminator: "")
+    static func print(_ report: Report, showTranscript: Bool, notes: String? = nil) {
+        Swift.print(text(report, showTranscript: showTranscript, notes: notes), terminator: "")
+    }
+
+    /// The report with the user's title, edits and notes, as the terminal shows it.
+    static func print(_ report: Report, showTranscript: Bool, base: URL) {
+        let page = Notebook.page(for: report, base: base)
+        print(page.report, showTranscript: showTranscript, notes: page.notes)
     }
 
     static func printPaths(_ written: ReportFiles.Written) {

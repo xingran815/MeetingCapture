@@ -131,7 +131,10 @@ struct SummaryPipeline {
     static let maxFieldLength = 6000
     static let maxItemsPerSection = 60
 
-    func run(transcript: String, forcedScenario: String? = nil) async throws -> SummaryOutcome {
+    /// `notes` are the user's own, sent only when they turned that on (D-93). They are
+    /// redacted together with the transcript, in one token space, and go to the sections
+    /// step only, marked as the user's notes, never as part of the transcript.
+    func run(transcript: String, forcedScenario: String? = nil, notes: String? = nil) async throws -> SummaryOutcome {
         // A model handed nothing invents a meeting, and that spends usage too.
         guard !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw ReportError.emptyTranscript
@@ -144,7 +147,9 @@ struct SummaryPipeline {
             forced = template
         }
 
-        let redacted = redaction ? Redactor.redact(transcript) : Redactor.Result(text: transcript, tokens: [:])
+        let both = Self.redactTogether(transcript: transcript, notes: notes, redaction: redaction)
+        let redacted = both.transcript
+        let notesInput = both.notes.map { "\n\n" + Self.notesHeading + "\n" + $0 } ?? ""
         let suffix = redacted.tokens.isEmpty ? "" : Redactor.tokenInstruction
         let original = TranscriptParser.parse(transcript)
         var models = Report.Models()
@@ -181,7 +186,8 @@ struct SummaryPipeline {
         let sectionsSystem = Self.sectionsPrompt(template, language: Self.safeLanguage(language)) + suffix
         let draft = try await withOneRetry(step: "sections") { retryNote in
             let reply = try await backend.complete(
-                tier: .normal, system: sectionsSystem, input: redacted.text + retryNote, schema: sectionsSchema)
+                tier: .normal, system: sectionsSystem, input: redacted.text + notesInput + retryNote,
+                schema: sectionsSchema)
             return Self.decodeSections(reply.text, template: template).map { ($0, reply.model) }
         }
         models.normal = draft.1
@@ -318,6 +324,32 @@ struct SummaryPipeline {
         report.notices += backend.notes
         return SummaryOutcome(
             report: report, redactedValues: redacted.tokens.count, flaggedTokens: flagged, fileTopic: fileTopic)
+    }
+
+    static let notesHeading =
+        "THE USER'S OWN NOTES (written by the user after the call, not said in it; use them as context, and never quote them as something said):"
+
+    /// Redacts the transcript and the notes as one text, so a value in both gets the
+    /// same token and restoring works for both. The separator has a control character
+    /// no redaction rule matches, so no value can span it.
+    static func redactTogether(transcript: String, notes: String?, redaction: Bool) -> (
+        transcript: Redactor.Result, notes: String?
+    ) {
+        let trimmed = notes?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let trimmed, !trimmed.isEmpty else {
+            return (redaction ? Redactor.redact(transcript) : Redactor.Result(text: transcript, tokens: [:]), nil)
+        }
+        guard redaction else { return (Redactor.Result(text: transcript, tokens: [:]), trimmed) }
+        let separator = "\n\u{1E}NOTES\u{1E}\n"
+        let joined = Redactor.redact(transcript + separator + trimmed)
+        guard let cut = joined.text.range(of: separator) else {
+            // Can't happen, since nothing matches the separator; if it did, the notes stay home.
+            return (Redactor.redact(transcript), nil)
+        }
+        return (
+            Redactor.Result(text: String(joined.text[..<cut.lowerBound]), tokens: joined.tokens),
+            String(joined.text[cut.upperBound...])
+        )
     }
 
     private func withOneRetry<T>(step: String, _ attempt: (String) async throws -> T?) async throws -> T {
