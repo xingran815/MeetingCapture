@@ -152,18 +152,30 @@ scan_message() {
 
 # Reads file paths on stdin.
 # shellcheck disable=SC2329  # called through feed
+# Paths come NUL-separated (`-z`): git otherwise prints a non-ASCII name C-quoted, so
+# `会议.m4a` arrived as `"\344…\256.m4a"` and matched no rule at all. From the M3.2
+# security review; the user names recordings in Chinese too.
 scan_filenames() {
-    local path base
-    while IFS= read -r path; do
+    local path base lower
+    while IFS= read -r -d '' path; do
         [ -n "$path" ] || continue
         base="${path##*/}"
         case "$base" in
             llm_api_keys.json|auth.json|.env|.env.*)
                 report sensitive-file "$path" ;;
-            *.wav|*.m4a|*.mp3|*.aiff)
-                report sensitive-file "$path" ;;
             meeting_*.md|meeting_*.html|meeting_*.txt|*_transcript.*|*_summary.md)
                 report sensitive-file "$path" ;;
+        esac
+        # Audio or video may be a real recording: any case, any common container. The only
+        # exceptions are the two E2E fixtures by exact name, invented sentences read by `say`
+        # (Tests/Fixtures/e2e/README.md), approved by the user for that folder alone.
+        lower="$(printf '%s' "$base" | tr '[:upper:]' '[:lower:]')"
+        case "$lower" in
+            *.wav|*.m4a|*.mp3|*.aiff|*.aif|*.aifc|*.caf|*.flac|*.aac|*.ogg|*.opus|*.m4b|*.m4r|*.mp4|*.m4v|*.mov|*.mkv|*.mka|*.webm|*.amr|*.3gp|*.wma|*.au|*.snd)
+                case "$path" in
+                    Tests/Fixtures/e2e/e2e_mic.caf|Tests/Fixtures/e2e/e2e_system.caf) ;;
+                    *) report sensitive-file "$path" ;;
+                esac ;;
         esac
         # Reports are named <timestamp>_<topic>.html.
         case "$base" in
@@ -187,7 +199,7 @@ check_email() {  # label, email
 sweep_staged() {
     check_email "author about to commit" "$(git var GIT_AUTHOR_IDENT | sed -E 's/.*<(.*)>.*/\1/')"
     check_email "committer about to commit" "$(git var GIT_COMMITTER_IDENT | sed -E 's/.*<(.*)>.*/\1/')"
-    feed scan_filenames -- git diff --cached --name-only --diff-filter=ACMRT
+    feed scan_filenames -- git diff --cached --name-only -z --diff-filter=ACMRT
     SWEEP_CODE=1 feed scan_diff -- git diff --cached -U0 --no-color --no-ext-diff --diff-filter=ACMRT
 }
 
@@ -215,7 +227,7 @@ sweep_outgoing() {  # rev-list arguments
         identity_of "$sha"
         # -m: without it, diff-tree prints nothing for a merge, so what a merge adds
         # went unswept until CI's tree sweep. From the M3.1 security review.
-        feed scan_filenames -- git diff-tree -m --root --no-commit-id -r --name-only --diff-filter=ACMRT "$sha"
+        feed scan_filenames -- git diff-tree -m --root --no-commit-id -r --name-only -z --diff-filter=ACMRT "$sha"
         feed scan_diff -- git diff-tree -m --root --no-commit-id -p -U0 --no-color --no-ext-diff --diff-filter=ACMRT "$sha"
     done
 }
@@ -234,7 +246,7 @@ tree_as_diff() {
 }
 
 sweep_tree() {
-    feed scan_filenames -- git ls-files
+    feed scan_filenames -- git ls-files -z
     feed scan_diff -- tree_as_diff
 }
 

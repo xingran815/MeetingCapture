@@ -59,36 +59,27 @@ dur_of() {  # wav, seconds, integer part; 0 if afinfo can't read it
     out="$(afinfo "$1" 2>&1)"
     echo "$out" | awk '/estimated duration/ { printf "%d", $3; found=1 } END { if (!found) printf "0" }'
 }
-# Make a fixture if missing or silent (a cached one too). `say` on a headless runner may write
-# silent audio; not proven, so this retries and says what it saw.
+# Fixtures come from committed AAC clips (Tests/Fixtures/e2e), decoded here, so `say` isn't needed:
+# on the GitHub macOS runner `say` sometimes writes empty audio and retrying doesn't help.
+# `say` is only a fallback when a committed clip is missing, and on CI that is a failure.
+# The duration and peak check stays, to catch a broken conversion.
+FIXDIR="Tests/Fixtures/e2e"
 ensure_fixture() {  # text, name
-    local try=0 dur peak
-    while :; do
-        if [ -f "$DIR/$2.wav" ]; then
-            dur="$(dur_of "$DIR/$2.wav")"; peak="$(peak_of "$DIR/$2.wav")"
-            if [ "$dur" -ge 1 ] && [ "$peak" -ge 1000 ]; then
-                echo "e2e: fixture $2 duration=${dur}s peak=$peak"
-                return 0
-            fi
-            echo "e2e: fixture $2 is silent or short (duration=${dur}s peak=$peak), regenerating." >&2
-            rm -f "$DIR/$2.wav" "$DIR/$2.aiff"
-        fi
-        if [ "$try" -ge 3 ]; then
-            echo "e2e: FAILED, say wrote silent audio: fixture $2, duration ${dur:-?} s, peak ${peak:-?} of 32767 (floor 1000), after 3 tries." >&2
-            exit 1
-        fi
-        try=$((try + 1))
+    local dur peak src="$FIXDIR/$2.caf"
+    rm -f "$DIR/$2.wav" "$DIR/$2.aiff"
+    if [ -f "$src" ]; then
+        afconvert -f WAVE -d LEI16@48000 -c 1 "$src" "$DIR/$2.wav" || fail "couldn't decode $src."
+    elif [ -n "${CI:-}" ]; then
+        fail "committed fixture $src is missing. No fallback to say on CI."
+    else
+        echo "e2e: $src is missing, falling back to say." >&2
         speak "$1" "$2"
-        dur="$(dur_of "$DIR/$2.wav")"; peak="$(peak_of "$DIR/$2.wav")"
-        if [ "$dur" -lt 1 ] || [ "$peak" -lt 1000 ]; then
-            echo "e2e: fixture $2 try $try: duration=${dur}s peak=$peak, too quiet." >&2
-            rm -f "$DIR/$2.wav" "$DIR/$2.aiff"
-            sleep 1
-            continue
-        fi
-        echo "e2e: fixture $2 duration=${dur}s peak=$peak"
-        return 0
-    done
+    fi
+    dur="$(dur_of "$DIR/$2.wav")"; peak="$(peak_of "$DIR/$2.wav")"
+    if [ "$dur" -lt 1 ] || [ "$peak" -lt 1000 ]; then
+        fail "fixture $2 is silent or short: duration=${dur}s peak=$peak of 32767 (floor 1000)."
+    fi
+    echo "e2e: fixture $2 duration=${dur}s peak=$peak"
 }
 ensure_fixture "The quick brown fox jumps over the lazy dog." e2e_mic
 ensure_fixture "We will ship the report on Friday." e2e_system

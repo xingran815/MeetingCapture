@@ -60,6 +60,7 @@ git commit -qm "chore: base" || { echo "base commit refused"; exit 2; }
 
 # Expects the commit to be refused, naming the rule. $1 label, $2 rule, $3 file, $4 content.
 blocks() {
+    mkdir -p "$(dirname "$3")"
     printf '%s\n' "$4" > "$3"
     git add -f "$3"
     local out
@@ -98,6 +99,46 @@ blocks "dangerous flag"       code-dangerous-flag run.swift "args = [\"--danger"
 blocks "hook skip"            code-skip-hooks     run.sh    "git commit --no-""verify"
 blocks "logging a key"        code-log-credential run.swift "print(\"key \\(api""Key)\")"
 blocks "invisible char"       code-invisible-char note.md   "$(printf 'a\xe2\x80\x8bb')"
+
+# security review M3.2: non-ASCII names were C-quoted by git and bypassed every filename rule.
+blocks "security review M3.2: 会议.m4a (non-ASCII)"            sensitive-file "会议.m4a" "x"
+blocks "security review M3.2: 会议_transcript.txt"            sensitive-file "会议_transcript.txt" "x"
+blocks "security review M3.2: 录音 2.WAV (space, upper case)"  sensitive-file "录音 2.WAV" "x"
+blocks "security review M3.2: name with a tab"               sensitive-file "$(printf 'a\tb.m4a')" "x"
+blocks "security review M3.2: name with a double quote"      sensitive-file 'say "hi".m4a' "x"
+# Exact names only: the folder is no longer a pass.
+blocks "security review M3.2: e2e/standup.m4a"      sensitive-file Tests/Fixtures/e2e/standup.m4a "x"
+blocks "security review M3.2: e2e/call.wav"         sensitive-file Tests/Fixtures/e2e/call.wav "x"
+blocks "security review M3.2: e2e/e2e_mic-48k.caf"  sensitive-file Tests/Fixtures/e2e/e2e_mic-48k.caf "x"
+blocks "security review M3.2: e2e/E2E_MIC.caf"      sensitive-file Tests/Fixtures/e2e/E2E_MIC.caf "x"
+for f in Rec.MOV a.m4v a.mkv a.mka a.aifc a.m4r a.wma a.au a.snd; do
+    blocks "security review M3.2: $f" sensitive-file "rec/$f" "x"
+done
+
+# Finding (sweep audio gap: .caf passed): audio in any container is refused, in any case,
+# except directly in Tests/Fixtures/e2e/ (invented sentences read by `say`).
+for ext in wav m4a mp3 aiff aif caf flac aac ogg opus m4b mp4 webm amr 3gp; do
+    blocks "sweep audio gap: .$ext outside the fixtures" sensitive-file "rec/call.$ext" "x"
+done
+blocks "upper-case MEETING.WAV"      sensitive-file MEETING.WAV "x"
+blocks "mixed-case call.Caf"         sensitive-file call.Caf "x"
+blocks "sweep audio gap: .caf at top" sensitive-file a.caf "x"
+blocks "fixture subfolder e2e/sub/x.caf"          sensitive-file Tests/Fixtures/e2e/sub/x.caf "x"
+blocks "other fixture folder x.wav"               sensitive-file Tests/Fixtures/other/x.wav "x"
+blocks "file named e2e.caf, not the folder"       sensitive-file Tests/Fixtures/e2e.caf "x"
+blocks "xTests/Fixtures/e2e/x.caf (prefix look-alike)" sensitive-file xTests/Fixtures/e2e/x.caf "x"
+blocks "nested Tests/Fixtures/e2e/x.caf under a parent" sensitive-file sub/Tests/Fixtures/e2e/x.caf "x"
+blocks "upper-case ext in e2e subfolder"          sensitive-file Tests/Fixtures/e2e/sub/X.CAF "x"
+
+# The one exception: a file directly in Tests/Fixtures/e2e/ goes through.
+for fx in e2e_mic.caf e2e_system.caf; do
+    mkdir -p Tests/Fixtures/e2e; printf 'x\n' > "Tests/Fixtures/e2e/$fx"
+    git add -f "Tests/Fixtures/e2e/$fx"
+    if out="$(git commit -qm "test: fixture" 2>&1)"; then ok "Tests/Fixtures/e2e/$fx allowed"; git reset -q --hard HEAD~1
+    else bad "Tests/Fixtures/e2e/$fx refused" "$out"; git reset -q --hard HEAD; fi
+    git clean -qfdx -e scripts -e .githooks
+done
+git clean -qfdx -e scripts -e .githooks
 
 # Finding: an added line starting "++ " looks like a diff header and was skipped.
 blocks "key on a ++ line (header look-alike)" secret-openai-style note.md "++ $KEY"
@@ -302,6 +343,26 @@ if out="$(git push --dry-run origin mkey-a 2>&1)"; then bad "Finding (M3.1): key
 elif printf '%s' "$out" | grep -qF '[secret-openai-style]'; then ok "Finding (M3.1): key added only by a merge refused by [secret-openai-style]"
 else bad "merge key: rule not named" "$out"; fi
 git switch -q main
+
+# security review M3.2: pre-push and the CI tree sweep, with names the old feeders mis-read.
+# $1 branch, $2 path. An outgoing commit adding $2, made with hooks off.
+make_audio_commit() {
+    git switch -q -c "$1" main
+    mkdir -p "$(dirname "$2")"; printf 'x\n' > "$2"; git add -f -- "$2"
+    git -c core.hooksPath=/dev/null commit -qm "feat: audio"
+}
+n=0
+for f in "rec/call.caf" "会议.m4a" "会议_transcript.txt" "录音 2.WAV"; do
+    n=$((n+1)); make_audio_commit "aud$n" "$f"
+    if out="$(git push --dry-run origin "aud$n" 2>&1)"; then bad "security review M3.2: push adding $f went through"
+    elif printf '%s' "$out" | grep -qF '[sensitive-file]'; then ok "security review M3.2: push adding $f refused by [sensitive-file]"
+    else bad "push adding $f: rule not named" "$out"; fi
+    if out="$(scripts/sweep.sh --tree 2>&1)"; then bad "security review M3.2: --tree passed with $f"
+    elif printf '%s' "$out" | grep -qF '[sensitive-file]'; then ok "security review M3.2: --tree refuses $f"
+    else bad "--tree $f: rule not named" "$out"; fi
+    git switch -q main
+done
+git reset -q --hard main; git clean -qfd -e scripts -e .githooks
 
 make_merge mwav merge-call.wav "RIFF"
 if out="$(git push --dry-run origin mwav-a 2>&1)"; then bad "Finding (M3.1): sensitive file added only by a merge went through"

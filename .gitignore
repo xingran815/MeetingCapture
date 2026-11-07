@@ -16,6 +16,29 @@ dev/tmp/
 # Capture artifacts, transcripts and reports
 *.wav
 *.m4a
+# Any audio or video may be a real recording; only the two invented E2E fixtures are tracked.
+*.caf
+*.flac
+*.aac
+*.ogg
+*.opus
+*.aif
+*.aifc
+*.m4b
+*.m4r
+*.mp4
+*.m4v
+*.mov
+*.mkv
+*.mka
+*.webm
+*.amr
+*.3gp
+*.wma
+*.au
+*.snd
+!Tests/Fixtures/e2e/e2e_mic.caf
+!Tests/Fixtures/e2e/e2e_system.caf
 *.mp3
 *.aiff
 *.txt

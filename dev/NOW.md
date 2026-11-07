@@ -8,7 +8,7 @@ Updated: 2026-11-07 · M3.2 done and merged (PR 19, issue 17 closed). M4 next, i
 
 Open loops:
 - **Checks:** pre-push is sweeps only (seconds). CI skips `…SlowTests` classes. `check.sh` runs unit tests on 4 workers (D-77, D-79); don't run other heavy jobs alongside.
-- **CI's E2E** failed twice with an empty transcript; `e2e.sh` now prints fixture levels on failure. Read them before rerunning.
+- **CI's E2E** uses committed clips, since `say` wrote empty audio on the runner (D-80). Audio files are refused by the sweep except those two, by exact name.
 - **Mic device changes mid-call** are untested on real hardware (report, After the listen). Worth one manual unplug.
 - M5 settles the macOS setting: `Package.swift` says 14, untested; the specs say 26 (D-51).
 - Local `feature/coding-interview` and `feat/multi-provider-reasoning` keep old metadata and stay unpushed. `scripts/protected-commits.sha256` is a snapshot of the former, and the pre-push hook now checks it too (D-62).
