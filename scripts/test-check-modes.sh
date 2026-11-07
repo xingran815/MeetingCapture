@@ -60,7 +60,7 @@ exit 0
 STUB
     chmod +x "$1"
 }
-for n in test-guard e2e e2e-full test-sweeps test-sweeps-isolation test-identity test-lint test-check-modes; do
+for n in test-guard e2e e2e-full test-sweeps test-sweeps-isolation test-identity test-lint test-check-modes live-report; do
     make_stub "scripts/$n.sh" "$n"
 done
 make_stub .build/debug/MeetingCaptureCLI MeetingCaptureCLI
@@ -173,7 +173,7 @@ expected() {  # mode
         "test-lint" "test-sweeps-isolation test-lint.sh" \
         "test-check-modes" "test-sweeps-isolation test-check-modes.sh"
     [ "$1" = "--full" ] && return 0
-    printf '%s\n' "MeetingCaptureCLI --live-check"
+    printf '%s\n' "MeetingCaptureCLI --live-check" "live-report"
 }
 
 # The timing names each mode must log, in order.
@@ -183,7 +183,7 @@ expected_names() {  # mode
     if [ "$1" = "--full" ] || [ "$1" = "--live" ]; then
         printf '%s\n' "e2e-full" "sweep self-tests" "lint self-tests"
     fi
-    if [ "$1" = "--live" ]; then printf '%s\n' "live"; fi
+    if [ "$1" = "--live" ]; then printf '%s\n' "live" "live report"; fi
     printf '%s\n' "check $1 total"
 }
 
@@ -352,6 +352,8 @@ rm -f "$REC"; FAIL="swift build"; check_cmd --full
 record_has "--full failing at the first step records result failed" "result failed"
 rm -f "$REC"; FAIL="MeetingCaptureCLI --live-check"; check_cmd --live
 record_has "failing --live records result failed" "mode --live" "result failed"
+rm -f "$REC"; FAIL="live-report"; check_cmd --live
+record_has "M4 live report step: a failing live-report.sh stops --live with result failed" "mode --live" "result failed"
 
 # An untracked file, then a changed tracked file, each make the record say dirty.
 FAIL=""
