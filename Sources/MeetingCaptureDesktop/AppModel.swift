@@ -53,6 +53,10 @@ final class AppModel {
     /// The settings as last loaded or saved, so a save writes only what changed.
     private var savedSettings = AppSettings.load()
     var entries: [LibraryEntry] = []
+    /// The output folder's groups (M5.2). Empty when `groups.json` can't be read; the
+    /// reason is in `groupsProblem`.
+    var groups: [ReportGroup] = []
+    var groupsProblem: String?
     var selection: LibraryEntry.ID?
     var showsJob = false
     /// Bumped when the user's layer changes (title, edits, notes), so the page is drawn again.
@@ -102,7 +106,16 @@ final class AppModel {
 
     func reload() {
         entries = Library.entries(in: settings.resolvedOutputDirectory, busy: busyBases)
+        do {
+            groups = try ReportGroups.all(in: settings.resolvedOutputDirectory)
+            groupsProblem = nil
+        } catch {
+            groups = []
+            groupsProblem = error.localizedDescription
+        }
     }
+
+    var outputDirectory: URL { settings.resolvedOutputDirectory }
 
     /// Recordings this app is still working on, so the library doesn't offer them as unfinished.
     private var busyBases: Set<String> {

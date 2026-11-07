@@ -20,6 +20,13 @@ Spec 05: the terminal has every desktop feature, plus finer settings. Check this
 | Send notes to the LLM (off by default) | Notes › Use notes when writing the report | Library › l |
 | Write the report again, keeping or dropping edits | Asked when the report has edits | Asked when the report has edits |
 | Delete a recording, to the Trash | More › Move to Trash…, ⌘⌫ | Library › d |
+| Put a report in a group, a new group, or none | More › Group | Library › g |
+| Make, rename, delete groups | More › Group › Manage Groups…, Recording menu | Main menu 7 |
+| A group's context redaction switch (on by default) | Manage Groups › Redact the context | Main menu 7 › group › x |
+| A group's pinned scenario | Manage Groups › Scenario | Main menu 7 › group › c |
+| Take a report out of a group | More › Group › No Group | Library › g › x, Main menu 7 › group › m |
+| Write a report with the group's context | Re-run › Write the Report Again (automatic in a group) | Library › w (automatic in a group; says which) |
+| See groups | Sidebar sections | Main menu 7, Library › g shows the group |
 | Primary CLI | Settings › Summaries | Settings › c LLM route |
 | Usage today | Settings › Summaries | Settings, the two usage lines |
 | Connection test | Settings › Summaries › Test | Settings › k Test CLI connection |

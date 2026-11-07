@@ -70,7 +70,7 @@ final class APISummaryBackend: SummaryBackend {
 }
 
 struct SummaryOutcome {
-    let report: Report
+    var report: Report
     let redactedValues: Int
     let flaggedTokens: [String]
     /// The topic before tokens were restored, with tokens taken out: what names the
@@ -134,7 +134,14 @@ struct SummaryPipeline {
     /// `notes` are the user's own, sent only when they turned that on (D-93). They are
     /// redacted together with the transcript, in one token space, and go to the sections
     /// step only, marked as the user's notes, never as part of the transcript.
-    func run(transcript: String, forcedScenario: String? = nil, notes: String? = nil) async throws -> SummaryOutcome {
+    ///
+    /// `context` is the group's earlier reports (M5.2, D-94), already allow-listed. It goes
+    /// to the sections step only, never to the classifier or the review, which checks this
+    /// report against its own transcript. It is redacted in the same token space as the
+    /// transcript when global redaction and the group's switch are both on.
+    func run(
+        transcript: String, forcedScenario: String? = nil, notes: String? = nil, context: GroupContext? = nil
+    ) async throws -> SummaryOutcome {
         // A model handed nothing invents a meeting, and that spends usage too.
         guard !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw ReportError.emptyTranscript
@@ -147,13 +154,19 @@ struct SummaryPipeline {
             forced = template
         }
 
-        let both = Self.redactTogether(transcript: transcript, notes: notes, redaction: redaction)
+        let both = Self.redactTogether(
+            transcript: transcript, notes: notes, context: context?.text, redaction: redaction,
+            redactContext: context?.redact ?? true)
         let redacted = both.transcript
         let notesInput = both.notes.map { "\n\n" + Self.notesHeading + "\n" + $0 } ?? ""
+        let contextInput = both.context.map { "\n\n" + Self.contextHeading + "\n" + $0 } ?? ""
         let suffix = redacted.tokens.isEmpty ? "" : Redactor.tokenInstruction
         let original = TranscriptParser.parse(transcript)
         var models = Report.Models()
-        var notices: [String] = []
+        var notices: [String] = context?.notices ?? []
+        if let context, both.context != nil, redaction, !context.redact {
+            notices.append("The group's switch is off, so its context went as written, without redaction.")
+        }
 
         // 1. Classify. Any failure falls back to `general`; a full limit shows up below.
         onStep(.choosingType)
@@ -186,7 +199,7 @@ struct SummaryPipeline {
         let sectionsSystem = Self.sectionsPrompt(template, language: Self.safeLanguage(language)) + suffix
         let draft = try await withOneRetry(step: "sections") { retryNote in
             let reply = try await backend.complete(
-                tier: .normal, system: sectionsSystem, input: redacted.text + notesInput + retryNote,
+                tier: .normal, system: sectionsSystem, input: redacted.text + notesInput + contextInput + retryNote,
                 schema: sectionsSchema)
             return Self.decodeSections(reply.text, template: template).map { ($0, reply.model) }
         }
@@ -329,27 +342,44 @@ struct SummaryPipeline {
     static let notesHeading =
         "THE USER'S OWN NOTES (written by the user after the call, not said in it; use them as context, and never quote them as something said):"
 
-    /// Redacts the transcript and the notes as one text, so a value in both gets the
-    /// same token and restoring works for both. The separator has a control character
-    /// no redaction rule matches, so no value can span it.
-    static func redactTogether(transcript: String, notes: String?, redaction: Bool) -> (
-        transcript: Redactor.Result, notes: String?
-    ) {
-        let trimmed = notes?.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let trimmed, !trimmed.isEmpty else {
-            return (redaction ? Redactor.redact(transcript) : Redactor.Result(text: transcript, tokens: [:]), nil)
+    static let contextHeading =
+        "EARLIER REPORTS IN THIS GROUP (written by this app from earlier recordings, not said in this one; use them only as background, such as who people are, ongoing topics and follow-ups; never report anything from them as said in this recording, and never quote them):"
+
+    /// Redacts the transcript, the notes and the group context as one text, so a value in
+    /// more than one gets the same token and restoring works for all. Separators have a
+    /// control character no redaction rule matches, so no value can span one.
+    ///
+    /// With `redaction` off nothing is redacted. With it on and `redactContext` off (the
+    /// group's switch), the context goes as written and the rest is redacted (D-94).
+    static func redactTogether(
+        transcript: String, notes: String?, context: String? = nil, redaction: Bool, redactContext: Bool = true
+    ) -> (transcript: Redactor.Result, notes: String?, context: String?) {
+        func present(_ s: String?) -> String? {
+            guard let t = s?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty else { return nil }
+            return t
         }
-        guard redaction else { return (Redactor.Result(text: transcript, tokens: [:]), trimmed) }
-        let separator = "\n\u{1E}NOTES\u{1E}\n"
-        let joined = Redactor.redact(transcript + separator + trimmed)
-        guard let cut = joined.text.range(of: separator) else {
-            // Can't happen, since nothing matches the separator; if it did, the notes stay home.
-            return (Redactor.redact(transcript), nil)
+        let notes = present(notes)
+        let context = present(context)
+        guard redaction else { return (Redactor.Result(text: transcript, tokens: [:]), notes, context) }
+        let separator = "\n\u{1E}PART\u{1E}\n"
+        var parts = [transcript]
+        if let notes { parts.append(notes) }
+        if let context, redactContext { parts.append(context) }
+        let joined = Redactor.redact(parts.joined(separator: separator))
+        let pieces = joined.text.components(separatedBy: separator)
+        guard pieces.count == parts.count else {
+            // Can't happen, since nothing matches the separator; if it did, only the
+            // transcript goes, redacted on its own, and the rest stays home.
+            return (Redactor.redact(transcript), nil, nil)
         }
-        return (
-            Redactor.Result(text: String(joined.text[..<cut.lowerBound]), tokens: joined.tokens),
-            String(joined.text[cut.upperBound...])
-        )
+        var next = 1
+        var redactedNotes: String?
+        if notes != nil {
+            redactedNotes = pieces[next]
+            next += 1
+        }
+        let outContext = context.map { redactContext ? pieces[next] : $0 }
+        return (Redactor.Result(text: pieces[0], tokens: joined.tokens), redactedNotes, outContext)
     }
 
     private func withOneRetry<T>(step: String, _ attempt: (String) async throws -> T?) async throws -> T {

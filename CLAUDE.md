@@ -69,6 +69,7 @@ Scenario.swift       scenario templates as JSON data: six built in, more from ~/
 Report.swift         the Report model every report renders from · TranscriptParser for `[hh:mm:ss] Speaker: text` lines
 ReportRenderer.swift  JSON → self-contained HTML (all text escaped, http/https links only, CSP blocks outside requests), markdown, terminal text · ReportFileName `<yyyyMMdd_HHmmss>_<topic>.html` · ReportFiles writes .md, .report.json and .html
 Notebook.swift       M5.1: the user's layer (`<base>.edits.json`, `<base>.notes.md`) merged at render · stale edits · delete to the Trash by the sidecar's lists only, sidecar last (D-93, D-95)
+Groups.swift         M5.2: `groups.json` (manual groups by base name) · allow-listed context from a group's earlier reports, capped, never a transcript · ReportInputs gathers notes, context and a pinned scenario for every route (D-94, D-96)
 Redactor.swift       regex redaction to `<EMAIL_1>`-style tokens before any LLM call, restored locally after
 LLMRouter.swift      which subscription CLI runs a call; tiers never mix across CLIs; switch only when usage is full
 ModelCLI.swift       pure description of a CLI call (args, tier, parsing); CLIRunner.swift starts it (no shell, allow-listed env)

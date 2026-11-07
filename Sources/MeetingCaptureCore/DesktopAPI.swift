@@ -357,11 +357,11 @@ public final class MeetingProcessor {
                 backend: backend, redaction: config.redactionEnabled, catalog: scenarios.catalog)
             pipeline.onStep = { onEvent(.reportStep($0)) }
             let base = source.deletingPathExtension()
-            // Notes go out only when the user turned that on for this report (D-93).
-            let notes = Notebook.sendsNotesToLLM(base: base) ? Notebook.loadNotes(base: base) : nil
-            // Notes edited outside the app skip its limit; only the limit's worth goes out.
-            let capped = notes.map { String($0.prefix(Notebook.maxNotes)) }
-            let outcome = try await pipeline.run(transcript: transcript, notes: capped)
+            // Notes (only when switched on, D-93), the group's context and pinned scenario (D-94).
+            let inputs = ReportInputs.gather(base: base, catalog: scenarios.catalog)
+            var outcome = try await pipeline.run(
+                transcript: transcript, forcedScenario: inputs.scenario, notes: inputs.notes, context: inputs.context)
+            outcome.report.notices += inputs.notices
             // Kept before the write: if writing fails, the terminal can still show the
             // report the calls paid for. From the M5 review.
             lastReport = outcome.report
@@ -427,6 +427,8 @@ public struct LibraryEntry: Identifiable, Hashable, Sendable {
     public let isUnfinished: Bool
     /// The audio files the recording kept (raw first), for "Show in Finder".
     public let audioFiles: [URL]
+    /// The group this report is in (M5.2), if any.
+    public var group: ReportGroup? = nil
 
     public var transcriptURL: URL { base.appendingPathExtension("txt") }
     public var reportJSONURL: URL { base.appendingPathExtension("report.json") }
@@ -532,6 +534,7 @@ public enum Library {
             AudioRetention.unfinished(in: directory, isRunning: { $0 != me && AudioRetention.isRunning(pid: $0) })
                 .map { RecordingFiles.baseName(of: $0.deletingPathExtension().lastPathComponent) }
         ).subtracting(busy)
+        let groups = (try? GroupStore.load(in: directory)) ?? []
         var bases = Set<String>()
         for name in names {
             if name.hasSuffix(".mcmeta.json") { bases.insert(String(name.dropLast(".mcmeta.json".count))) }
@@ -564,7 +567,7 @@ public enum Library {
                     userTitle: userTitle, scenarioTitle: report?.scenarioTitle,
                     durationSeconds: report?.durationSeconds,
                     hasTranscript: hasTranscript, hasReport: report != nil, isUnfinished: unfinished.contains(name),
-                    audioFiles: audio))
+                    audioFiles: audio, group: groups.first { $0.members.contains(name) }))
         }
         return entries.sorted { $0.createdAt > $1.createdAt }
     }
@@ -575,6 +578,58 @@ public enum Library {
     public static func cleanOldAudio(settings: AppSettings, now: Date = Date()) -> [URL] {
         AudioRetention.clean(in: settings.resolvedOutputDirectory, days: settings.audioRetentionDays, now: now)
     }
+}
+
+// MARK: - Groups (M5.2)
+
+/// Groups the user makes by hand, in `groups.json` in the output folder (D-94). A report
+/// written in a group gets the group's earlier reports as context, never a transcript.
+public enum ReportGroups {
+    /// Every group in `directory`. Throws when `groups.json` can't be read.
+    public static func all(in directory: URL) throws -> [ReportGroup] { try GroupStore.load(in: directory) }
+
+    @discardableResult
+    public static func create(named name: String, in directory: URL) throws -> ReportGroup {
+        try GroupStore.create(named: name, in: directory)
+    }
+
+    public static func rename(_ group: ReportGroup, to name: String, in directory: URL) throws {
+        try GroupStore.rename(group.id, to: name, in: directory)
+    }
+
+    /// Only the group goes; its reports stay.
+    public static func delete(_ group: ReportGroup, in directory: URL) throws {
+        try GroupStore.delete(group.id, in: directory)
+    }
+
+    /// A report is in at most one group, so this takes it out of any other.
+    public static func add(_ entry: LibraryEntry, to group: ReportGroup) throws {
+        try GroupStore.add(entry.base.lastPathComponent, to: group.id, in: entry.base.deletingLastPathComponent())
+    }
+
+    public static func remove(_ entry: LibraryEntry) throws {
+        try GroupStore.removeEverywhere(entry.base.lastPathComponent, in: entry.base.deletingLastPathComponent())
+    }
+
+    /// Context redaction is the global setting AND this switch, so turning it on while
+    /// global redaction is off is refused.
+    public static func setRedactContext(_ group: ReportGroup, _ on: Bool, in directory: URL) throws {
+        try GroupStore.setRedactContext(
+            group.id, on, globalRedaction: Config.load().redactionEnabled, in: directory)
+    }
+
+    /// Nil unpins it, so the classifier picks again.
+    public static func setScenario(_ group: ReportGroup, _ name: String?, in directory: URL) throws {
+        try GroupStore.setScenario(group.id, name, catalog: ScenarioCatalog.load().catalog, in: directory)
+    }
+
+    /// Scenarios a group can pin, by name with their titles.
+    public static var scenarioChoices: [(name: String, title: String)] {
+        ScenarioCatalog.load().catalog.templates.map { ($0.name, $0.title) }
+    }
+
+    /// Whether global redaction is on, which a group's switch can only narrow.
+    public static var globalRedaction: Bool { Config.load().redactionEnabled }
 }
 
 // MARK: - Models

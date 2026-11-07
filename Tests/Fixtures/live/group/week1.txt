@@ -1,0 +1,12 @@
+[00:00:02] You: Okay, let's start. This is the first planning call for the spring book sale at the community library.
+[00:00:09] Speaker 1: Great. I talked to the branch manager and we can have the main hall on Saturday the fourteenth of March, nine to three.
+[00:00:18] You: Perfect, let's lock that in. Saturday the fourteenth.
+[00:00:22] Speaker 2: For flyers, I got a quote from Quickprint. Two hundred flyers for sixty euros, but they need the final artwork by Friday the twenty-eighth of February.
+[00:00:33] You: That's tight. Who can do the artwork?
+[00:00:36] Speaker 1: I'll do it. I'll send a draft to the team list, books-team@example.org, by next Wednesday.
+[00:00:44] Speaker 2: One worry: last year the card reader didn't work in the hall, the wifi is weak there. We lost sales.
+[00:00:52] You: Right. Let's test the card reader in the hall before the sale. Speaker 2, can you book a test slot with the manager?
+[00:01:00] Speaker 2: Yes, I'll ask for a slot in the first week of March.
+[00:01:05] You: And donations. We have about thirty boxes in the basement already. We need volunteers to sort them.
+[00:01:12] Speaker 1: I can ask the youth club. They helped two years ago.
+[00:01:17] You: Good. So: hall booked, flyer draft by Wednesday, card reader test in early March, youth club for sorting. Let's meet again next week, same time.

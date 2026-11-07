@@ -608,6 +608,11 @@ extension Notebook {
             }
             moved.append(url)
         }
+        // A recording that's gone leaves its group too (D-94). A groups.json that can't
+        // be read is left as it is; the stale name is then skipped as "gone".
+        if !recordingExists(base: base) {
+            try? GroupStore.removeEverywhere(base.lastPathComponent, in: base.deletingLastPathComponent())
+        }
         return TrashPlan(files: moved, notes: plan.notes)
     }
 }

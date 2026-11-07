@@ -9,6 +9,8 @@ struct ContentView: View {
     @State private var showEdit = false
     @State private var trash: TrashRequest?
     @State private var askKeepEdits = false
+    @State private var showNewGroup = false
+    @State private var showGroups = false
 
     var body: some View {
         @Bindable var model = model
@@ -39,6 +41,10 @@ struct ContentView: View {
         .sheet(isPresented: $showEdit) {
             if let entry = model.selectedEntry { EditReportSheet(entry: entry) }
         }
+        .sheet(isPresented: $showNewGroup) {
+            if let entry = model.selectedEntry { NewGroupSheet(entry: entry) }
+        }
+        .sheet(isPresented: $showGroups) { GroupsSheet() }
         .sheet(item: $trash) { request in
             TrashConfirmation(entry: request.entry, plan: request.plan)
         }
@@ -100,6 +106,7 @@ struct ContentView: View {
             edit: entry.hasReport && !model.isBusy(entry) ? { showEdit = true } : nil,
             notes: { model.showsNotes.toggle() },
             writeAgain: { writeAgain(entry) },
+            groups: { showGroups = true },
             trash: entry.isUnfinished || model.isBusy(entry) ? nil : { askTrash(entry) })
     }
 
@@ -151,12 +158,37 @@ struct ContentView: View {
                     // Not during a re-run of this recording: the report is about to change.
                     Button("Edit Report…") { showEdit = true }.disabled(!entry.hasReport || model.isBusy(entry))
                     Divider()
+                    Menu("Group") {
+                        ForEach(model.groups) { group in
+                            Toggle(
+                                group.name,
+                                isOn: Binding(
+                                    get: { entry.group?.id == group.id },
+                                    set: { on in
+                                        model.notebook {
+                                            if on {
+                                                try ReportGroups.add(entry, to: group)
+                                            } else {
+                                                try ReportGroups.remove(entry)
+                                            }
+                                        }
+                                    }))
+                        }
+                        if !model.groups.isEmpty { Divider() }
+                        Button("New Group…") { showNewGroup = true }
+                        Button("No Group") { model.notebook { try ReportGroups.remove(entry) } }
+                            .disabled(entry.group == nil)
+                        Divider()
+                        Button("Manage Groups…") { showGroups = true }
+                    }
+                    .disabled(model.groupsProblem != nil)
+                    Divider()
                     Button("Move to Trash…", role: .destructive) { askTrash(entry) }
                         .disabled(entry.isUnfinished || model.isBusy(entry))
                 } label: {
                     Label("More", systemImage: "ellipsis.circle")
                 }
-                .help("Rename, edit or delete")
+                .help("Rename, edit, group or delete")
                 Button {
                     model.showsNotes.toggle()
                 } label: {
@@ -228,7 +260,7 @@ struct LibrarySidebar: View {
                     .buttonStyle(.plain)
                 }
             }
-            ForEach(groups, id: \.title) { group in
+            ForEach(groups, id: \.id) { group in
                 Section(group.title) {
                     ForEach(group.entries) { entry in
                         LibraryRow(entry: entry).tag(entry.id)
@@ -247,11 +279,19 @@ struct LibrarySidebar: View {
         }
     }
 
-    private var groups: [(title: String, entries: [LibraryEntry])] {
+    /// The user's groups first (M5.2), each with its reports, newest first; then the
+    /// reports in no group, by day. A report shows once.
+    /// A group named "Today" mustn't share an id with the day section, so ids are kept apart.
+    private var groups: [(id: String, title: String, entries: [LibraryEntry])] {
         let cal = Calendar.current
-        let today = model.entries.filter { cal.isDateInToday($0.createdAt) }
-        let earlier = model.entries.filter { !cal.isDateInToday($0.createdAt) }
-        return [("Today", today), ("Earlier", earlier)].filter { !$0.entries.isEmpty }
+        let grouped = model.groups.map { g in
+            (id: "group:" + g.id, title: g.name, entries: model.entries.filter { $0.group?.id == g.id })
+        }
+        let loose = model.entries.filter { $0.group == nil }
+        let today = loose.filter { cal.isDateInToday($0.createdAt) }
+        let earlier = loose.filter { !cal.isDateInToday($0.createdAt) }
+        return (grouped + [("day:today", "Today", today), ("day:earlier", "Earlier", earlier)])
+            .filter { !$0.entries.isEmpty }
     }
 
     static func clock(_ seconds: Double) -> String {
@@ -273,6 +313,7 @@ struct NotebookActions {
     var edit: (() -> Void)?
     var notes: () -> Void
     var writeAgain: () -> Void
+    var groups: () -> Void
     var trash: (() -> Void)?
 }
 

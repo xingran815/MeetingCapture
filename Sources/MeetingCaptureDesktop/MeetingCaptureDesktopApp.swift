@@ -38,6 +38,7 @@ struct MeetingCaptureDesktopApp: App {
                 Button("Show Notes") { notebook?.notes() }
                     .keyboardShortcut("n", modifiers: [.command, .option])
                     .disabled(notebook == nil)
+                Button("Manage Groups…") { notebook?.groups() }.disabled(notebook == nil)
                 Button("Move to Trash…") { notebook?.trash?() }
                     .keyboardShortcut(.delete, modifiers: .command)
                     .disabled(notebook?.trash == nil)

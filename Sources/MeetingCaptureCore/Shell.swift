@@ -31,6 +31,7 @@ final class Shell {
                 MenuItem(key: "4", label: "Rename or merge speakers"),
                 MenuItem(key: "5", label: "Settings"),
                 MenuItem(key: "6", label: "Library: open a report, re-run a step"),
+                MenuItem(key: "7", label: "Groups: reports that share context"),
                 MenuItem(key: "q", label: "Quit"),
             ]
             let pick = Menu.pick(header: mainHeader(), items: items, allowBack: false)
@@ -48,7 +49,8 @@ final class Shell {
                 case 3: speakersFlow()
                 case 4: await settingsFlow()
                 case 5: await libraryFlow()
-                case 6: break loop
+                case 6: groupsFlow()
+                case 7: break loop
                 default: break
                 }
             }
@@ -241,6 +243,11 @@ final class Shell {
             MenuItem(
                 key: "l",
                 label: "Send notes to the LLM when writing the report  [\(entry.sendsNotesToLLM ? "on" : "off")]"),
+            MenuItem(
+                key: "g",
+                label:
+                    "Group: its reports share context  [\(entry.group.map { ReportRenderer.terminalSafe($0.name) } ?? "none")]"
+            ),
             MenuItem(key: "f", label: "Show in Finder"),
             MenuItem(key: "d", label: "Delete: move to the Trash", enabled: !entry.isUnfinished),
         ]
@@ -272,8 +279,15 @@ final class Shell {
                 else { return }
                 keep = !answer.lowercased().hasPrefix("n")
             }
+            if let group = entry.group {
+                print(
+                    "👥  In the group \"\(ReportRenderer.terminalSafe(group.name))\": its earlier reports go as context (never transcripts). Change it with g."
+                )
+            }
             await runSummarize(
                 transcript: "", sourcePath: entry.transcriptURL.path, showTranscript: false, keepEdits: keep)
+        case "g":
+            pickGroupFlow(entry)
         case "r":
             renameFlow(entry)
         case "n":
@@ -294,6 +308,135 @@ final class Shell {
             openWithSystem(["-R", (entry.audioFiles.first ?? entry.transcriptURL).path])
         default: break
         }
+    }
+
+    // MARK: - Groups (M5.2, D-94)
+
+    private func loadGroups(_ dir: URL) -> [ReportGroup]? {
+        do { return try ReportGroups.all(in: dir) } catch {
+            print("❌  \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    /// Library › g: put this report in a group, a new one, or none.
+    private func pickGroupFlow(_ entry: LibraryEntry) {
+        let dir = entry.base.deletingLastPathComponent()
+        guard let groups = loadGroups(dir) else { return }
+        var items = groups.map { g in
+            MenuItem(
+                label:
+                    "\(ReportRenderer.terminalSafe(g.name))\(g.id == entry.group?.id ? "  ✓" : "")  (\(g.members.count))"
+            )
+        }
+        items.append(MenuItem(key: "n", label: "New group…"))
+        items.append(MenuItem(key: "x", label: "No group", enabled: entry.group != nil))
+        guard case .selected(let i) = Menu.pick(title: "\nPut this report in a group\n", items: items, allowBack: true)
+        else { return }
+        do {
+            if i < groups.count {
+                try ReportGroups.add(entry, to: groups[i])
+                print(
+                    "✓  In \"\(ReportRenderer.terminalSafe(groups[i].name))\". Its next report uses the group's earlier reports as context."
+                )
+            } else if items[i].key == "n" {
+                guard let name = askLine("Name of the new group"), !name.isEmpty else { return }
+                let group = try ReportGroups.create(named: name, in: dir)
+                try ReportGroups.add(entry, to: group)
+                print("✓  Made \"\(ReportRenderer.terminalSafe(group.name))\" with this report in it.")
+            } else {
+                try ReportGroups.remove(entry)
+                print("✓  Not in a group.")
+            }
+        } catch { print("❌  \(error.localizedDescription)") }
+    }
+
+    /// Main menu 7: make, rename and delete groups, and change their switches.
+    private func groupsFlow() {
+        guard let dir = outputDirectoryURL else { return }
+        while true {
+            guard let groups = loadGroups(dir) else { return }
+            var items = groups.map { g in
+                MenuItem(label: "\(ReportRenderer.terminalSafe(g.name))  (\(g.members.count) report(s))")
+            }
+            items.append(MenuItem(key: "n", label: "New group…"))
+            guard
+                case .selected(let i) = Menu.pick(
+                    title: "\nGroups  (a report in a group is written with the group's earlier reports as context)\n",
+                    items: items, allowBack: true)
+            else { return }
+            if i >= groups.count {
+                guard let name = askLine("Name of the new group"), !name.isEmpty else { continue }
+                do {
+                    try ReportGroups.create(named: name, in: dir)
+                    print("✓  Made. Add reports to it from the Library with g.")
+                } catch { print("❌  \(error.localizedDescription)") }
+                continue
+            }
+            groupFlow(groups[i], dir: dir)
+        }
+    }
+
+    private func groupFlow(_ group: ReportGroup, dir: URL) {
+        let global = ReportGroups.globalRedaction
+        let redaction = !global ? "off (off in Settings)" : group.redactContext ? "on" : "off"
+        let scenario =
+            group.scenario.flatMap { s in ReportGroups.scenarioChoices.first { $0.name == s }?.title } ?? group.scenario
+        let titles = Dictionary(
+            Library.entries(in: dir).map { ($0.base.lastPathComponent, $0.topic ?? $0.base.lastPathComponent) },
+            uniquingKeysWith: { a, _ in a })
+        print("\n\(ReportRenderer.terminalSafe(group.name)):")
+        if group.members.isEmpty { print("   No reports yet. Add them from the Library with g.") }
+        for m in group.members { print("   · \(ReportRenderer.terminalSafe(titles[m] ?? m))") }
+        let actions: [MenuItem] = [
+            MenuItem(key: "r", label: "Rename"),
+            MenuItem(key: "x", label: "Redact the context  [\(redaction)]", enabled: global),
+            MenuItem(
+                key: "c",
+                label: "Pinned scenario     [\(scenario.map(ReportRenderer.terminalSafe) ?? "none, classified")]"),
+            MenuItem(key: "m", label: "Take a report out", enabled: !group.members.isEmpty),
+            MenuItem(key: "d", label: "Delete the group (its reports stay)"),
+        ]
+        guard case .selected(let a) = Menu.pick(items: actions, allowBack: true) else { return }
+        do {
+            switch actions[a].key {
+            case "r":
+                guard let name = askLine("New name"), !name.isEmpty else { return }
+                try ReportGroups.rename(group, to: name, in: dir)
+                print("✓  Renamed.")
+            case "x":
+                try ReportGroups.setRedactContext(group, !group.redactContext, in: dir)
+                print(
+                    group.redactContext
+                        ? "✓  This group's context now goes as written, without redaction. The transcript is still redacted."
+                        : "✓  This group's context is redacted with the transcript.")
+            case "c":
+                let choices = ReportGroups.scenarioChoices
+                var items = choices.map { MenuItem(label: "\($0.title)  (\($0.name))") }
+                items.append(MenuItem(key: "u", label: "None: classify each report"))
+                guard case .selected(let i) = Menu.pick(title: "\nPin a scenario\n", items: items, allowBack: true)
+                else { return }
+                try ReportGroups.setScenario(group, i < choices.count ? choices[i].name : nil, in: dir)
+                print("✓  Saved.")
+            case "m":
+                let items = group.members.map { MenuItem(label: ReportRenderer.terminalSafe(titles[$0] ?? $0)) }
+                guard
+                    case .selected(let i) = Menu.pick(
+                        title: "\nTake out which report?\n", items: items, allowBack: true)
+                else { return }
+                try GroupStore.removeEverywhere(group.members[i], in: dir)
+                print("✓  Taken out. The report itself stays.")
+            case "d":
+                guard
+                    let answer = askLine(
+                        "Delete the group \"\(ReportRenderer.terminalSafe(group.name))\"? Its reports stay [y/N]"),
+                    answer.lowercased().hasPrefix("y")
+                else { return }
+                try ReportGroups.delete(group, in: dir)
+                print("✓  Deleted the group.")
+            default: break
+            }
+        } catch { print("❌  \(error.localizedDescription)") }
     }
 
     private func renameFlow(_ entry: LibraryEntry) {

@@ -299,12 +299,16 @@ public enum MeetingCaptureApp {
             let outcome: SummaryOutcome
             // The user's notes go out only when they turned that on for this report (D-93).
             let notesBase = URL(fileURLWithPath: sourcePath).deletingPathExtension()
+            // The group's context and pinned scenario come too (D-94); `--scenario` wins over a pin.
+            let inputs = ReportInputs.gather(base: notesBase, catalog: scenarioLoad.catalog, flagScenario: scenarioFlag)
             do {
-                outcome = try await SummaryPipeline(
+                var run = try await SummaryPipeline(
                     backend: backend, redaction: redaction, catalog: scenarioLoad.catalog
                 ).run(
-                    transcript: transcript, forcedScenario: scenarioFlag,
-                    notes: Notebook.sendsNotesToLLM(base: notesBase) ? Notebook.loadNotes(base: notesBase) : nil)
+                    transcript: transcript, forcedScenario: inputs.scenario, notes: inputs.notes,
+                    context: inputs.context)
+                run.report.notices += inputs.notices
+                outcome = run
             } catch {
                 // From --transcribe-only the source is the audio; the transcript is the .txt beside it.
                 let source = URL(fileURLWithPath: sourcePath)
