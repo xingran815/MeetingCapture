@@ -12,7 +12,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "priorities"
+    ]
    }
   ],
   "feedback": [
@@ -26,7 +30,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "excellent"
+    ]
    },
    {
     "text": "Design docs often arrive the night before the review, leaving no time to comment.",
@@ -38,7 +46,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "leaving"
+    ]
    },
    {
     "text": "Priorities should be written down; three asks came in last week with no order.",
@@ -50,7 +62,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "low",
+    "keywords": [
+     "Priorities"
+    ]
    }
   ],
   "commitments": [
@@ -64,7 +80,9 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "high",
+    "keywords": []
    },
    {
     "text": "Post a ranked priority list in the team channel",
@@ -76,7 +94,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "priority"
+    ]
    },
    {
     "text": "Ask platform whether the build-cache work can be shared as a cross-team project",
@@ -88,7 +110,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "platform"
+    ]
    },
    {
     "text": "Start mentoring the new hire",
@@ -100,7 +126,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "mentoring"
+    ]
    }
   ],
   "growth": [
@@ -114,7 +144,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "influence"
+    ]
    },
    {
     "text": "Worried that on-call load is eating focus time.",
@@ -126,7 +160,11 @@
     "detail": "",
     "confidence": "unsure",
     "reason": "Raised once; no follow-up discussion in the transcript.",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "Worried"
+    ]
    }
   ],
   "follow_ups": [
@@ -140,7 +178,9 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": []
    }
   ],
   "insights": [
@@ -154,7 +194,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "ai"
+    "source": "ai",
+    "priority": "normal",
+    "keywords": [
+     "influence"
+    ]
    }
   ]
  },

@@ -12,7 +12,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "presentation"
+    ]
    }
   ],
   "issues": [
@@ -26,7 +30,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "high",
+    "keywords": [
+     "presentation"
+    ]
    },
    {
     "text": "A recent argument with her sister about the holidays, and difficulty saying no.",
@@ -38,7 +46,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "difficulty"
+    ]
    }
   ],
   "suggestions": [
@@ -52,7 +64,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "presentation"
+    ]
    },
    {
     "text": "Worry about failing the presentation: a values exercise, writing three actions that fit being honest and prepared.",
@@ -64,7 +80,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "presentation"
+    ]
    },
    {
     "text": "Argument with her sister: to be taken up next session.",
@@ -76,7 +96,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "Argument"
+    ]
    }
   ],
   "todos": [
@@ -90,7 +114,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "high",
+    "keywords": [
+     "prepared"
+    ]
    },
    {
     "text": "Practise the defusion phrase twice a day",
@@ -102,7 +130,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "Practise"
+    ]
    }
   ],
   "smart_goals": [
@@ -116,7 +148,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "Practise"
+    ]
    }
   ],
   "concepts": [
@@ -130,7 +166,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "cognitive"
+    ]
    },
    {
     "text": "values exercise",
@@ -142,7 +182,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "exercise"
+    ]
    }
   ],
   "insights": [
@@ -156,7 +200,11 @@
     "detail": "",
     "confidence": "unsure",
     "reason": "One reaction in one session.",
-    "source": "ai"
+    "source": "ai",
+    "priority": "normal",
+    "keywords": [
+     "reworded"
+    ]
    },
    {
     "text": "Rehearsing out loud and the values exercise both give the client something concrete before Friday.",
@@ -168,7 +216,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "ai"
+    "source": "ai",
+    "priority": "low",
+    "keywords": [
+     "Rehearsing"
+    ]
    }
   ]
  }

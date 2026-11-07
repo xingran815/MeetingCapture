@@ -2,17 +2,21 @@
 
 _Lecture · 2027-01-15 08:00 · about 00:03:55 · reviewed_
 
+## At a glance
+
+- Gradient descent moves **parameters** a small step downhill on the loss. _(Key concepts)_
+
 ## Summary
 
-An introduction to gradient descent: the loss landscape, the learning rate, the gradient, stochastic gradient descent, momentum and Adam. Homework is to implement stochastic gradient descent.
+An **introduction** to gradient descent: the loss landscape, the learning rate, the gradient, stochastic gradient descent, momentum and Adam. Homework is to implement stochastic gradient descent.
 
 
 ## Key concepts
 
-- Gradient descent moves parameters a small step downhill on the loss.
-- The learning rate sets the step size: too large overshoots, too small is slow.
-- The gradient points to steepest increase, so steps go the opposite way; it can reach a local minimum.
-- Stochastic gradient descent uses a small random batch per step: noisier but faster.
+- **Key:** Gradient descent moves **parameters** a small step downhill on the loss.
+- The learning rate sets the step size: too large **overshoots**, too small is slow.
+- The **gradient** points to steepest increase, so steps go the opposite way; it can reach a local minimum.
+- **Stochastic** gradient descent uses a small random batch per step: noisier but faster.
 
 ## Explanations and sources
 
@@ -43,7 +47,7 @@ An introduction to gradient descent: the loss landscape, the learning rate, the 
 ## AI insights
 _Suggestions from the AI, not things that were said._
 
-- AI: Implement the toy dataset exercise with two learning rates and compare the loss curves.
+- AI: **Implement** the toy dataset exercise with two learning rates and compare the loss curves.
 
 ## What the review changed
 

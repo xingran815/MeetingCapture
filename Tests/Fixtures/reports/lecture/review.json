@@ -12,7 +12,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "introduction"
+    ]
    }
   ],
   "key_concepts": [
@@ -26,7 +30,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "high",
+    "keywords": [
+     "parameters"
+    ]
    },
    {
     "text": "The learning rate sets the step size: too large overshoots, too small is slow.",
@@ -38,7 +46,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "overshoots"
+    ]
    },
    {
     "text": "The gradient points to steepest increase, so steps go the opposite way; it can reach a local minimum.",
@@ -50,7 +62,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "gradient"
+    ]
    },
    {
     "text": "Stochastic gradient descent uses a small random batch per step: noisier but faster.",
@@ -62,7 +78,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "Stochastic"
+    ]
    }
   ],
   "explanations": [
@@ -76,7 +96,11 @@
     "detail": "Each update subtracts the gradient times the learning rate from the parameters.",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "gradient"
+    ]
    },
    {
     "text": "learning rate",
@@ -88,7 +112,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "learning"
+    ]
    },
    {
     "text": "momentum",
@@ -100,7 +128,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "momentum"
+    ]
    },
    {
     "text": "Adam",
@@ -112,7 +144,9 @@
     "detail": "",
     "confidence": "unsure",
     "reason": "The lecturer was not certain about the bias-correction details.",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": []
    }
   ],
   "study_questions": [
@@ -126,7 +160,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "ai"
+    "source": "ai",
+    "priority": "normal",
+    "keywords": [
+     "gradient"
+    ]
    },
    {
     "text": "What goes wrong with a learning rate that is too large?",
@@ -138,7 +176,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "ai"
+    "source": "ai",
+    "priority": "normal",
+    "keywords": [
+     "learning"
+    ]
    }
   ],
   "insights": [
@@ -152,7 +194,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "ai"
+    "source": "ai",
+    "priority": "normal",
+    "keywords": [
+     "Implement"
+    ]
    }
   ]
  },

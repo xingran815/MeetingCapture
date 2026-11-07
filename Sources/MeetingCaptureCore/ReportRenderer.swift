@@ -147,7 +147,7 @@ enum ReportRenderer {
         case .qa:
             for item in section.items {
                 h +=
-                    "<div class=\"qa\(item.isUnsure ? " unsure" : "")\(item.isHigh ? " high" : "")\"><p class=\"q\">\(pri(item))\(hl(item.text, item))</p>"
+                    "<div class=\"qa\(stateClasses(item))\"><p class=\"q\">\(pri(item))\(hl(item.text, item))</p>"
                 let answer = (item.answer ?? "").isEmpty ? "I don't know." : item.answer!
                 h += "<p class=\"a ai\"><span class=\"badge\">AI</span> \(hl(answer, item))</p>\(marks(item))</div>"
             }
@@ -165,7 +165,7 @@ enum ReportRenderer {
         case .concepts:
             for item in section.items {
                 h +=
-                    "<article class=\"concept\(item.isUnsure ? " unsure" : "")\(item.isHigh ? " high" : "")\"><h3>\(pri(item))\(escape(item.text ?? ""))</h3><dl>"
+                    "<article class=\"concept\(stateClasses(item))\"><h3>\(pri(item))\(escape(item.text ?? ""))</h3><dl>"
                 if let q = item.quote, !q.isEmpty { h += "<dt>What was said</dt><dd><q>\(escape(q))</q></dd>" }
                 if let a = item.answer, !a.isEmpty {
                     h +=
@@ -185,6 +185,11 @@ enum ReportRenderer {
             }
         }
         return h + "</section>\n"
+    }
+
+    /// ` unsure`, ` high`, ` low` as they apply, for boxes that carry their own class.
+    private static func stateClasses(_ item: Report.Item) -> String {
+        (item.isUnsure ? " unsure" : "") + (item.isHigh ? " high" : "") + (item.isLow ? " low" : "")
     }
 
     private static func cls(_ item: Report.Item) -> String {
@@ -411,7 +416,8 @@ enum ReportRenderer {
     }
 
     private static func markdownItem(_ item: Report.Item, kind: SectionKind) -> String {
-        let text = (item.isHigh ? "**Key:** " : "") + mdBold(oneLine(item.text), item.keywords)
+        let keyPrefix = item.isHigh ? "**Key:** " : ""
+        let text = keyPrefix + mdBold(oneLine(item.text), item.keywords)
         var line: String
         switch kind {
         case .prose:
@@ -423,10 +429,12 @@ enum ReportRenderer {
             if let d = item.due, !d.isEmpty { line += " (due: \(oneLine(d)))" }
         case .qa:
             let answer = (item.answer ?? "").isEmpty ? "I don't know." : oneLine(item.answer)
-            line = "- **\(text)**\n  - AI: \(answer)"
+            // The question is bold already, so keywords are bolded in the answer only.
+            let shown = (item.answer ?? "").isEmpty ? answer : mdBold(answer, item.keywords)
+            line = "- **\(item.isHigh ? "Key: " : "")\(oneLine(item.text))**\n  - AI: \(shown)"
         case .concepts:
             // The unsure note goes on the name's line, not after the last source.
-            line = "- **\(text)**" + unsureSuffix(item)
+            line = "- **\(item.isHigh ? "Key: " : "")\(oneLine(item.text))**" + unsureSuffix(item)
             if let q = item.quote, !q.isEmpty { line += "\n  - Said: \(oneLine(q))" }
             if let a = item.answer, !a.isEmpty { line += "\n  - AI understands: \(oneLine(a))" }
             if let d = item.detail, !d.isEmpty { line += "\n  - More: \(oneLine(d))" }

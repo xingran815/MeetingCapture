@@ -12,7 +12,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "migration"
+    ]
    }
   ],
   "who_said_what": [
@@ -26,7 +30,13 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "ninety percent",
+     "Zebra budget",
+     "migration"
+    ]
    },
    {
     "text": "Will fix the export and have it in review by Thursday; needs the failing account list sent to <EMAIL_1>.",
@@ -38,7 +48,12 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "high",
+    "keywords": [
+     "<EMAIL_1>",
+     "Thursday"
+    ]
    },
    {
     "text": "Cloud spend is 18,500 dollars over plan, mostly from the staging cluster.",
@@ -50,7 +65,12 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "low",
+    "keywords": [
+     "Cloud spend is 18,500 dollars over plan, mostly from the staging cluster.",
+     "18,500"
+    ]
    }
   ],
   "open_questions": [
@@ -64,7 +84,11 @@
     "detail": "",
     "confidence": "unsure",
     "reason": "Nobody in the meeting knew; finance has to confirm.",
-    "source": "ai"
+    "source": "ai",
+    "priority": "high",
+    "keywords": [
+     "cutover"
+    ]
    },
    {
     "text": "Renew the monitoring contract in October or switch vendor?",
@@ -76,7 +100,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "monitoring"
+    ]
    }
   ],
   "actions": [
@@ -90,7 +118,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "high",
+    "keywords": [
+     "invoice"
+    ]
    },
    {
     "text": "Ask finance about the audit window",
@@ -102,7 +134,11 @@
     "detail": "",
     "confidence": "unsure",
     "reason": "Friday is when Speaker 3 can be reached, not clearly a deadline.",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "finance"
+    ]
    },
    {
     "text": "Shut down the staging cluster and send a cost report",
@@ -114,7 +150,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "staging"
+    ]
    },
    {
     "text": "Swap on-call shifts with Speaker 2 and update the rota sheet",
@@ -126,7 +166,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "Speaker"
+    ]
    }
   ],
   "insights": [
@@ -140,7 +184,12 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "ai"
+    "source": "ai",
+    "priority": "normal",
+    "keywords": [
+     "21st",
+     "finance"
+    ]
    },
    {
     "text": "Turn off the staging cluster on a schedule, not by hand, so it cannot be left running again.",
@@ -152,7 +201,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "ai"
+    "source": "ai",
+    "priority": "low",
+    "keywords": [
+     "schedule"
+    ]
    }
   ]
  },

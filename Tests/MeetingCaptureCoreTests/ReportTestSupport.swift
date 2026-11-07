@@ -278,7 +278,7 @@ enum XSS {
     private static let allowedTags: Set<String> = [
         "html", "head", "meta", "title", "style", "script", "body", "header", "p", "h1", "h2", "h3", "ul", "ol", "li",
         "nav", "a", "main", "section", "div", "span", "details", "summary", "footer", "q", "br", "input", "article",
-        "dl", "dt", "dd", "strong",
+        "dl", "dt", "dd", "strong", "mark", "aside",
     ]
 
     private static func matches(_ pattern: String, in text: String) -> [[String]] {

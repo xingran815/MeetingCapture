@@ -12,7 +12,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "apartment"
+    ]
    }
   ],
   "who_said_what": [
@@ -26,7 +30,12 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "64",
+     "Cheapest"
+    ]
    },
    {
     "text": "Will book on Thursday and check who has the discount card.",
@@ -38,7 +47,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "high",
+    "keywords": [
+     "Thursday"
+    ]
    },
    {
     "text": "Suggested the museum on Sunday morning.",
@@ -50,7 +63,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "low",
+    "keywords": [
+     "Suggested"
+    ]
    }
   ],
   "open_questions": [
@@ -64,7 +81,11 @@
     "detail": "",
     "confidence": "unsure",
     "reason": "Neither speaker knew and the transcript does not say.",
-    "source": "ai"
+    "source": "ai",
+    "priority": "high",
+    "keywords": [
+     "Sundays"
+    ]
    },
    {
     "text": "Will the owner really leave the keys with the neighbour?",
@@ -76,7 +97,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "neighbour"
+    ]
    }
   ],
   "actions": [
@@ -90,7 +115,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "high",
+    "keywords": [
+     "tickets"
+    ]
    },
    {
     "text": "Text Maria about the discount card",
@@ -102,7 +131,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "discount"
+    ]
    },
    {
     "text": "Confirm the keys with the owner",
@@ -114,7 +147,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "Confirm"
+    ]
    },
    {
     "text": "Look up the museum opening days and message the group",
@@ -126,7 +163,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "opening"
+    ]
    },
    {
     "text": "Send the booking confirmation to the group",
@@ -138,7 +179,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "confirmation"
+    ]
    }
   ],
   "insights": [
@@ -152,7 +197,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "ai"
+    "source": "ai",
+    "priority": "normal",
+    "keywords": [
+     "opening"
+    ]
    }
   ]
  },

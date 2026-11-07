@@ -12,7 +12,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "engineering"
+    ]
    }
   ],
   "questions": [
@@ -26,7 +30,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "high",
+    "keywords": [
+     "project"
+    ]
    },
    {
     "text": "How did you handle disagreement on the team?",
@@ -38,7 +46,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "disagreement"
+    ]
    },
    {
     "text": "What's a weakness you're working on?",
@@ -50,7 +62,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "weakness"
+    ]
    },
    {
     "text": "How would you design a rate limiter for a public API?",
@@ -62,7 +78,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "limiter"
+    ]
    }
   ],
   "answers": [
@@ -76,7 +96,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "migration"
+    ]
    },
    {
     "text": "Said they mostly kept going; one engineer disagreed about the database and the user's choice won.",
@@ -88,7 +112,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "disagreed"
+    ]
    },
    {
     "text": "Takes on too much and is trying to delegate, with no good example yet.",
@@ -100,7 +128,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "delegate"
+    ]
    },
    {
     "text": "Token bucket per API key in Redis with a local cache; had not run the distributed version in production.",
@@ -112,7 +144,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "distributed"
+    ]
    }
   ],
   "gaps": [
@@ -126,7 +162,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "ai"
+    "source": "ai",
+    "priority": "normal",
+    "keywords": [
+     "disagreement"
+    ]
    },
    {
     "text": "No concrete example of delegating.",
@@ -138,7 +178,11 @@
     "detail": "",
     "confidence": "unsure",
     "reason": "Only the user can know whether such an example exists.",
-    "source": "ai"
+    "source": "ai",
+    "priority": "normal",
+    "keywords": [
+     "delegating"
+    ]
    }
   ],
   "follow_ups": [
@@ -152,7 +196,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "exercise"
+    ]
    },
    {
     "text": "Send references to the recruiting contact tonight",
@@ -164,7 +212,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "transcript"
+    "source": "transcript",
+    "priority": "normal",
+    "keywords": [
+     "references"
+    ]
    }
   ],
   "insights": [
@@ -178,7 +230,11 @@
     "detail": "",
     "confidence": "sure",
     "reason": "",
-    "source": "ai"
+    "source": "ai",
+    "priority": "normal",
+    "keywords": [
+     "uncertainty"
+    ]
    }
   ]
  }
