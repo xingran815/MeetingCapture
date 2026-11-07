@@ -57,6 +57,8 @@ final class AppModel {
     var showsJob = false
     /// Bumped when the user's layer changes (title, edits, notes), so the page is drawn again.
     var reportRevision = 0
+    /// The notes pane beside the report.
+    var showsNotes = false
     /// Something to tell the user after a notebook action, such as a page that was left.
     var notebookMessage: String?
 
@@ -275,9 +277,9 @@ final class AppModel {
         }
     }
 
-    func moveToTrash(_ entry: LibraryEntry) {
+    func moveToTrash(_ entry: LibraryEntry, confirmed: TrashPlan) {
         do {
-            let done = try entry.moveToTrash(busy: busyBases)
+            let done = try entry.moveToTrash(confirmed: confirmed, busy: busyBases)
             if selection == entry.id { selection = nil }
             if !done.notes.isEmpty { notebookMessage = done.notes.joined(separator: "\n\n") }
         } catch {

@@ -49,7 +49,7 @@ final class NotebookProcessorSlowTests: XCTestCase {
         XCTAssertNil(first.failure)
         try entry().rename(to: "My title")
         try entry().saveNotes("my notes")
-        try entry().saveEdits(["summary#0#text": "My own summary."])
+        try entry().saveEdits(["summary#0#text": "My own summary."], readFrom: entry().editableFields())
 
         let second = await run(keepEdits: true)
         XCTAssertNil(second.failure)
@@ -67,7 +67,7 @@ final class NotebookProcessorSlowTests: XCTestCase {
         _ = await run()
         try entry().rename(to: "My title")
         try entry().saveNotes("my notes")
-        try entry().saveEdits(["summary#0#text": "My own summary."])
+        try entry().saveEdits(["summary#0#text": "My own summary."], readFrom: entry().editableFields())
 
         let result = await run(keepEdits: false)
         XCTAssertNil(result.failure)
@@ -80,7 +80,7 @@ final class NotebookProcessorSlowTests: XCTestCase {
 
     func testARerunReportsAnEditWhoseOriginalChangedInsteadOfApplyingIt() async throws {
         _ = await run()
-        try entry().saveEdits(["summary#0#text": "My own summary."])
+        try entry().saveEdits(["summary#0#text": "My own summary."], readFrom: entry().editableFields())
         // The model "wrote" other words this time.
         var edits = try ReportEdits.load(at: ReportEdits.url(forBase: base))
         edits.overrides[0].original = "Words the model no longer writes."
@@ -112,5 +112,18 @@ final class NotebookProcessorSlowTests: XCTestCase {
 
     private func reportFilesPages() throws -> Int {
         try XCTUnwrap(RecordingSidecar.load(at: RecordingSidecar.url(forBase: base))?.reportFiles).count
+    }
+
+    // M5.1 deep review #3: edits are dropped before the write, so no file shows them.
+    func testRerunDroppingEditsLeavesNoEditedTextInTheMarkdownOrTheNewPage() async throws {
+        _ = await run()
+        try entry().saveEdits(["summary#0#text": "ZEBRA edited summary."], readFrom: entry().editableFields())
+        let result = await run(keepEdits: false)
+        XCTAssertNil(result.failure)
+        let md = try String(contentsOf: try XCTUnwrap(result.reportMarkdown), encoding: .utf8)
+        let html = try String(contentsOf: try XCTUnwrap(result.reportHTML), encoding: .utf8)
+        XCTAssertFalse(md.contains("ZEBRA"), "markdown")
+        XCTAssertFalse(html.contains("ZEBRA"), "new HTML")
+        XCTAssertFalse(try entry().hasContentEdits)
     }
 }

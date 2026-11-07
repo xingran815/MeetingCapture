@@ -46,6 +46,8 @@ struct ReportEdits: Codable, Equatable {
     }
 
     func save(to url: URL) throws {
+        // A newer app's file could hold fields this one would drop. From the M5.1 deep review.
+        guard version <= 1 else { throw NotebookError.newerEdits(url.lastPathComponent) }
         if isEmpty {
             if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
             return
@@ -69,6 +71,10 @@ struct ContentEdit: Codable, Equatable {
     var original: String
     /// The user's text.
     var text: String
+    /// For owner, due, answer and detail: the item's own text when the edit was made, so
+    /// a short value such as "Friday" can't move to another item that happens to share
+    /// it. Nil for text edits. From the M5.1 deep review.
+    var itemText: String? = nil
 }
 
 public enum NotebookError: Error, LocalizedError, Equatable {
@@ -80,6 +86,9 @@ public enum NotebookError: Error, LocalizedError, Equatable {
     case unfinished
     case sidecarUnreadable
     case moveFailed(String, String)
+    case newerEdits(String)
+    case reportChanged
+    case recordingGone
 
     public var errorDescription: String? {
         switch self {
@@ -95,6 +104,13 @@ public enum NotebookError: Error, LocalizedError, Equatable {
         case .sidecarUnreadable:
             return
                 "This recording's file list (.mcmeta.json) can't be read, so nothing was moved. Its files are all still there."
+        case .newerEdits(let name):
+            return "\(name) was written by a newer version of MeetingCapture, so this one leaves it as it is."
+        case .reportChanged:
+            return
+                "The report changed while you were editing (it was written again), so nothing was saved. Open Edit Report again to edit the new text."
+        case .recordingGone:
+            return "This recording's files are gone (moved to the Trash?), so nothing was saved."
         case .moveFailed(let name, let why):
             return
                 "Couldn't move \(name) to the Trash (\(why)). Files after it, and the file list, were left, so the recording still lists what's there."
@@ -194,10 +210,14 @@ enum Notebook {
 
     /// Where an edit goes in the model's section, or nil when its original is gone.
     private static func place(of edit: ContentEdit, in section: Report.Section) -> Int? {
-        if section.items.indices.contains(edit.item), edit.field.get(section.items[edit.item]) == edit.original {
-            return edit.item
+        func matches(_ i: Int) -> Bool {
+            let item = section.items[i]
+            guard edit.field.get(item) == edit.original else { return false }
+            if let itemText = edit.itemText { return (item.text ?? "") == itemText }
+            return true
         }
-        let hits = section.items.indices.filter { edit.field.get(section.items[$0]) == edit.original }
+        if section.items.indices.contains(edit.item), matches(edit.item) { return edit.item }
+        let hits = section.items.indices.filter(matches)
         return hits.count == 1 ? hits[0] : nil
     }
 
@@ -257,7 +277,16 @@ enum Notebook {
 
     // MARK: Changes
 
+    /// Whether anything of the recording is still there. Writing the user's layer for a
+    /// recording that was moved to the Trash would leave orphan notes or edits behind.
+    static func recordingExists(base: URL) -> Bool {
+        let fm = FileManager.default
+        return [RecordingSidecar.url(forBase: base), reportURL(forBase: base), base.appendingPathExtension("txt")]
+            .contains { fm.fileExists(atPath: $0.path) }
+    }
+
     private static func editing(base: URL, _ change: (inout ReportEdits) throws -> Void) throws {
+        guard recordingExists(base: base) else { throw NotebookError.recordingGone }
         let url = ReportEdits.url(forBase: base)
         var edits = try ReportEdits.load(at: url)
         try change(&edits)
@@ -274,6 +303,9 @@ enum Notebook {
 
     static func saveNotes(base: URL, _ text: String) throws {
         guard text.count <= maxNotes else { throw NotebookError.tooLong(maxNotes) }
+        // From the M5.1 deep review: an open notes pane flushed after a delete put the
+        // notes back on disk as an orphan.
+        guard recordingExists(base: base) else { throw NotebookError.recordingGone }
         let url = notesURL(forBase: base)
         if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
@@ -325,9 +357,19 @@ enum Notebook {
     /// Sets each field (keyed by `EditableField.id`) to its new text. Text equal to the
     /// model's removes the edit. The original kept is the model's text, never an
     /// earlier edit, so a re-run compares against what the model wrote.
-    static func saveEdits(base: URL, _ changes: [String: String]) throws {
+    ///
+    /// `expected` is the model text each field had when the editor read it (by id). If
+    /// the report was written again since, nothing is saved, so an edit typed for one
+    /// item can't land on another. From the M5.1 deep review.
+    static func saveEdits(base: URL, _ changes: [String: String], expected: [String: String]? = nil) throws {
+        guard recordingExists(base: base) else { throw NotebookError.recordingGone }
         guard let report = loadReport(base: base) else { throw NotebookError.noReport }
         let available = Dictionary(uniqueKeysWithValues: editableFields(base: base).map { ($0.id, $0) })
+        if let expected {
+            for id in changes.keys {
+                guard let f = available[id], expected[id] == f.modelText else { throw NotebookError.reportChanged }
+            }
+        }
         try editing(base: base) { edits in
             for (id, raw) in changes {
                 guard let f = available[id] else { throw NotebookError.noSuchField }
@@ -346,7 +388,9 @@ enum Notebook {
                 }
                 if text != model {
                     edits.overrides.append(
-                        ContentEdit(section: f.section, item: f.item, field: f.field, original: model, text: text))
+                        ContentEdit(
+                            section: f.section, item: f.item, field: f.field, original: model, text: text,
+                            itemText: f.field == .text ? nil : (report.sections[s].items[f.item].text ?? "")))
                 }
             }
         }
@@ -379,6 +423,7 @@ enum Notebook {
                 else { return nil }
                 var rebased = e
                 rebased.original = now
+                if e.field != .text { rebased.itemText = report.sections[s].items[e.item].text ?? "" }
                 return now == e.text ? nil : rebased
             }
         }
@@ -398,6 +443,7 @@ enum Notebook {
         let dir = base.deletingLastPathComponent()
         guard let sidecar = RecordingSidecar.load(at: RecordingSidecar.url(forBase: base)),
             let name = sidecar.reportFiles?.last, isPlainHTMLName(name),
+            !claimedByOthers(in: dir, except: base.lastPathComponent + sidecarSuffix).contains(name),
             let html = html(base: base)
         else { return }
         let url = dir.appendingPathComponent(name)
@@ -496,12 +542,7 @@ extension Notebook {
 
         // What other recordings in this folder list, so a planted or damaged sidecar
         // can't take another recording's page or audio with it.
-        var claimedByOthers = Set<String>()
-        for other in names where other.hasSuffix(sidecarSuffix) && other != sidecarName {
-            guard let s = RecordingSidecar.load(at: dir.appendingPathComponent(other)) else { continue }
-            claimedByOthers.formUnion(s.audioFiles ?? [])
-            claimedByOthers.formUnion(s.reportFiles ?? [])
-        }
+        let claimedByOthers = claimedByOthers(in: dir, except: sidecarName)
 
         var files: [String] = []
         var notes: [String] = []
@@ -535,11 +576,31 @@ extension Notebook {
         return TrashPlan(files: urls, notes: notes)
     }
 
+    /// Names the other sidecars in `dir` list as their audio or pages.
+    static func claimedByOthers(in dir: URL, except sidecarName: String) -> Set<String> {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
+        var claimed = Set<String>()
+        for other in names where other.hasSuffix(sidecarSuffix) && other != sidecarName {
+            guard let s = RecordingSidecar.load(at: dir.appendingPathComponent(other)) else { continue }
+            claimed.formUnion(s.audioFiles ?? [])
+            claimed.formUnion(s.reportFiles ?? [])
+        }
+        return claimed
+    }
+
     /// Moves the plan's files to the Trash in order, the sidecar last, and stops at the
     /// first failure so the sidecar still lists what's left. Nothing is deleted for good.
+    /// With `confirmed`, only files that are in both it and a fresh plan move, so nothing
+    /// the user didn't see goes. From the M5.1 reviews.
     @discardableResult
-    static func trash(base: URL, busy: Set<String> = [], remover: Remover = systemTrash) throws -> TrashPlan {
-        let plan = try trashPlan(base: base, busy: busy)
+    static func trash(
+        base: URL, busy: Set<String> = [], confirmed: TrashPlan? = nil, remover: Remover = systemTrash
+    ) throws -> TrashPlan {
+        var plan = try trashPlan(base: base, busy: busy)
+        if let confirmed {
+            let seen = Set(confirmed.files.map(\.standardizedFileURL.path))
+            plan = TrashPlan(files: plan.files.filter { seen.contains($0.standardizedFileURL.path) }, notes: plan.notes)
+        }
         var moved: [URL] = []
         for url in plan.files {
             do { try remover(url) } catch {

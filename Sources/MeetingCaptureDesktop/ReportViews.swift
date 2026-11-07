@@ -8,6 +8,16 @@ struct EntryDetail: View {
     let entry: LibraryEntry
 
     var body: some View {
+        HStack(spacing: 0) {
+            content
+            if model.showsNotes {
+                Divider()
+                NotesInspector(entry: entry).frame(width: 300)
+            }
+        }
+    }
+
+    @ViewBuilder private var content: some View {
         // Read so a change to the title, edits or notes draws the page again.
         let _ = model.reportRevision
         if let html = entry.reportHTML() {

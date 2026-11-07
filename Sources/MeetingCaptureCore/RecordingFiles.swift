@@ -70,6 +70,11 @@ enum RecordingFiles {
         let taken = names.sorted().first { name in
             let candidate = name.lowercased()
             if candidate == lowered + ".mcmeta.json" || candidate == lowered + ".txt" { return true }
+            // The user's layer (M5.1): a new recording here would take over an old one's
+            // title, edits and notes, and could send those notes out. From the M5.1 deep review.
+            if [".notes.md", ".edits.json", ".report.json"].contains(where: { candidate == lowered + $0 }) {
+                return true
+            }
             return audioExtensions.contains((candidate as NSString).pathExtension)
                 && partNumber(of: candidate, base: lowered) != nil
         }

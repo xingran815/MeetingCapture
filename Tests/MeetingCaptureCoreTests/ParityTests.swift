@@ -52,7 +52,7 @@ final class ParityTests: XCTestCase {
     }
 
     /// Runs the shell on these input lines. Killed after `limit` seconds.
-    private func shell(_ lines: [String], limit: TimeInterval = 40) throws -> (
+    private func shell(_ lines: [String], limit: TimeInterval = 40, env: [String: String] = [:]) throws -> (
         status: Int32, out: String, timedOut: Bool
     ) {
         guard FileManager.default.isExecutableFile(atPath: binary.path) else {
@@ -69,7 +69,7 @@ final class ParityTests: XCTestCase {
             "HOME": world.root.path,
             "TMPDIR": world.root.path + "/",
             "USER": "tester",
-        ]
+        ].merging(env) { _, new in new }
         let stdout = Pipe()
         let stdin = Pipe()
         p.standardOutput = stdout
@@ -215,6 +215,32 @@ final class ParityTests: XCTestCase {
         XCTAssertFalse(r.timedOut, r.out)
         XCTAssertTrue(r.out.contains("Renamed."), r.out)
         XCTAssertTrue(r.out.contains("Renamed from the shell"), "the library lists the new title: \(r.out)")
+    }
+
+    // M5.1 deep review #10 / security #1: a title from a file on disk can't send escape codes
+    // to the terminal Library menus.
+    func testALibraryTitleWithAnEscapeCodeNeverReachesTheTerminal() throws {
+        let base = out.appendingPathComponent("meeting_20261107_124800")
+        var e = ReportEdits()
+        e.userTitle = "Bad\u{1B}[2J title"
+        try e.save(to: ReportEdits.url(forBase: base))
+        let r = try shell(["6", "1", "r", "b", "q"])
+        XCTAssertFalse(r.timedOut, r.out)
+        XCTAssertTrue(r.out.contains("Bad"), r.out)
+        XCTAssertFalse(r.out.contains("\u{1B}"), "no ESC in the list, the entry menu or Now: line")
+    }
+
+    // M5.1 deep review #7: an editor that returns at once leaves the (empty) notes file.
+    func testNotesFlowWithAnEditorThatExitsAtOnceLeavesTheEmptyNotesFile() throws {
+        let script = world.root.appendingPathComponent("fake-editor.sh")
+        try "#!/usr/bin/true\n".write(to: script, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+        let r = try shell(["6", "1", "n", "q"], env: ["EDITOR": script.path])
+        XCTAssertFalse(r.timedOut, r.out)
+        XCTAssertTrue(r.out.contains("Notes saved"), r.out)
+        let notes = out.appendingPathComponent("meeting_20261107_124800.notes.md")
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: notes.path), "the file stays for the editor that has it open")
     }
 
     // MARK: Settings › k Test CLI connection

@@ -334,16 +334,7 @@ public final class MeetingProcessor {
         }
         result.transcript = text
         result.transcriptURL = source
-        await writeReport(transcript: text, source: source, into: &result, onEvent: onEvent)
-        if !keepEdits, result.failure == nil {
-            let base = source.deletingPathExtension()
-            do {
-                try Notebook.dropContentEdits(base: base)
-                if let report = lastReport { lastPage = Notebook.page(for: report, base: base) }
-            } catch {
-                result.notes.append("Your edits couldn't be dropped: \(error.localizedDescription)")
-            }
-        }
+        await writeReport(transcript: text, source: source, keepEdits: keepEdits, into: &result, onEvent: onEvent)
         return result
     }
 
@@ -353,7 +344,8 @@ public final class MeetingProcessor {
     var lastPage: Notebook.Page?
 
     private func writeReport(
-        transcript: String, source: URL, into result: inout Result, onEvent: @escaping (Event) -> Void
+        transcript: String, source: URL, keepEdits: Bool = true, into result: inout Result,
+        onEvent: @escaping (Event) -> Void
     ) async {
         onEvent(.stage(.writingReport, part: 1, parts: 1))
         do {
@@ -367,10 +359,18 @@ public final class MeetingProcessor {
             let base = source.deletingPathExtension()
             // Notes go out only when the user turned that on for this report (D-93).
             let notes = Notebook.sendsNotesToLLM(base: base) ? Notebook.loadNotes(base: base) : nil
-            let outcome = try await pipeline.run(transcript: transcript, notes: notes)
+            // Notes edited outside the app skip its limit; only the limit's worth goes out.
+            let capped = notes.map { String($0.prefix(Notebook.maxNotes)) }
+            let outcome = try await pipeline.run(transcript: transcript, notes: capped)
             // Kept before the write: if writing fails, the terminal can still show the
             // report the calls paid for. From the M5 review.
             lastReport = outcome.report
+            // Dropped before the write, so no file shows the dropped edits. From the M5.1 deep review.
+            if !keepEdits {
+                do { try Notebook.dropContentEdits(base: base) } catch {
+                    result.notes.append("Your edits couldn't be dropped: \(error.localizedDescription)")
+                }
+            }
             lastPage = Notebook.page(for: outcome.report, base: base)
             let written = try ReportFiles.write(outcome.report, nextTo: source, fileTopic: outcome.fileTopic)
             result.reportJSON = written.json
@@ -452,8 +452,16 @@ public struct LibraryEntry: Identifiable, Hashable, Sendable {
 
     /// Desktop only (D-93): the parts of the report that can be edited.
     public func editableFields() -> [EditableField] { Notebook.editableFields(base: base) }
-    /// New text by `EditableField.id`. The model's own text removes the edit.
-    public func saveEdits(_ changes: [String: String]) throws { try Notebook.saveEdits(base: base, changes) }
+    /// New text by `EditableField.id`. The model's own text removes the edit. `fields` are
+    /// the ones the editor showed: if the report was written again since, nothing is saved.
+    public func saveEdits(_ changes: [String: String], readFrom fields: [EditableField]) throws {
+        try Notebook.saveEdits(
+            base: base, changes,
+            expected: Dictionary(fields.map { ($0.id, $0.modelText) }, uniquingKeysWith: { a, _ in a }))
+    }
+
+    /// Whether any of the recording's files are still there (not moved to the Trash).
+    public var stillExists: Bool { Notebook.recordingExists(base: base) }
     public var hasContentEdits: Bool { Notebook.hasContentEdits(base: base) }
     /// Edits whose original text is no longer in the report.
     public func staleEditCount() -> Int { Notebook.staleEdits(base: base) }
@@ -466,10 +474,11 @@ public struct LibraryEntry: Identifiable, Hashable, Sendable {
     }
 
     /// Moves the recording's own listed files to the Trash, sidecar last. Nothing is
-    /// deleted for good. Returns what moved and what was left, with why.
+    /// deleted for good. Only files in `confirmed` (the plan the user saw) move. Returns
+    /// what moved and what was left, with why.
     @discardableResult
-    public func moveToTrash(busy: Set<String> = []) throws -> TrashPlan {
-        try Notebook.trash(base: base, busy: busy)
+    public func moveToTrash(confirmed: TrashPlan, busy: Set<String> = []) throws -> TrashPlan {
+        try Notebook.trash(base: base, busy: busy, confirmed: confirmed)
     }
 
     /// Speaker labels in the transcript, such as You, Speaker 1.

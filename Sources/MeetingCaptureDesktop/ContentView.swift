@@ -5,7 +5,6 @@ import SwiftUI
 struct ContentView: View {
     @Environment(AppModel.self) private var model
     @State private var showSpeakers = false
-    @State private var showNotes = false
     @State private var showRename = false
     @State private var showEdit = false
     @State private var trash: TrashRequest?
@@ -22,15 +21,7 @@ struct ContentView: View {
                         .navigationSplitViewColumnWidth(min: 220, ideal: 250, max: 320)
                 } detail: {
                     detail
-                        .inspector(isPresented: $showNotes) {
-                            if let entry = model.selectedEntry, model.phase == .idle, !model.showsJob {
-                                NotesInspector(entry: entry)
-                                    .inspectorColumnWidth(min: 220, ideal: 280, max: 420)
-                            } else {
-                                Text("Pick a recording to see its notes.").foregroundStyle(.secondary).padding()
-                            }
-                        }
-                        .onChange(of: showNotes) { _, open in
+                        .onChange(of: model.showsNotes) { _, open in
                             if !open { model.reportRevision += 1 }
                         }
                         .toolbar { toolbarItems }
@@ -106,8 +97,8 @@ struct ContentView: View {
         guard let entry = model.selectedEntry, model.phase == .idle, !model.showsJob else { return nil }
         return NotebookActions(
             rename: { showRename = true },
-            edit: entry.hasReport ? { showEdit = true } : nil,
-            notes: { showNotes.toggle() },
+            edit: entry.hasReport && !model.isBusy(entry) ? { showEdit = true } : nil,
+            notes: { model.showsNotes.toggle() },
             writeAgain: { writeAgain(entry) },
             trash: entry.isUnfinished || model.isBusy(entry) ? nil : { askTrash(entry) })
     }
@@ -157,7 +148,8 @@ struct ContentView: View {
                 }
                 Menu {
                     Button("Rename…") { showRename = true }
-                    Button("Edit Report…") { showEdit = true }.disabled(!entry.hasReport)
+                    // Not during a re-run of this recording: the report is about to change.
+                    Button("Edit Report…") { showEdit = true }.disabled(!entry.hasReport || model.isBusy(entry))
                     Divider()
                     Button("Move to Trash…", role: .destructive) { askTrash(entry) }
                         .disabled(entry.isUnfinished || model.isBusy(entry))
@@ -166,7 +158,7 @@ struct ContentView: View {
                 }
                 .help("Rename, edit or delete")
                 Button {
-                    showNotes.toggle()
+                    model.showsNotes.toggle()
                 } label: {
                     Label("Notes", systemImage: "note.text")
                 }

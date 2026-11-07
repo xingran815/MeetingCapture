@@ -224,7 +224,9 @@ final class Shell {
             let what =
                 e.isUnfinished
                 ? "unfinished" : (e.scenarioTitle ?? (e.hasTranscript ? "transcript only" : "audio only"))
-            return MenuItem(label: "\(f.string(from: e.createdAt))  \(e.topic ?? e.base.lastPathComponent)  (\(what))")
+            // The title can be the user's own, from a file on disk, so control characters go.
+            let title = ReportRenderer.terminalSafe(e.topic ?? e.base.lastPathComponent)
+            return MenuItem(label: "\(f.string(from: e.createdAt))  \(title)  (\(what))")
         }
         guard case .selected(let i) = Menu.pick(title: "\nLibrary  (\(dir.path))\n", items: items, allowBack: true)
         else { return }
@@ -244,7 +246,8 @@ final class Shell {
         ]
         guard
             case .selected(let a) = Menu.pick(
-                title: "\n\(entry.topic ?? entry.base.lastPathComponent)\n", items: actions, allowBack: true)
+                title: "\n\(ReportRenderer.terminalSafe(entry.topic ?? entry.base.lastPathComponent))\n",
+                items: actions, allowBack: true)
         else { return }
         switch actions[a].key {
         case "o":
@@ -294,7 +297,7 @@ final class Shell {
     }
 
     private func renameFlow(_ entry: LibraryEntry) {
-        print("Now: \(entry.topic ?? entry.base.lastPathComponent)")
+        print("Now: \(ReportRenderer.terminalSafe(entry.topic ?? entry.base.lastPathComponent))")
         guard let title = askLine("New title (empty = the report's own topic)") else { return }
         do {
             try entry.rename(to: title)
@@ -328,9 +331,13 @@ final class Shell {
             print("❌  Couldn't start \(editor[0]): \(error.localizedDescription)")
             return
         }
-        // Saved through the core, so empty notes leave no file and the page is redrawn.
-        do { try entry.saveNotes(entry.notes()) } catch { print("❌  \(error.localizedDescription)") }
-        print("✓  Notes saved.")
+        // Saved through the core so the page is redrawn. Empty notes are left as a file: an
+        // editor that returns at once (`code` without -w) still has it open. From the deep review.
+        let text = entry.notes()
+        if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            do { try entry.saveNotes(text) } catch { print("❌  \(error.localizedDescription)") }
+        }
+        print("✓  Notes saved in \(url.lastPathComponent).")
     }
 
     private func trashFlow(_ entry: LibraryEntry) {
@@ -354,7 +361,7 @@ final class Shell {
             return
         }
         do {
-            let done = try entry.moveToTrash()
+            let done = try entry.moveToTrash(confirmed: plan)
             print("🗑  Moved \(done.files.count) file(s) to the Trash.")
         } catch { print("❌  \(error.localizedDescription)") }
     }

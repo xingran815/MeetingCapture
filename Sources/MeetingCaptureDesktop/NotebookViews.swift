@@ -42,6 +42,10 @@ struct NotesInspector: View {
             load()
         }
         .onDisappear(perform: flush)
+        // ⌘Q may not run onDisappear. From the M5.1 deep review.
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+            flush()
+        }
     }
 
     private func load() {
@@ -64,7 +68,9 @@ struct NotesInspector: View {
     /// switching recordings.
     private func flush() {
         saveTask?.cancel()
-        guard let loaded, text != loaded.notes() else { return }
+        // A recording just moved to the Trash keeps nothing: saving would put the notes
+        // back as an orphan. From the M5.1 deep review.
+        guard let loaded, loaded.stillExists, text != loaded.notes() else { return }
         save(text, to: loaded)
     }
 
@@ -170,7 +176,7 @@ struct EditReportSheet: View {
     private func save() {
         let changes = values.filter { id, value in fields.first { $0.id == id }?.current != value }
         do {
-            try entry.saveEdits(changes)
+            try entry.saveEdits(changes, readFrom: fields)
             model.notebook {}
             dismiss()
         } catch {
@@ -240,7 +246,7 @@ struct TrashConfirmation: View {
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Move to Trash", role: .destructive) {
                     dismiss()
-                    model.moveToTrash(entry)
+                    model.moveToTrash(entry, confirmed: plan)
                 }
                 .keyboardShortcut(.defaultAction)
             }
