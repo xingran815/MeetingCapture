@@ -52,6 +52,9 @@ struct GroupsSheet: View {
     @State private var newName = ""
     @State private var error: String?
     @State private var deleting: ReportGroup?
+    /// Read once, not on every redraw. From the M5.2 review.
+    @State private var global = true
+    @State private var scenarios: [(name: String, title: String)] = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -85,6 +88,10 @@ struct GroupsSheet: View {
         }
         .padding(20)
         .frame(minWidth: 520, idealWidth: 560, minHeight: 420, idealHeight: 520)
+        .onAppear {
+            global = ReportGroups.globalRedaction
+            scenarios = ReportGroups.scenarioChoices
+        }
         .confirmationDialog(
             "Delete this group?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
             titleVisibility: .visible, presenting: deleting
@@ -99,7 +106,6 @@ struct GroupsSheet: View {
     }
 
     @ViewBuilder private func row(_ group: ReportGroup) -> some View {
-        let global = ReportGroups.globalRedaction
         HStack {
             TextField(
                 "Name", text: Binding(get: { names[group.id] ?? group.name }, set: { names[group.id] = $0 })
@@ -128,7 +134,7 @@ struct GroupsSheet: View {
                 })
         ) {
             Text("Classify each report").tag("")
-            ForEach(ReportGroups.scenarioChoices, id: \.name) { choice in
+            ForEach(scenarios, id: \.name) { choice in
                 Text(choice.title).tag(choice.name)
             }
         }

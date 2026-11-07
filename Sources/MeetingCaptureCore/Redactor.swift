@@ -159,6 +159,21 @@ enum Redactor {
         exactToken.stringByReplacingMatches(
             in: text, range: NSRange(text.startIndex..., in: text), withTemplate: " ")
     }
+    /// The text with every shape `restore` would read as a token taken out: exact
+    /// (`<EMAIL_1>`) and mangled (`EMAIL_1`, `<email-1>`, `< PHONE 2 >`). For text from
+    /// elsewhere, such as a group's earlier reports, so it can't be restored to one of
+    /// this run's values. From the M5.2 review.
+    static func withoutAnyTokenShape(_ text: String) -> String {
+        let ns = text as NSString
+        var output = ""
+        var cursor = 0
+        for match in mangledOrExact(in: text) {
+            output += ns.substring(with: NSRange(location: cursor, length: match.location - cursor)) + " "
+            cursor = match.location + match.length
+        }
+        return output + ns.substring(from: cursor)
+    }
+
     private static let mangledToken = rx(
         "<[^<>\\n]{0,3}(?i:\(typeNames))[ _-]?\\d+[^<>\\n]{0,3}>|(?<![A-Za-z<])(?:\(typeNames))_\\d+")
 

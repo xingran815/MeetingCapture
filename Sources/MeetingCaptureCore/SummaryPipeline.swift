@@ -294,6 +294,11 @@ struct SummaryPipeline {
             suggestions = [:]
         }
 
+        // Only true when the review ran. From the M5.2 review.
+        if reviewed, let context, !context.used.isEmpty {
+            notices.append("The review checked this report against its own transcript only, not the group's reports.")
+        }
+
         onStep(.finishing)
         var report = Report(
             topic: topic.isEmpty ? template.title : topic,

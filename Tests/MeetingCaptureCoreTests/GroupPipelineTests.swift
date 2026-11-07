@@ -273,29 +273,82 @@ final class GroupPipelineTests: GroupTestCase {
     }
 
     func testATokenShapedStringInAPastReportIsNotRestoredToThisRunsValue() async throws {
-        // This run's transcript has an email, so <EMAIL_1> is this run's token for it. A
-        // past report that happens to contain "<EMAIL_1>" must not become that email.
+        // M5.2 review #2: the outcome is checked. This run's transcript has an email, so
+        // <EMAIL_1> is this run's token for it. A past report that happens to contain
+        // "<EMAIL_1>" must not become that email, even when the model copies the context.
         try addRecording(
             "meeting_past", hoursAgo: 5,
             report: simpleReport(topic: "TopicPast", text: "Reach <EMAIL_1> before the budget review"))
         try addRecording(recName, hoursAgo: 0, report: simpleReport(topic: "Me"))
         try makeGroup([recName, "meeting_past"])
         let context = try XCTUnwrap(GroupContextBuilder.build(for: base))
-        let b = ScriptedBackend(onComplete: { call in
-            switch call.tier {
-            case .cheap: return Replies.classify("meeting")
-            // A model that copies the past item verbatim, token-shaped text included.
-            case .normal: return Replies.sections(["summary": ["Reach <EMAIL_1> before the budget review"]])
-            case .frontier: return Replies.review(["summary": ["Reach <EMAIL_1> before the budget review"]])
-            }
-        })
+        let b = copyingBackend()
         let outcome = try await run(b, context: context, transcript: emailTranscript)
         let sections = try XCTUnwrap(b.calls(.normal).first).input
         let cut = try XCTUnwrap(sections.range(of: SummaryPipeline.contextHeading))
         XCTAssertTrue(sections[..<cut.lowerBound].contains("<EMAIL_1>"), "this run's token is in the transcript")
         XCTAssertFalse(sections[cut.upperBound...].contains("<EMAIL_1>"), "the past report's look-alike is taken out")
         XCTAssertTrue(sections[cut.upperBound...].contains("before the budget review"), "the rest stays")
-        _ = outcome
+        let written = items(outcome.report, "summary").compactMap(\.text).joined(separator: "\n")
+        XCTAssertTrue(written.contains("before the budget review"), "the model did copy the context: \(written)")
+        XCTAssertFalse(
+            modelText(outcome.report).contains(emailA), "this transcript's address is not in what the model wrote")
+    }
+
+    // M5.2 review #1: loose token shapes in a past report are taken out too.
+    func testLooseTokenShapesInAPastReportNeverReachTheContextOrGetRestoredToThisRunsValues() async throws {
+        let phone = "+1 415 555 0100"
+        try addRecording(
+            "meeting_past", hoursAgo: 5,
+            report: simpleReport(
+                topic: "TopicPast", text: "Call EMAIL_1 or <email-1> or < PHONE 2 > or PHONE_1 about the budget plan"))
+        try addRecording(recName, hoursAgo: 0, report: simpleReport(topic: "Me"))
+        try makeGroup([recName, "meeting_past"])
+        let context = try XCTUnwrap(GroupContextBuilder.build(for: base))
+        for shape in ["EMAIL_1", "<email-1>", "< PHONE 2 >", "PHONE_1"] {
+            XCTAssertFalse(context.text.contains(shape), "\(shape) in the built context")
+        }
+        let transcript = "[00:00:05] You: write to \(emailA) or call \(phone) today.\n[00:00:09] Speaker 1: ok"
+        let b = copyingBackend()
+        let outcome = try await run(b, context: context, transcript: transcript)
+        let sections = try XCTUnwrap(b.calls(.normal).first).input
+        let cut = try XCTUnwrap(sections.range(of: SummaryPipeline.contextHeading))
+        XCTAssertTrue(sections[..<cut.lowerBound].contains("<EMAIL_1>"), "this run redacted its email")
+        XCTAssertTrue(sections[..<cut.lowerBound].contains("<PHONE_"), "and its phone: \(sections)")
+        let after = String(sections[cut.upperBound...])
+        let loose = try NSRegularExpression(pattern: "(?i)(email|phone)[ _-]?\\d")
+        XCTAssertEqual(
+            loose.numberOfMatches(in: after, range: NSRange(location: 0, length: (after as NSString).length)), 0, after)
+        XCTAssertTrue(after.contains("about the budget plan"))
+        let text = modelText(outcome.report)
+        XCTAssertTrue(text.contains("about the budget plan"), "the model copied the cleaned context: \(text)")
+        XCTAssertFalse(text.contains(emailA), "no address from this transcript came back through the context")
+        XCTAssertFalse(text.contains("415 555 0100"))
+    }
+
+    /// Everything the model wrote in a report: sections and notices, not the transcript (which is the user's own text).
+    private func modelText(_ r: Report) -> String {
+        (r.sections.flatMap { $0.items.flatMap { [$0.text, $0.detail, $0.answer, $0.owner, $0.due] } }.compactMap { $0 }
+            + r.notices + [r.topic]).joined(separator: "\n")
+    }
+
+    /// Writes the first item line it finds after the context heading into its sections reply: a
+    /// model that copies the context.
+    private func copyingBackend() -> ScriptedBackend {
+        var copied = "A summary."  // the review step keeps what the sections step wrote
+        return ScriptedBackend(onComplete: { call in
+            if let h = call.input.range(of: SummaryPipeline.contextHeading),
+                let line = call.input[h.upperBound...].components(separatedBy: "\n").first(where: { $0.hasPrefix("- ") }
+                )
+            {
+                copied = String(line.dropFirst(2))
+            }
+            switch call.tier {
+            case .cheap: return Replies.classify("meeting")
+            case .normal: return Replies.sections(["summary": [copied]])
+            case .frontier: return Replies.review(["summary": [copied]])
+            }
+        })
     }
 
     // MARK: pinned scenario

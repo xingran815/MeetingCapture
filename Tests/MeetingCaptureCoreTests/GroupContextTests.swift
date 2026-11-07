@@ -169,12 +169,14 @@ final class GroupContextTests: GroupTestCase {
         XCTAssertFalse(usedNotice.contains("TopicLater"))
     }
 
-    func testTheNoticeSaysTheReviewCheckedThisTranscriptOnly() throws {
+    // M5.2 review nit 2: the builder can't know whether the review will run, so it says nothing
+    // about it; the pipeline adds that sentence only when the review ran (GroupReviewFindingTests).
+    func testTheBuildersNoticesDoNotClaimAReviewHappened() throws {
         try addRecording("meeting_a", hoursAgo: 3, report: simpleReport(topic: "TopicA"))
         try addRecording(recName, hoursAgo: 0, report: simpleReport(topic: "Me"))
         try makeGroup([recName, "meeting_a"])
         let c = try XCTUnwrap(build())
-        XCTAssertTrue(c.notices.joined().contains("own transcript only"), "\(c.notices)")
+        XCTAssertFalse(c.notices.joined().contains("review checked"), "\(c.notices)")
     }
 
     func testANoReportMemberUsesTheUsersTitleWhenThereIsOne() throws {

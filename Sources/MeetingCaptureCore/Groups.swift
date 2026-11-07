@@ -56,6 +56,7 @@ public enum GroupError: Error, LocalizedError, Equatable {
     case badMember
     case unknownScenario(String)
     case redactionOffGlobally
+    case cannotLock
 
     public var errorDescription: String? {
         switch self {
@@ -68,6 +69,7 @@ public enum GroupError: Error, LocalizedError, Equatable {
         case .noSuchGroup: return "That group isn't there any more."
         case .badMember: return "That recording can't be put in a group."
         case .unknownScenario(let name): return "There's no scenario called \"\(name)\"."
+        case .cannotLock: return "Couldn't lock groups.json, so nothing was changed. Try again."
         case .redactionOffGlobally:
             return "Redaction is off in Settings, so a group can't turn it on. Turn redaction on in Settings first."
         }
@@ -83,6 +85,15 @@ enum GroupStore {
     private struct File: Codable {
         var version = 1
         var groups: [ReportGroup] = []
+
+        init(groups: [ReportGroup]) { self.groups = groups }
+
+        /// A hand-written file may leave out either key. From the M5.2 review.
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1
+            groups = try c.decodeIfPresent([ReportGroup].self, forKey: .groups) ?? []
+        }
     }
 
     static func url(in dir: URL) -> URL { dir.appendingPathComponent(fileName) }
@@ -103,8 +114,15 @@ enum GroupStore {
     }
 
     /// Loads, changes and saves. Nothing is written when `change` throws.
+    /// The app and the terminal can both change groups, so a change holds a lock on
+    /// `.groups.json.lock` beside the file. From the M5.2 review.
     @discardableResult
     static func change<T>(in dir: URL, _ change: (inout [ReportGroup]) throws -> T) throws -> T {
+        let fd = open(dir.appendingPathComponent(".groups.json.lock").path, O_CREAT | O_RDWR, 0o600)
+        guard fd >= 0 else { throw GroupError.cannotLock }
+        defer { close(fd) }
+        guard flock(fd, LOCK_EX) == 0 else { throw GroupError.cannotLock }
+        defer { flock(fd, LOCK_UN) }
         var groups = try load(in: dir)
         let result = try change(&groups)
         try save(groups, in: dir)
@@ -245,6 +263,8 @@ enum GroupContextBuilder {
     /// How much context goes out, in characters, at most. About 6,000 tokens: enough
     /// for several earlier reports, small next to a long transcript. Assumed (D-94).
     static let maxCharacters = 24_000
+    /// One report's notes, at most, in the context. From the M5.2 review.
+    static let maxNotesPerReport = 4_000
 
     /// The context for the report of `base`, or nil when it isn't in a group. Only
     /// reports recorded before this one count, newest first, until the next one
@@ -325,8 +345,7 @@ enum GroupContextBuilder {
         } else {
             notices.append(
                 "Written with context from \(used.count) earlier report(s) in the group \"\(groupName)\": "
-                    + used.map { "\"\($0)\"" }.joined(separator: ", ")
-                    + ". The review checked this report against its own transcript only.")
+                    + used.map { "\"\($0)\"" }.joined(separator: ", ") + ".")
         }
         if !leftOut.isEmpty {
             notices.append(
@@ -342,8 +361,20 @@ enum GroupContextBuilder {
     /// report file's creation date, as the library uses.
     static func createdAt(of base: URL) -> Date? {
         if let s = RecordingSidecar.load(at: RecordingSidecar.url(forBase: base)) { return s.createdAt }
+        // A re-run rewrites report.json, so its date moves; the name's stamp doesn't.
+        // From the M5.2 review.
+        if let stamped = stampDate(base.lastPathComponent) { return stamped }
         return (try? FileManager.default.attributesOfItem(atPath: Notebook.reportURL(forBase: base).path))?[
             .creationDate] as? Date
+    }
+
+    /// The `yyyyMMdd_HHmmss` stamp in a name such as `meeting_20261107_093000`, local time.
+    static func stampDate(_ name: String) -> Date? {
+        guard let r = name.range(of: #"\d{8}_\d{6}"#, options: .regularExpression) else { return nil }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyyMMdd_HHmmss"
+        return f.date(from: String(name[r]))
     }
 
     /// One report, from the allow-list only. Every field is one line, so nothing in a
@@ -371,9 +402,11 @@ enum GroupContextBuilder {
         }
         if let notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             lines.append("## The user's own notes on that recording")
-            lines.append(line(notes))
+            // Each report's notes are capped, so one long set can't push every report out.
+            let one = line(notes)
+            lines.append(one.count > maxNotesPerReport ? String(one.prefix(maxNotesPerReport)) + "…" : one)
         }
-        return Redactor.withoutTokens(lines.joined(separator: "\n"))
+        return Redactor.withoutAnyTokenShape(lines.joined(separator: "\n"))
     }
 
     private static func line(_ s: String) -> String {
