@@ -159,6 +159,7 @@ final class AudioCapture: NSObject {
                     guard micGate.passes else { return }
                     writer?.pushMic(mono: ptr, frameCount: frames)
                 }
+                m.onDeviceChange = { line in print("  ⚠  \(line)") }
                 try m.start()
                 mic = m
                 micStatus = "on (\(m.describedInputFormat))"

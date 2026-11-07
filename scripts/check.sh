@@ -30,13 +30,16 @@ build() {
     return "${PIPESTATUS[0]}"
 }
 
-# Classes run on a queue of two workers (the memory limit), slowest first: each class named
+# Classes run on a queue of UNIT_WORKERS workers, biggest jobs first: each class named
 # `…SlowTests` is its own job, all other classes share one job, and a class named
 # `…SerialTests` runs alone after the queue, for a test that can't share the machine. A test
 # may run in parallel when it uses its own temp folder, no fixed path and no real config
 # (D-77). The bundle is run through xctest, because a second `swift test` waits on SwiftPM's
 # lock on .build. The counts must add up to the listed total, so no test drops out unseen.
-UNIT_WORKERS=2
+# 4 by default, the user's choice: 135 s at a 2.0 GB peak, against 216 s and 1.6 GB on 2
+# (D-79). UNIT_WORKERS overrides it. The ordinary classes split into
+# as many jobs as there are workers.
+UNIT_WORKERS="${UNIT_WORKERS:-4}"
 unit_job() { "$ROOT/scripts/unit-job.sh" "$@"; }
 # A subshell, so the fake CLIs on PATH never reach the guard that must run without them.
 unit_tests() (
@@ -50,10 +53,14 @@ unit_tests() (
     [ -n "$classes" ] && [ -d "$bundle" ] || { echo "unit: couldn't list the tests"; return 1; }
     slow="$(printf '%s\n' "$classes" | grep -E 'SlowTests$' || true)"
     serial="$(printf '%s\n' "$classes" | grep -E 'SerialTests$' || true)"
-    # The ordinary classes, split in two jobs that start first: together they're the biggest
+    # The ordinary classes, split in one job per worker that start first: together they're the biggest
     # share, and starting them last left one worker idle at the end.
     fast="$(printf '%s\n' "$classes" | grep -vE '(Slow|Serial)Tests$' || true)"
-    fast="$(printf '%s\n' "$fast" | awk 'NF && NR % 2 == 1' | paste -sd, -) $(printf '%s\n' "$fast" | awk 'NF && NR % 2 == 0' | paste -sd, -)"
+    local k parts=""
+    for ((k = 0; k < UNIT_WORKERS; k++)); do
+        parts="$parts $(printf '%s\n' "$fast" | awk -v w="$UNIT_WORKERS" -v k="$k" 'NF && (NR - 1) % w == k' | paste -sd, -)"
+    done
+    fast="$parts"
     dir="$ROOT/dev/tmp/unit"
     rm -rf "$dir" && mkdir -p "$dir"
     i=0

@@ -188,10 +188,12 @@ expected_names() {  # mode
 }
 
 FAIL=""; OUT=""; RC=0
+T_W=2
 # Runs check.sh with the stubs first on PATH and CI unset, unless EXTRA_ENV says otherwise.
 run_check() {
     : > "$STUB_TRACE"
-    OUT="$(env -u CI PATH="$WORK/bin:$PATH" STUB_FAIL="$FAIL" "$@" 2>&1)"
+    # The cases were written for 2 workers; T_W="" (empty) leaves UNIT_WORKERS unset to get check.sh's default.
+    OUT="$(env -u CI -u UNIT_WORKERS ${T_W:+UNIT_WORKERS=$T_W} PATH="$WORK/bin:$PATH" STUB_FAIL="$FAIL" "$@" 2>&1)"
     RC=$?
 }
 check_cmd() { run_check scripts/check.sh "$@"; }
@@ -524,6 +526,37 @@ if [ "$RC" -eq 0 ] && printf '%s\n' "$OUT" | grep -qxF "unit: ran 2 of 2 tests i
     && grep -q 'Executed 1 test,' dev/tmp/unit/job1.log && ! grep -q 'Executed 1 tests' dev/tmp/unit/job1.log; then
     ok "check.sh counts a job whose xctest prints 'Executed 1 test,' (singular)"
 else bad "singular 'Executed 1 test' not counted: rc $RC" "$OUT"; fi
+
+# Worker counts: the default is 4, UNIT_WORKERS overrides it; the ordinary classes split one job per
+# worker (class i goes to job (i-1) % workers) and the count line names the workers.
+LIST6="MeetingCaptureCoreTests.AaaTests/t1
+MeetingCaptureCoreTests.BbbTests/t2
+MeetingCaptureCoreTests.CccTests/t3
+MeetingCaptureCoreTests.DddTests/t4
+MeetingCaptureCoreTests.EeeTests/t5
+MeetingCaptureCoreTests.FffTests/t6
+MeetingCaptureCoreTests.GggSlowTests/t7"
+for w in "" 3; do
+    label="${w:-default}"; want="${w:-4}"
+    rm -rf "$XC_DIR"; mkdir -p "$XC_DIR"
+    FAIL=""; T_W="$w" XC_SLEEP=0.3 STUB_LIST="$LIST6" run_check scripts/check.sh --unit
+    max="$(awk '{print $NF}' "$XC_DIR/counts" | sort -n | tail -1)"
+    nfast="$(grep -E '^xcrun' "$STUB_TRACE" | grep -vc 'SlowTests')"
+    if [ "$RC" -eq 0 ] && [ "$max" = "$want" ] && [ "$nfast" = "$want" ]; then ok "$label workers: at most $want jobs live at once, the ordinary classes split $want ways"
+    else bad "$label workers: rc $RC, most live '$max', ordinary jobs '$nfast' (wanted $want)" "$(cat "$STUB_TRACE")"; fi
+    if printf '%s\n' "$OUT" | grep -qxF "unit: ran 7 of 7 tests in $((want + 1)) jobs on $want workers"; then ok "$label workers: the count line says $want workers"
+    else bad "$label workers: count line wrong" "$OUT"; fi
+done
+# Class i goes to job (i-1) % workers: with 4 workers, A and E share job 1; the others have one each.
+rm -rf "$XC_DIR"; mkdir -p "$XC_DIR"
+FAIL=""; T_W="" STUB_LIST="$LIST6" run_check scripts/check.sh --unit
+if grep -qxF "$(xc_line "MeetingCaptureCoreTests.AaaTests,MeetingCaptureCoreTests.EeeTests")" "$STUB_TRACE" \
+    && grep -qxF "$(xc_line "MeetingCaptureCoreTests.BbbTests,MeetingCaptureCoreTests.FffTests")" "$STUB_TRACE" \
+    && grep -qxF "$(xc_line "MeetingCaptureCoreTests.CccTests")" "$STUB_TRACE" \
+    && grep -qxF "$(xc_line "MeetingCaptureCoreTests.DddTests")" "$STUB_TRACE"; then
+    ok "with 4 workers class i goes to job (i-1) % 4"
+else bad "4-way split wrong" "$(cat "$STUB_TRACE")"; fi
+rm -rf "$XC_DIR"; mkdir -p "$XC_DIR"
 
 FAIL="swift build --build-tests"; check_cmd --unit
 unit_fails "a build failure (swift build --build-tests) fails check.sh --unit"
