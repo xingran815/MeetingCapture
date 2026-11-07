@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Fails closed: a missing script blocks the commit.
+# Seconds, not minutes: this doesn't build, so a commit may not compile. Pre-push
+# catches that. Fails closed: a missing script blocks the commit.
 root="$(git rev-parse --show-toplevel)" || exit 1
-for s in sweep.sh check.sh; do
+for s in sweep.sh lint.sh; do
     [ -x "$root/scripts/$s" ] || { echo "pre-commit: scripts/$s is missing; refusing to commit." >&2; exit 1; }
 done
-exec "$root/scripts/check.sh" --fast
+"$root/scripts/sweep.sh" --staged || exit 1
+exec "$root/scripts/lint.sh" --staged

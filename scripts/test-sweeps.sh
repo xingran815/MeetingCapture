@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Proves the sweeps and hooks refuse seeded leaks. Runs in a throwaway repo with
-# a stub check.sh, so it needs no build. Seeds are assembled at runtime so this
+# stub lint.sh and check.sh, so it needs no build, shellcheck or actionlint. Seeds are assembled at runtime so this
 # file doesn't trip the sweep it tests; every value is invented.
 set -uo pipefail
 
@@ -30,10 +30,27 @@ git config user.name tester
 git config user.email "$GOOD_EMAIL"
 mkdir -p scripts .githooks
 cp "$SRC/scripts/sweep.sh" "$SRC/scripts/sweep-allow.txt" scripts/
+# sweep.sh refuses every push without this list, so the repo needs one. Empty here,
+# never the real list.
+: > scripts/protected-commits.sha256
 cp "$SRC"/.githooks/* .githooks/
+# Stubs record each call in $STUB_TRACE. The lint stub fails when STUB_FAIL_LINT is
+# set; the check stub fails only for --unit when STUB_FAIL_UNIT is set, so a pass
+# proves the pre-push hook passes that flag.
+export STUB_TRACE="$WORK/trace.log"
+: > "$STUB_TRACE"
+cat > scripts/lint.sh <<'STUB'
+#!/usr/bin/env bash
+echo "lint $*" >> "$STUB_TRACE"
+[ -z "${STUB_FAIL_LINT:-}" ] || { echo "stub lint: seeded failure" >&2; exit 1; }
+exit 0
+STUB
 cat > scripts/check.sh <<'STUB'
 #!/usr/bin/env bash
-[ "${1:-}" = "--fast" ] && exec scripts/sweep.sh --staged
+echo "check $*" >> "$STUB_TRACE"
+if [ "${1:-}" = "--unit" ] && [ -n "${STUB_FAIL_UNIT:-}" ]; then
+    echo "stub check: seeded unit failure" >&2; exit 1
+fi
 exit 0
 STUB
 chmod +x scripts/*.sh .githooks/*
@@ -130,11 +147,54 @@ if git push --dry-run "$WORK/none.git" main >/dev/null 2>&1; then bad "push pass
 mv "$WORK/sweep.keep" scripts/sweep.sh
 git reset -q HEAD; rm -f ok2.md
 
+mv scripts/lint.sh "$WORK/lint.keep"
+printf 'y\n' > ok2.md; git add ok2.md
+if out="$(git commit -qm "docs: y" 2>&1)"; then bad "commit passed with lint.sh missing"; git reset -q --hard HEAD~1
+elif printf '%s' "$out" | grep -q 'scripts/lint.sh is missing'; then ok "commit refused with lint.sh missing"
+else bad "commit with lint.sh missing: refused for another reason" "$out"; fi
+mv "$WORK/lint.keep" scripts/lint.sh
+git reset -q HEAD; rm -f ok2.md
+
+# Pre-commit runs the sweep first and then lint --staged; a sweep refusal skips lint.
+: > "$STUB_TRACE"
+printf 'hello again\n' > ok3.md; git add ok3.md
+if git commit -qm "docs: lint runs" >/dev/null 2>&1; then ok "commit passes with a passing lint"; else bad "commit refused with a passing lint"; fi
+if [ "$(cat "$STUB_TRACE")" = "lint --staged" ]; then ok "pre-commit calls lint.sh --staged"; else bad "pre-commit lint call wrong" "$(cat "$STUB_TRACE")"; fi
+
+printf 'z\n' > ok4.md; git add ok4.md
+if out="$(STUB_FAIL_LINT=1 git commit -qm "docs: z" 2>&1)"; then bad "commit passed with a failing lint"; git reset -q --hard HEAD~1
+elif printf '%s' "$out" | grep -q 'seeded failure'; then ok "commit refused when lint fails (hook uses lint)"
+else bad "failing lint: refused for another reason" "$out"; fi
+git reset -q HEAD; rm -f ok4.md
+
+: > "$STUB_TRACE"
+printf 'key is %s\n' "$KEY" > note.md; git add note.md
+git commit -qm "test: seed" >/dev/null 2>&1
+if grep -q '^lint' "$STUB_TRACE"; then bad "lint ran although the sweep refused"; else ok "lint doesn't run after a sweep refusal"; fi
+git reset -q --hard HEAD; git clean -qfd -e scripts -e .githooks
+
 # ─── Pushes, against a local bare repo ───────────────────────────────────────
 BARE="$WORK/remote.git"
 git init -q --bare "$BARE"
 git remote add origin "$BARE"
+: > "$STUB_TRACE"
 if out="$(git push -q origin main 2>&1)"; then ok "clean push passes"; else bad "clean push refused" "$out"; fi
+if [ "$(cat "$STUB_TRACE")" = "check --unit" ]; then ok "pre-push runs check.sh --unit"; else bad "pre-push check call wrong" "$(cat "$STUB_TRACE")"; fi
+
+mv scripts/check.sh "$WORK/check.keep"
+if out="$(git push --dry-run origin main 2>&1)"; then bad "push passed with check.sh missing"
+elif printf '%s' "$out" | grep -q 'scripts/check.sh is missing'; then ok "push refused with check.sh missing"
+else bad "check.sh missing: refused for another reason" "$out"; fi
+mv "$WORK/check.keep" scripts/check.sh
+
+# Unit failure: the stub fails only for --unit, so refusal proves the flag is passed.
+git switch -q -c unitfail
+printf 'u\n' > u.md; git add u.md; git commit -qm "feat: u"
+if out="$(STUB_FAIL_UNIT=1 git push --dry-run origin unitfail 2>&1)"; then bad "push passed with failing unit tests"
+elif printf '%s' "$out" | grep -q 'seeded unit failure'; then ok "push refused when check.sh --unit fails"
+else bad "unit failure: refused for another reason" "$out"; fi
+if out="$(git push --dry-run origin unitfail 2>&1)"; then ok "same push passes when unit tests pass"; else bad "push refused though unit tests pass" "$out"; fi
+git switch -q main; git branch -q -D unitfail
 
 git switch -q -c feature/coding-interview
 printf 'interview\n' > i.md; git add i.md; git commit -qm "feat: private mode"
@@ -159,15 +219,62 @@ git switch -q main
 git switch -q -c sneaky
 printf 'x\n' > k.md; git add k.md
 git -c core.hooksPath=/dev/null -c user.email="jo""@realmail.net" commit -qm "feat: bad author"
+: > "$STUB_TRACE"
 if out="$(git push --dry-run origin sneaky 2>&1)"; then bad "bad author went through at push"
 elif printf '%s' "$out" | grep -q '\[identity-author\]'; then ok "bad author refused at push"
 else bad "bad author: rule not named" "$out"; fi
+if grep -q '^check' "$STUB_TRACE"; then bad "check.sh ran although the sweep refused the push"; else ok "pre-push skips check.sh after a sweep refusal"; fi
 git reset -q --hard main
 printf 'key %s\n' "$KEY" > k.md; git add k.md
 git -c core.hooksPath=/dev/null commit -qm "feat: bad diff"
 if out="$(git push --dry-run origin sneaky 2>&1)"; then bad "key in an outgoing diff went through"
 elif printf '%s' "$out" | grep -q '\[secret-openai-style\]'; then ok "key in an outgoing diff refused"
 else bad "outgoing key: rule not named" "$out"; fi
+
+# ─── The protected-commit list (D-62), catching what the branch name can't ───
+LIST=scripts/protected-commits.sha256
+hash_of() { printf '%s' "$1" | shasum -a 256 | cut -d' ' -f1; }
+git switch -q main
+git reset -q --hard main; git clean -qfd -e scripts -e .githooks
+
+# A clean push passes with a list that holds other hashes.
+git switch -q -c otherlist
+hash_of "an-unrelated-id" > "$LIST"; hash_of "another-id" >> "$LIST"
+git add "$LIST"; git commit -qm "chore: list of other hashes"
+printf 'o\n' > o.md; git add o.md; git commit -qm "feat: o"
+if out="$(git push --dry-run origin otherlist 2>&1)"; then ok "clean push passes with a list of other hashes"; else bad "clean push refused with a list of other hashes" "$out"; fi
+git switch -q main; git branch -q -D otherlist
+
+# A missing list refuses the push, naming the rule.
+git switch -q -c nolist
+printf 'n\n' > n.md; git add n.md; git commit -qm "feat: n"
+mv "$LIST" "$WORK/list.keep"
+if out="$(git push --dry-run origin nolist 2>&1)"; then bad "push passed with the list missing"
+elif printf '%s' "$out" | grep -q '\[branch-rule\].*protected-commits.sha256 is missing'; then ok "push refused with the list missing, by [branch-rule]"
+else bad "list missing: rule or reason not named" "$out"; fi
+mv "$WORK/list.keep" "$LIST"
+git switch -q main; git branch -q -D nolist
+
+# A renamed copy with no ref left under the protected name. The list commit comes
+# after the seeded one, so it doesn't change the seeded commit's id.
+git branch -q -D feature/coding-interview innocent-name 2>/dev/null
+git switch -q -c seeded
+printf 'private\n' > p.md; git add p.md; git commit -qm "feat: private work"
+SEEDED="$(git rev-parse HEAD)"
+SEEDED_HASH="$(hash_of "$SEEDED")"
+printf '%s\n' "$SEEDED_HASH" > "$LIST"
+git add "$LIST"; git commit -qm "chore: list the private commit"
+git branch -q -m seeded harmless-name
+if [ "$(git rev-parse HEAD~1)" = "$SEEDED" ]; then ok "list commit left the seeded commit's id alone"; else bad "seeded commit id changed"; fi
+if git for-each-ref --format='%(refname)' | grep -q 'coding-interview'; then bad "a ref with the protected name still exists"; else ok "no ref carries the protected name"; fi
+if out="$(git push --dry-run origin harmless-name 2>&1)"; then bad "renamed copy went through"
+elif printf '%s' "$out" | grep -q '\[branch-rule\].*contains a commit from'; then ok "renamed copy refused by [branch-rule] via the list"
+else bad "renamed copy: rule or reason not named" "$out"; fi
+if printf '%s' "$out" | grep -qF "$SEEDED" || printf '%s' "$out" | grep -qF "$SEEDED_HASH" \
+    || printf '%s' "$out" | grep -qF "${SEEDED:0:12}"; then
+    bad "refusal output names the commit id or its hash"
+else ok "refusal output has neither the commit id nor its hash"; fi
+if out="$(git push --dry-run origin harmless-name:other-remote-name 2>&1)"; then bad "renamed copy went through under another remote name"; else ok "renamed copy refused under another remote name too"; fi
 
 printf '\nsweep tests: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

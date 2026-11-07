@@ -1,0 +1,39 @@
+name: Main
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Every push is checked from the tip before it, so a cancelled run would leave its
+# commits unswept here.
+concurrency:
+  group: main-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  HEAD_SHA: ${{ github.sha }}
+  BASE_SHA: ${{ github.event.before }}
+
+jobs:
+  main:
+    name: Clean build, unit tests, leak and identity checks
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.HEAD_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+      # Clean on purpose: main restores no cache, so a PR can't feed it stale objects.
+      - run: scripts/ci.sh main
+      - id: cache-id
+        run: scripts/ci.sh cache-id >> "$GITHUB_OUTPUT"
+      # Saved here because a PR can only reuse caches from its own branch or main.
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .build
+          key: swiftbuild-main-${{ steps.cache-id.outputs.id }}-${{ env.HEAD_SHA }}

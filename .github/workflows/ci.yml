@@ -1,24 +1,24 @@
 name: CI
 
+# A push to main is main.yml. These results are what protect-main checks, on the
+# same commit, so main doesn't run these seven again.
 on:
   pull_request:
-    branches: [main]
-  push:
     branches: [main]
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.head_ref || github.ref }}
+  group: ci-${{ github.head_ref }}
   cancel-in-progress: true
 
 # Logic lives in scripts/ci.sh, so every job can be run locally too.
 # The PR head is checked out, not GitHub's merge ref: that merge commit carries
 # GitHub's identity and would trip the identity sweep. History is needed for the sweeps.
 env:
-  HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-  BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+  HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+  BASE_SHA: ${{ github.event.pull_request.base.sha }}
 
 jobs:
   test:
@@ -31,6 +31,15 @@ jobs:
           ref: ${{ env.HEAD_SHA }}
           fetch-depth: 0
           persist-credentials: false
+      - id: cache-id
+        run: scripts/ci.sh cache-id >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .build
+          key: swiftbuild-test-${{ steps.cache-id.outputs.id }}-${{ env.HEAD_SHA }}
+          restore-keys: |
+            swiftbuild-test-${{ steps.cache-id.outputs.id }}-
+            swiftbuild-main-${{ steps.cache-id.outputs.id }}-
       - run: scripts/ci.sh test
 
   leaks:
@@ -103,4 +112,13 @@ jobs:
         with:
           path: ~/whisper-ci
           key: whisper-model-${{ hashFiles('scripts/ci-fetch-model.sh') }}
+      - id: cache-id
+        run: scripts/ci.sh cache-id >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .build
+          key: swiftbuild-e2e-${{ steps.cache-id.outputs.id }}-${{ env.HEAD_SHA }}
+          restore-keys: |
+            swiftbuild-e2e-${{ steps.cache-id.outputs.id }}-
+            swiftbuild-main-${{ steps.cache-id.outputs.id }}-
       - run: scripts/ci.sh e2e

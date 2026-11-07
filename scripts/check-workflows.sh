@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Keeps the workflow rules true: actions pinned by full SHA, read-only permissions,
 # no secrets or tokens, no privileged triggers, only the macos-26 runner, a time
-# limit on every job, and checkout of the PR head with no saved credentials.
+# limit on every job, checkout of the PR head with no saved credentials, and no
+# cache restored on a push, because main's clean build is what later PRs reuse.
+# Takes the folder to check; the default is .github/workflows.
 # --self-test proves each rule goes red.
 set -uo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
@@ -29,6 +31,10 @@ check_file() {
     creds="$(grep -cE '^[[:space:]]+persist-credentials:[[:space:]]+false' "$file")"
     [ "$checkouts" -eq "$heads" ] || echo "$file: checkout isn't of the PR head"
     [ "$checkouts" -eq "$creds" ] || echo "$file: checkout keeps credentials"
+    if grep -qE '^on:[[:space:]]+push|^[[:space:]]+push:' "$file" \
+        && grep -qE 'uses:[[:space:]]+actions/cache(/restore)?@' "$file"; then
+        echo "$file: restores a cache on a push"
+    fi
     return 0
 }
 
@@ -86,11 +92,22 @@ jobs:
     expect "PR head" '/ref: /d'
     expect "keeps credentials" '/persist-credentials/d'
     expect "time limits" '/timeout-minutes/d'
+    cache_step='      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6'
+    restore_step='      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6'
+    save_step='      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6'
+    printf '%s\n%s\n' "$good" "$cache_step" > "$work/ci.yml"
+    check_file "$work/ci.yml" | grep -qF "restores a cache" || { echo "check-workflows: didn't catch a cache on a push"; failed=1; }
+    printf '%s\n%s\n' "$good" "$restore_step" > "$work/ci.yml"
+    check_file "$work/ci.yml" | grep -qF "restores a cache" || { echo "check-workflows: didn't catch a cache restore on a push"; failed=1; }
+    printf '%s\n%s\n' "$good" "$save_step" > "$work/ci.yml"
+    if [ -n "$(check_file "$work/ci.yml")" ]; then echo "check-workflows: refused saving a cache on a push"; failed=1; fi
+    printf '%s\n%s\n' "$good" "$cache_step" | sed -E 's/^on: push/on: pull_request/' > "$work/ci.yml"
+    if [ -n "$(check_file "$work/ci.yml")" ]; then echo "check-workflows: refused a cache on a PR"; failed=1; fi
     [ "$failed" -eq 0 ] && echo "check-workflows self-test: ok"
     exit "$failed"
 fi
 
-problems="$(check_dir .github/workflows)"
+problems="$(check_dir "${1:-.github/workflows}")"
 if [ -n "$problems" ]; then
     printf '%s\n' "$problems" >&2
     exit 1

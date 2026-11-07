@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
+# Identity and leak sweeps of the outgoing commits, then unit tests.
 # Fails closed: a missing script blocks the push.
 root="$(git rev-parse --show-toplevel)" || exit 1
 for s in sweep.sh check.sh; do
     [ -x "$root/scripts/$s" ] || { echo "pre-push: scripts/$s is missing; refusing to push." >&2; exit 1; }
 done
 "$root/scripts/sweep.sh" --pre-push || exit 1
-exec "$root/scripts/check.sh"
+exec "$root/scripts/check.sh" --unit

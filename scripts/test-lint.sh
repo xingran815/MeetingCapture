@@ -38,7 +38,10 @@ jobs:
     steps:
       - run: echo ok
 YML
+git config user.name tester
+git config user.email "1+tester@users.noreply.github.com"
 git add -A
+git commit -qm "chore: base" || { echo "base commit failed"; exit 2; }
 
 # Expects lint to fail, naming the tool. $1 label, $2 text to find, $3 file, $4 content.
 refuses() {
@@ -73,6 +76,116 @@ refuses "broken workflow" "lint: FAILED, actionlint" \
 refuses "unpinned action" "not pinned" \
     .github/workflows/ci.yml "$(sed 's/- run: echo ok/- uses: actions\/checkout@v7/' .github/workflows/ci.yml)"
 
+# ─── lint.sh --staged: judges the index, not the working copy ────────────────
+reset_tree() { git reset -q --hard HEAD; git clean -qfd; }
+BASE_GOOD='let probe = 1'
+
+# $1 label. Passes when lint --staged exits 0.
+staged_passes() {
+    local out
+    if out="$(scripts/lint.sh --staged 2>&1)"; then
+        pass=$((pass+1)); printf '  ok    %s\n' "$1"
+    else
+        fail=$((fail+1)); printf '  FAIL  %s: refused\n%s\n' "$1" "$out"
+    fi
+}
+# $1 label, $2 text the refusal must contain.
+staged_refuses() {
+    local out
+    if out="$(scripts/lint.sh --staged 2>&1)"; then
+        fail=$((fail+1)); printf '  FAIL  %s: lint passed\n' "$1"
+    elif printf '%s' "$out" | grep -qF "$2"; then
+        pass=$((pass+1)); printf '  ok    %s\n' "$1"
+    else
+        fail=$((fail+1)); printf '  FAIL  %s: refused for another reason\n%s\n' "$1" "$out"
+    fi
+}
+
+# Staged bad, working copy good: refused, so the staged text is what's judged.
+printf 'let  probe=1\n' > Sources/MeetingCaptureCore/Probe.swift
+git add Sources/MeetingCaptureCore/Probe.swift
+printf '%s\n' "$BASE_GOOD" > Sources/MeetingCaptureCore/Probe.swift
+staged_refuses "staged bad Swift with a clean working copy" "lint: FAILED, swift format"
+reset_tree
+
+# Staged good, working copy bad: passes, the other direction of the same proof.
+printf 'let probe = 11\n' > Sources/MeetingCaptureCore/Probe.swift
+git add Sources/MeetingCaptureCore/Probe.swift
+printf 'let  probe=1\n' > Sources/MeetingCaptureCore/Probe.swift
+staged_passes "staged good Swift with a bad working copy"
+reset_tree
+
+# shellcheck disable=SC2016  # the unquoted $1 is the seeded bug
+printf '#!/usr/bin/env bash\nrm -rf $1/x\n' > .githooks/pre-commit
+git add .githooks/pre-commit
+staged_refuses "staged shell bug" "lint: FAILED, shellcheck"
+reset_tree
+
+printf 'name: CI\non: push\njobs:\n  a:\n    steps:\n      - run: echo\n' > .github/workflows/ci.yml
+git add .github/workflows/ci.yml
+staged_refuses "staged broken workflow" "lint: FAILED, actionlint"
+reset_tree
+
+sed 's/- run: echo ok/- uses: actions\/checkout@v7/' .github/workflows/ci.yml > "$WORK/unpinned.yml"
+cp "$WORK/unpinned.yml" .github/workflows/ci.yml
+git add .github/workflows/ci.yml
+staged_refuses "staged unpinned action" "not pinned"
+reset_tree
+
+# A bad file that isn't part of the commit doesn't refuse it.
+printf 'let probe = 12\n' > Sources/MeetingCaptureCLI/Probe.swift
+git add Sources/MeetingCaptureCLI/Probe.swift
+printf 'let  probe=3\n' > Tests/Probe.swift
+# shellcheck disable=SC2016  # the unquoted $1 is the seeded bug
+printf '#!/usr/bin/env bash\nrm -rf $1/x\n' > scripts/unstaged.sh
+staged_passes "unstaged bad files don't refuse"
+reset_tree
+
+# A staged deletion doesn't break it.
+git rm -q Tests/Probe.swift
+staged_passes "staged deleted Swift file"
+reset_tree
+git rm -q .githooks/pre-commit
+staged_passes "staged deleted shell file"
+reset_tree
+
+# A name with a space is passed through whole, and still judged.
+printf 'let probe = 5\n' > "Tests/My Probe.swift"
+git add "Tests/My Probe.swift"
+staged_passes "good Swift file with a space in its name"
+printf 'let  probe=5\n' > "Tests/My Probe.swift"
+git add "Tests/My Probe.swift"
+staged_refuses "bad Swift file with a space in its name" "lint: FAILED, swift format"
+reset_tree
+
+# A staged .swift-format change makes it judge all Swift, even files not in the commit.
+printf 'let  probe=3\n' > Tests/Probe.swift
+git add Tests/Probe.swift
+git commit -qm "test: committed bad format"
+printf 'let probe = 13\n' > Sources/MeetingCaptureCLI/Probe.swift
+git add Sources/MeetingCaptureCLI/Probe.swift
+staged_passes "old bad Swift isn't judged when only other Swift is staged"
+git reset -q --hard HEAD
+printf '\n' >> .swift-format
+git add .swift-format
+staged_refuses "staged .swift-format change judges all Swift" "lint: FAILED, swift format"
+git reset -q --hard HEAD~1
+reset_tree
+
+# Seconds, not minutes: a seeded refusal comes back well inside 15 s.
+printf 'let  probe=1\n' > Sources/MeetingCaptureCore/Probe.swift
+git add Sources/MeetingCaptureCore/Probe.swift
+t0=$SECONDS
+scripts/lint.sh --staged > /dev/null 2>&1
+rc=$?
+elapsed=$((SECONDS-t0))
+if [ "$rc" -ne 0 ] && [ "$elapsed" -lt 15 ]; then
+    pass=$((pass+1)); printf '  ok    staged refusal took %ss (under 15)\n' "$elapsed"
+else
+    fail=$((fail+1)); printf '  FAIL  staged refusal: exit %s after %ss\n' "$rc" "$elapsed"
+fi
+reset_tree
+
 # A missing tool is a failure, not a skip.
 mkdir "$WORK/bin"
 for tool in git swift grep sed cat dirname basename mktemp rm perl env bash; do
@@ -85,6 +198,17 @@ elif printf '%s' "$out" | grep -qF "shellcheck isn't installed"; then
 else
     fail=$((fail+1)); printf '  FAIL  missing tools: refused for another reason\n%s\n' "$out"
 fi
+
+printf 'let probe = 14\n' > Sources/MeetingCaptureCore/Probe.swift
+git add Sources/MeetingCaptureCore/Probe.swift
+if out="$(PATH="$WORK/bin" scripts/lint.sh --staged 2>&1)"; then
+    fail=$((fail+1)); printf '  FAIL  missing tools, staged: lint passed\n'
+elif printf '%s' "$out" | grep -qF "shellcheck isn't installed"; then
+    pass=$((pass+1)); printf '  ok    missing tool is a failure in staged mode too\n'
+else
+    fail=$((fail+1)); printf '  FAIL  missing tools, staged: refused for another reason\n%s\n' "$out"
+fi
+reset_tree
 
 printf '\nlint tests: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

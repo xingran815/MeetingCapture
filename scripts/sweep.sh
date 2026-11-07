@@ -253,6 +253,22 @@ branch_rule() {  # local_ref local_sha remote_ref
     fi
 }
 
+# Catches what branch_rule can't: a renamed copy, or a branch whose local ref is
+# gone. The list is a snapshot, so a commit made after it needs branch_rule. It
+# holds hashes of ids (see identity.sh), and findings don't name the commit.
+protected_commits_rule() {  # local_ref local_sha
+    local list="$ROOT/scripts/protected-commits.sha256"
+    [ -f "$list" ] || { report branch-rule "scripts/protected-commits.sha256 is missing"; return; }
+    local sha shas hash
+    shas="$(git rev-list "$2" --not --remotes)" || { echo "sweep: bad range" >&2; exit 2; }
+    for sha in $shas; do
+        hash="$(printf '%s' "$sha" | shasum -a 256 | cut -d' ' -f1)"
+        if grep -qxF "$hash" "$list"; then
+            report branch-rule "$1 contains a commit from $PROTECTED_BRANCH"
+        fi
+    done
+}
+
 sweep_pre_push() {
     local zero=0000000000000000000000000000000000000000
     local local_ref local_sha remote_ref _
@@ -260,6 +276,7 @@ sweep_pre_push() {
         [ -n "${local_ref:-}" ] || continue
         [ "$local_sha" = "$zero" ] && continue   # a deletion sends no commits
         branch_rule "$local_ref" "$local_sha" "$remote_ref"
+        protected_commits_rule "$local_ref" "$local_sha"
         sweep_outgoing "$local_sha" --not --remotes
     done
 }
