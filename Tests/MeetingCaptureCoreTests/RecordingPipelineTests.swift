@@ -51,7 +51,10 @@ final class RecordingPipelineTests: AudioTestCase {
                 ]
         }
         let parts = [try wav("m.wav", mic: true), try wav("m_part2.wav", mic: true)]
-        let result = try await pipeline(transcriber).transcribe(parts: parts)
+        // About order, not echo: the test tones would be cleaned, and the cleaned file has no ".mic.wav" name.
+        var plain = pipeline(transcriber)
+        plain.removeEcho = false
+        let result = try await plain.transcribe(parts: parts)
         let starts = result.segments.map(\.start)
         XCTAssertEqual(starts.count, 6)
         XCTAssertEqual(starts, starts.sorted())

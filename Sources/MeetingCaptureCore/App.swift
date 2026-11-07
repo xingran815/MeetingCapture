@@ -82,6 +82,26 @@ public enum MeetingCaptureApp {
                 exit(1)
             }
         }
+        // Speaker turns alone, so the lab can choose the detection threshold.
+        if AudioFixtures.scriptFlagsEnabled(), let path = args.option("--diarize") {
+            let threshold = args.option("--threshold").flatMap(Float.init)
+            Task {
+                do {
+                    let detector = SpeakerKitDetector()
+                    if let threshold { detector.clusterThreshold = threshold }
+                    let turns = try await detector.detectTurns(path: path)
+                    let seconds = Dictionary(grouping: turns, by: \.speaker)
+                        .mapValues { $0.reduce(0) { $0 + $1.end - $1.start } }
+                    print(
+                        "speakers \(seconds.count) seconds \(seconds.sorted { $0.key < $1.key }.map { Int($0.value) })")
+                    exit(0)
+                } catch {
+                    fputs("❌  \(error.localizedDescription)\n", stderr)
+                    exit(1)
+                }
+            }
+            RunLoop.main.run()
+        }
         // The cleaned mic alone, so the echo lab can measure the code a user gets.
         if AudioFixtures.scriptFlagsEnabled(), let path = args.option("--clean-echo"),
             let out = args.option("--clean-echo-out")

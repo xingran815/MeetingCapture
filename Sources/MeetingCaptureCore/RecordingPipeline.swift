@@ -25,6 +25,12 @@ extension Transcriber: SpeechTranscribing {
 @available(macOS 14.0, *)
 final class SpeakerKitDetector: SpeakerDetecting {
     private var kit: SpeakerKit?
+    /// SpeakerKit's default of 0.6 split one synthetic voice into 3 speakers. On mixes of
+    /// known voices, 0.7 and below still split it, 0.8 and 0.9 got every mix right, and 1.0
+    /// merged two real voices, so this errs away from merging. Only tested on synthetic
+    /// voices (`scripts/echo-lab/diar_mix.py`), so unsure for real people.
+    static let defaultClusterThreshold: Float = 0.8
+    var clusterThreshold = SpeakerKitDetector.defaultClusterThreshold
 
     func detectTurns(path: String) async throws -> [SpeakerTurn] {
         if kit == nil {
@@ -32,7 +38,8 @@ final class SpeakerKitDetector: SpeakerDetecting {
             kit = try await SpeakerKit(PyannoteConfig(verbose: false))
         }
         let audio = try AudioProcessor.loadAudioAsFloatArray(fromPath: path)
-        let result = try await kit!.diarize(audioArray: audio)
+        let options = PyannoteDiarizationOptions(clusterDistanceThreshold: clusterThreshold)
+        let result = try await kit!.diarize(audioArray: audio, options: options)
         return result.segments.compactMap { segment in
             guard let id = segment.speaker.speakerId else { return nil }
             return SpeakerTurn(start: Double(segment.startTime), end: Double(segment.endTime), speaker: id)

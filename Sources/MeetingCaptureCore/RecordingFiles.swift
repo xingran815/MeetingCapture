@@ -47,6 +47,14 @@ enum RecordingFiles {
         name.replacingOccurrences(of: "_part\\d+$", with: "", options: .regularExpression)
     }
 
+    /// The recording a file stem belongs to, counting its cleaned mic: `meeting_clean` and
+    /// `meeting_part2_clean` both belong to `meeting`. Only an exact `_clean` ending counts,
+    /// so `meeting_clean_notes` is someone else's file.
+    static func ownerBase(of stem: String) -> String {
+        let suffix = "_clean"
+        return baseName(of: stem.hasSuffix(suffix) ? String(stem.dropLast(suffix.count)) : stem)
+    }
+
     /// Why a new recording can't be written here, or nil if it can. Reusing a name
     /// would truncate a WAV that may be the only copy, overwrite the transcript and
     /// M4A, and join old parts into the new recording.

@@ -116,6 +116,14 @@ final class SpeakerLabelsTests: XCTestCase {
 
     // MARK: Pipeline, with no real model
 
+    /// These tests are about labels and times, and their mic and system tones are the same
+    /// shape, which the echo remover would rightly take for echo (M3.2). Echo has its own tests.
+    private func noEchoRemoval(_ transcriber: SpeechTranscribing, detector: SpeakerDetecting?) -> RecordingPipeline {
+        var pipeline = RecordingPipeline(transcriber: transcriber, detector: detector)
+        pipeline.removeEcho = false
+        return pipeline
+    }
+
     private final class FakeTranscriber: SpeechTranscribing {
         var calls: [String] = []
         func transcribeSegments(path: String) async throws -> [Transcriber.Segment] {
@@ -171,7 +179,7 @@ final class SpeakerLabelsTests: XCTestCase {
 
     func testBothTracksGetTheirLabelsAndDetectionSeesOnlyTheSystemTrack() async throws {
         let detector = FakeDetector()
-        let pipeline = RecordingPipeline(transcriber: FakeTranscriber(), detector: detector)
+        let pipeline = noEchoRemoval(FakeTranscriber(), detector: detector)
         let result = try await pipeline.transcribe(parts: [try recording()])
         XCTAssertEqual(result.segments.map(\.speaker), ["You", "Speaker 1"])
         XCTAssertEqual(detector.paths.count, 1)
@@ -180,7 +188,7 @@ final class SpeakerLabelsTests: XCTestCase {
     }
 
     func testMicOffMeansNoYouLabel() async throws {
-        let pipeline = RecordingPipeline(transcriber: FakeTranscriber(), detector: FakeDetector())
+        let pipeline = noEchoRemoval(FakeTranscriber(), detector: FakeDetector())
         let result = try await pipeline.transcribe(parts: [try recording(mic: false)])
         XCTAssertEqual(result.segments.map(\.speaker), ["Speaker 1"])
     }
@@ -188,14 +196,14 @@ final class SpeakerLabelsTests: XCTestCase {
     func testDetectionFailureKeepsTheTranscriptAsYouAndOthers() async throws {
         let detector = FakeDetector()
         detector.fail = true
-        let pipeline = RecordingPipeline(transcriber: FakeTranscriber(), detector: detector)
+        let pipeline = noEchoRemoval(FakeTranscriber(), detector: detector)
         let result = try await pipeline.transcribe(parts: [try recording()])
         XCTAssertEqual(result.segments.map(\.speaker), ["You", "Others"])
         XCTAssertEqual(result.notes.count, 1)
     }
 
     func testLaterPartsAreOffsetByRealLength() async throws {
-        let pipeline = RecordingPipeline(transcriber: FakeTranscriber(), detector: FakeDetector())
+        let pipeline = noEchoRemoval(FakeTranscriber(), detector: FakeDetector())
         let parts = [try recording(name: "m.wav", seconds: 3), try recording(name: "m_part2.wav", seconds: 1)]
         let result = try await pipeline.transcribe(parts: parts)
         XCTAssertEqual(result.segments.map(\.start), [0.5, 0.5, 3.5, 3.5])
@@ -204,7 +212,7 @@ final class SpeakerLabelsTests: XCTestCase {
     func testFinishWritesTheTranscriptArchivesAndMarksProcessed() async throws {
         let wav = try recording()
         let base = dir.appendingPathComponent("m")
-        let pipeline = RecordingPipeline(transcriber: FakeTranscriber(), detector: FakeDetector())
+        let pipeline = noEchoRemoval(FakeTranscriber(), detector: FakeDetector())
         _ = try await RecordingPipeline.finish(parts: [wav], base: base, pipeline: pipeline)
         XCTAssertFalse(FileManager.default.fileExists(atPath: wav.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: base.appendingPathExtension("m4a").path))

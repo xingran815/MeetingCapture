@@ -201,7 +201,9 @@ enum EchoRemover {
     }
 
     private static func normalised(_ values: [Double], _ weight: [Double], offset: Int, count: Int) -> [Double] {
-        (0..<count).map { values[offset + $0] / max(weight[offset + $0], 1e-3) }
+        // The crossfade's weight reaches almost zero at the very end, where the estimate
+        // has shrunk by the same factor, so only an exact zero needs guarding.
+        (0..<count).map { weight[offset + $0] > 1e-12 ? values[offset + $0] / weight[offset + $0] : 0 }
     }
 
     /// The FIR filter that best turns x into y, by the normal equations.
@@ -290,12 +292,19 @@ struct EchoEvidence {
         let first = max(Int(start / Self.frameSeconds), 0)
         let last = min(Int(end / Self.frameSeconds) + 1, count)
         guard last > first else { return false }
-        // The line's loudest fifth: a segment can hold a long silence before its words.
-        let order = (first..<last).sorted { cleanDB[$0] > cleanDB[$1] }
-        let loudest = order.prefix(max(order.count / 5, 1))
-        let level = loudest.reduce(Float(0)) { $0 + cleanDB[$1] } / Float(loudest.count)
-        let drop = loudest.reduce(Float(0)) { $0 + (micDB[$1] - cleanDB[$1]) } / Float(loudest.count)
+        // A segment can hold long silences, so each measure uses the line's loudest fifth.
+        // Level goes by the cleaned track, which a voice keeps and an echo doesn't. Drop
+        // goes by the mic, because once an echo is cleaned below the room, the cleaned
+        // track's loudest frames are the pauses, which lost nothing.
+        let fifth = max((last - first) / 5, 1)
+        let frames = first..<last
+        let level = mean(frames.sorted { cleanDB[$0] > cleanDB[$1] }.prefix(fifth)) { cleanDB[$0] }
+        let drop = mean(frames.sorted { micDB[$0] > micDB[$1] }.prefix(fifth)) { micDB[$0] - cleanDB[$0] }
         return drop >= Self.minimumDrop && level - roomDB < Self.echoCeilingAboveRoom
+    }
+
+    private func mean(_ indices: ArraySlice<Int>, _ value: (Int) -> Float) -> Float {
+        indices.reduce(Float(0)) { $0 + value($1) } / Float(indices.count)
     }
 }
 

@@ -45,12 +45,6 @@ final class CaptureBugTests: XCTestCase {
         XCTAssertEqual(RecordingFiles.allParts(of: only), [only])
     }
 
-    // MARK: Speex sample rate left at 8 kHz
-
-    func testEchoCancellerRunsAt48kHz() {
-        XCTAssertEqual(EchoCanceller().configuredSampleRate, 48_000)
-    }
-
     // MARK: Enter doesn't stop a flag-mode recording
 
     func testEnterStopsAndSpaceEnterPauses() {

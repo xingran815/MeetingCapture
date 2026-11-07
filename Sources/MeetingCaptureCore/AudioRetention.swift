@@ -81,7 +81,7 @@ enum AudioRetention {
             // own parts, which stops a damaged or planted sidecar claiming other files.
             for file in files where names.contains(file) && isAudio(file) {
                 let stem = (file as NSString).deletingPathExtension
-                guard RecordingFiles.baseName(of: stem) == base else { continue }
+                guard RecordingFiles.ownerBase(of: stem) == base else { continue }
                 if stem != base, names.contains(stem + sidecarSuffix) { continue }
                 let url = dir.appendingPathComponent(file)
                 guard !isFolder(url) else { continue }
@@ -111,7 +111,7 @@ enum AudioRetention {
                 return !sidecars.contains { sidecar in
                     if sidecar.base == stem { return true }
                     // No list yet means it's unfinished or unreadable, so any of its parts count.
-                    guard let files = sidecar.files else { return RecordingFiles.baseName(of: stem) == sidecar.base }
+                    guard let files = sidecar.files else { return RecordingFiles.ownerBase(of: stem) == sidecar.base }
                     return files.contains(name)
                 }
             }
