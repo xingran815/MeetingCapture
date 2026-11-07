@@ -131,7 +131,7 @@ struct RecordingPipeline {
                             // A noise track has its own note, and wouldn't show an echo anyway.
                             notes.append(
                                 "\(part.lastPathComponent): no echo could be measured between the tracks, "
-                                    + "so the mic was used as recorded.")
+                                    + "so the mic was used as recorded, and its lines may include the other side.")
                         }
                     } catch {
                         notes.append(

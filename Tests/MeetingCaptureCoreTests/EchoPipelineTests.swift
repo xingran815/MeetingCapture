@@ -401,6 +401,7 @@ final class EchoPipelineTests: AudioTestCase {
 
         let notes = try XCTUnwrap(result?.notes)
         XCTAssertTrue(notes.contains { $0.contains("no echo could be measured") }, "\(notes)")
+        XCTAssertTrue(notes.contains { $0.contains("may include the other side") }, "\(notes)")
         XCTAssertFalse(notes.joined().contains("no echo showed up"), "\(notes)")
         XCTAssertFalse(notes.joined().contains("failed"), "\(notes)")
         XCTAssertTrue(transcriber.paths.contains { $0.hasSuffix("m.mic.wav") }, "\(transcriber.paths)")

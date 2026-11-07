@@ -551,38 +551,46 @@ final class EchoRemoverTests: AudioTestCase {
         XCTAssertTrue(e.looksLikeEcho(start: 5.2, end: 6.0))
     }
 
-    /// From the M3.2 re-check: windows start every 15 s, and the last must end at the file's
-    /// end. A length of 20 s + 15k s + 1 sample used to give two windows one sample apart,
-    /// so one false peak counted twice. A near-identical window is now dropped.
-    func testOneFalsePeakSeenByTwoNearIdenticalWindowsIsNotAMove() throws {
-        let window = 20 * EchoLab.rate
-        let hop = 15 * EchoLab.rate
-        let far = EchoLab.speech(frames: window + 2 * hop + 1, seed: 93, rms: 0.1)
-        let mic = EchoLab.sum(EchoLab.echo(of: far), EchoLab.noise(far.count, seed: 5, rms: 0.0003))
-        let lengths = [
-            window - 5 * EchoLab.rate, window, window + 1, window + hop / 2 - 1, window + hop / 2,
-            window + hop, window + hop + 1, window + 2 * hop + 1,
-        ]
-        for frames in lengths {
-            try EchoLab.writeMono(Array(mic.prefix(frames)), to: url("mic.wav"))
-            try EchoLab.writeMono(Array(far.prefix(frames)), to: url("system.wav"))
+    /// From the M3.2 re-check: dropping a near-duplicate window left far side unseen. Whatever the
+    /// length, the windows start at 0, each starts no later than the previous one ends, and the last
+    /// ends at the file's end.
+    func testLagWindowsLeaveNoAudioUnseen() throws {
+        let window = 20.0
+        for seconds in [5.0, 19.99, 20.0, 20.01, 21, 25, 27.4, 35, 41, 42, 57] {
+            let frames = Int(seconds * rate)
+            let far = EchoLab.speech(frames: frames, seed: 93, rms: 0.1)
+            let mic = EchoLab.sum(EchoLab.echo(of: far), EchoLab.noise(frames, seed: 5, rms: 0.0003))
+            try EchoLab.writeMono(mic, to: url("mic.wav"))
+            try EchoLab.writeMono(far, to: url("system.wav"))
             let track = try EchoRemover.lagTrack(
                 mic: try MonoReader(url("mic.wav")), system: try MonoReader(url("system.wav")), frames: frames)
-            print("EchoRemoverTests: \(frames) frames: windows at \(track.map(\.seconds))")
-            XCTAssertFalse(track.isEmpty, "\(frames) frames")
-            for (a, b) in zip(track, track.dropFirst()) {
-                XCTAssertGreaterThanOrEqual(b.seconds - a.seconds, 7.5, "\(frames) frames: near-identical windows")
+            let total = Double(frames) / rate
+            XCTAssertFalse(track.isEmpty, "\(seconds) s")
+            // Centre = start + half the window; a window cut short by the file's end is shorter.
+            let spans: [(start: Double, end: Double)] = track.map { point in
+                let full = point.seconds - window / 2
+                if full + window <= total + 0.001 { return (full, full + window) }
+                return (2 * point.seconds - total, total)
             }
-            // The last window ends at the file's end (centre is 10 s before it), when there's more than one.
-            if frames >= window {
-                XCTAssertEqual(
-                    try XCTUnwrap(track.last).seconds, Double(frames) / Double(EchoLab.rate) - 10, accuracy: 0.01,
-                    "\(frames) frames")
+            print("EchoRemoverTests: \(seconds) s: windows \(spans)")
+            XCTAssertEqual(try XCTUnwrap(spans.first).start, 0, accuracy: 0.001, "\(seconds) s: first start")
+            for (a, b) in zip(spans, spans.dropFirst()) {
+                XCTAssertLessThanOrEqual(b.start, a.end + 0.001, "\(seconds) s: gap between windows")
+                XCTAssertGreaterThan(b.start, a.start, "\(seconds) s: windows in order")
             }
-            // A file one sample over 20 s + k hops has the right number of windows.
-            let expected = frames < window ? 1 : 1 + Int((Double(frames - window) / Double(hop)).rounded())
-            XCTAssertEqual(track.count, expected, "\(frames) frames")
+            XCTAssertEqual(try XCTUnwrap(spans.last).end, total, accuracy: 0.001, "\(seconds) s: last end")
         }
+    }
+
+    /// From the M3.2 re-check: a 27 s part whose far side talks only at 0-7 s still gets cleaned.
+    func testFarSideOnlyAtTheStartOfA27sPartIsStillCleaned() throws {
+        let frames = 27 * EchoLab.rate
+        let far = EchoLab.only(EchoLab.speech(frames: frames, seed: 95, rms: 0.1), seconds: 0...7)
+        let mic = EchoLab.sum(EchoLab.echo(of: far), EchoLab.noise(frames, seed: 5, rms: 0.0003))
+        let (_, out) = try XCTUnwrap(try clean(mic: mic, system: far))
+        let reduction = EchoLab.reductionDB(input: mic, output: out, from: 2, to: 7)
+        print("EchoRemoverTests: 27 s, far side 0-7 s: reduced by \(reduction) dB")
+        XCTAssertGreaterThanOrEqual(reduction, 20)
     }
 
     /// From the M3.2 re-check: under 2 s of far side is under the fit's minimum, and a lag

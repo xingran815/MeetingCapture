@@ -99,11 +99,9 @@ enum EchoRemover {
         let fft = RealFFT(atLeast: 2 * min(window, frames))
         var points: [LagPoint] = []
         var starts = Array(stride(from: 0, to: max(frames - window, 1), by: hop))
-        if frames > window, let last = starts.last {
-            // Not two near-identical windows, or one false peak would count twice.
-            if frames - window - last < hop / 2 { starts.removeLast() }
-            starts.append(frames - window)
-        }
+        // Two windows may nearly coincide, so one false peak can count twice and print a needless
+        // note. Dropping one instead can leave a far side unseen, which is worse (D-74).
+        if frames > window, let last = starts.last, last != frames - window { starts.append(frames - window) }
         for start in starts {
             let m = try mic.read(from: start, count: min(window, frames - start))
             let r = try system.read(from: start, count: min(window, frames - start))
