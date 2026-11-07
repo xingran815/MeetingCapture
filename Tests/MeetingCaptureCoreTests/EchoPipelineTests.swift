@@ -259,10 +259,18 @@ final class EchoPipelineTests: AudioTestCase {
         XCTAssertGreaterThan(
             EchoRemover.meanPower(Array(archived[echoWindow])), 0.001, "the echo is still in the archived mic")
 
-        // The cleaned file is mono and quiet where the echo was.
-        let cleaned = try EchoLab.read(url("m_clean.m4a"))
+        // The cleaned file is the recording's layout (user asked: the recording with echo removed):
+        // two channels, mic quiet where the echo was, system track as recorded.
+        XCTAssertEqual(try AVAudioFile(forReading: url("m_clean.m4a")).fileFormat.channelCount, 2)
+        let cleaned = try EchoLab.read(url("m_clean.m4a"), channel: 0)
         XCTAssertLessThan(
             EchoRemover.meanPower(Array(cleaned[echoWindow])), EchoRemover.meanPower(Array(archived[echoWindow])) / 100)
+        let cleanedSystem = try EchoLab.read(url("m_clean.m4a"), channel: 1)
+        let archivedSystem = try EchoLab.read(url("m.m4a"), channel: 1)
+        XCTAssertEqual(
+            EchoLab.db(EchoRemover.meanPower(cleanedSystem) / EchoRemover.meanPower(archivedSystem)), 0, accuracy: 0.5,
+            "the system track in the clean file is the recorded one")
+        XCTAssertGreaterThan(EchoRemover.meanPower(cleanedSystem), 0.001)
     }
 
     private func pearson(_ a: [Double], _ b: [Double]) -> Double {

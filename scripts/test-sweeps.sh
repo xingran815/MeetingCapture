@@ -35,8 +35,8 @@ cp "$SRC/scripts/sweep.sh" "$SRC/scripts/sweep-allow.txt" scripts/
 : > scripts/protected-commits.sha256
 cp "$SRC"/.githooks/* .githooks/
 # Stubs record each call in $STUB_TRACE. The lint stub fails when STUB_FAIL_LINT is
-# set; the check stub fails only for --unit when STUB_FAIL_UNIT is set, so a pass
-# proves the pre-push hook passes that flag.
+# set; the check stub fails for --unit when STUB_FAIL_UNIT is set. pre-push must not
+# call it at all (D-76), so a pass there proves the hook ignores check.sh.
 export STUB_TRACE="$WORK/trace.log"
 : > "$STUB_TRACE"
 cat > scripts/lint.sh <<'STUB'
@@ -179,22 +179,27 @@ git init -q --bare "$BARE"
 git remote add origin "$BARE"
 : > "$STUB_TRACE"
 if out="$(git push -q origin main 2>&1)"; then ok "clean push passes"; else bad "clean push refused" "$out"; fi
-if [ "$(cat "$STUB_TRACE")" = "check --unit" ]; then ok "pre-push runs check.sh --unit"; else bad "pre-push check call wrong" "$(cat "$STUB_TRACE")"; fi
+# The hook runs the sweep and nothing else (D-76): check.sh, even a failing one, is not called.
+trace="$(cat "$STUB_TRACE")"
+if [ -z "$trace" ]; then ok "pre-push doesn't run check.sh"; else bad "pre-push called a stub" "$trace"; fi
 
-mv scripts/check.sh "$WORK/check.keep"
-if out="$(git push --dry-run origin main 2>&1)"; then bad "push passed with check.sh missing"
-elif printf '%s' "$out" | grep -q 'scripts/check.sh is missing'; then ok "push refused with check.sh missing"
-else bad "check.sh missing: refused for another reason" "$out"; fi
-mv "$WORK/check.keep" scripts/check.sh
-
-# Unit failure: the stub fails only for --unit, so refusal proves the flag is passed.
 git switch -q -c unitfail
 printf 'u\n' > u.md; git add u.md; git commit -qm "feat: u"
-if out="$(STUB_FAIL_UNIT=1 git push --dry-run origin unitfail 2>&1)"; then bad "push passed with failing unit tests"
-elif printf '%s' "$out" | grep -q 'seeded unit failure'; then ok "push refused when check.sh --unit fails"
-else bad "unit failure: refused for another reason" "$out"; fi
-if out="$(git push --dry-run origin unitfail 2>&1)"; then ok "same push passes when unit tests pass"; else bad "push refused though unit tests pass" "$out"; fi
+: > "$STUB_TRACE"
+if out="$(STUB_FAIL_UNIT=1 git push --dry-run origin unitfail 2>&1)"; then ok "push passes although check.sh --unit would fail"
+else bad "push refused: check.sh must not gate it" "$out"; fi
+trace="$(cat "$STUB_TRACE")"
+if [ -z "$trace" ]; then ok "a failing check.sh is never invoked by pre-push"; else bad "check.sh was invoked" "$trace"; fi
+mv scripts/check.sh "$WORK/check.keep"
+if out="$(git push --dry-run origin unitfail 2>&1)"; then ok "push passes with check.sh missing (not needed)"; else bad "push needs check.sh" "$out"; fi
+mv "$WORK/check.keep" scripts/check.sh
 git switch -q main; git branch -q -D unitfail
+
+mv scripts/sweep.sh "$WORK/sweep.keep"
+if out="$(git push --dry-run origin main 2>&1)"; then bad "push passed with sweep.sh missing"
+elif printf '%s' "$out" | grep -q 'scripts/sweep.sh is missing'; then ok "push refused with sweep.sh missing"
+else bad "sweep.sh missing: refused for another reason" "$out"; fi
+mv "$WORK/sweep.keep" scripts/sweep.sh
 
 git switch -q -c feature/coding-interview
 printf 'interview\n' > i.md; git add i.md; git commit -qm "feat: private mode"
@@ -223,7 +228,8 @@ git -c core.hooksPath=/dev/null -c user.email="jo""@realmail.net" commit -qm "fe
 if out="$(git push --dry-run origin sneaky 2>&1)"; then bad "bad author went through at push"
 elif printf '%s' "$out" | grep -q '\[identity-author\]'; then ok "bad author refused at push"
 else bad "bad author: rule not named" "$out"; fi
-if grep -q '^check' "$STUB_TRACE"; then bad "check.sh ran although the sweep refused the push"; else ok "pre-push skips check.sh after a sweep refusal"; fi
+trace="$(cat "$STUB_TRACE")"
+if [ -z "$trace" ]; then ok "a sweep refusal blocks the push and check.sh is not called"; else bad "check.sh ran although the sweep refused the push" "$trace"; fi
 git reset -q --hard main
 printf 'key %s\n' "$KEY" > k.md; git add k.md
 git -c core.hooksPath=/dev/null commit -qm "feat: bad diff"
@@ -307,37 +313,25 @@ make_merge mclean "" ""
 if out="$(git push --dry-run origin mclean-a 2>&1)"; then ok "a clean merge still passes"; else bad "clean merge refused" "$out"; fi
 git switch -q main
 
-# ─── Finding (M3.1): pre-push says when the unit tests run on something other than
-# what's being pushed. Stubs, so no build runs.
+# ─── pre-push prints no "working copy" note any more: it runs no tests (D-76) ───
 NOTE="isn't what's being pushed"
 git reset -q --hard main; git clean -qfd -e scripts -e .githooks
 git switch -q -c headpush
 printf 'h\n' > h.md; git add h.md; git commit -qm "feat: h"
-if [ -z "$(git status --porcelain)" ]; then ok "tree is clean before the note cases"; else bad "tree not clean" "$(git status --porcelain)"; fi
-out="$(git push --dry-run origin headpush 2>&1)"; rc=$?
-if [ "$rc" -ne 0 ]; then bad "push of HEAD with a clean tree refused" "$out"
-elif printf '%s' "$out" | grep -qF "$NOTE"; then bad "Finding (M3.1): note printed for HEAD with a clean tree" "$out"
-else ok "Finding (M3.1): no note when the pushed sha is HEAD and the tree is clean"; fi
-
 printf 'dirty\n' > dirty.txt
 out="$(git push --dry-run origin headpush 2>&1)"; rc=$?
-if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -qF "$NOTE"; then ok "Finding (M3.1): note printed for a dirty tree"; else bad "dirty tree: no note, or push refused" "$out"; fi
+if [ "$rc" -ne 0 ]; then bad "push with a dirty tree refused" "$out"
+elif printf '%s' "$out" | grep -qF "$NOTE"; then bad "working-copy note still printed" "$out"
+else ok "no working-copy note for a dirty tree"; fi
 rm -f dirty.txt
-printf 'changed\n' >> h.md
-out="$(git push --dry-run origin headpush 2>&1)"; rc=$?
-if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -qF "$NOTE"; then ok "Finding (M3.1): note printed for a modified tracked file"; else bad "modified file: no note, or push refused" "$out"; fi
-git checkout -q -- h.md
-
 git switch -q main
 out="$(git push --dry-run origin headpush 2>&1)"; rc=$?
-if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -qF "$NOTE"; then ok "Finding (M3.1): note printed when the pushed sha isn't HEAD"; else bad "other sha: no note, or push refused" "$out"; fi
-
-# A deletion alone is not a difference.
+if [ "$rc" -ne 0 ]; then bad "push of another sha refused" "$out"
+elif printf '%s' "$out" | grep -qF "$NOTE"; then bad "working-copy note printed for another sha" "$out"
+else ok "no working-copy note when the pushed sha isn't HEAD"; fi
 git push -q origin headpush >/dev/null 2>&1
 out="$(git push --dry-run origin :headpush 2>&1)"; rc=$?
-if [ "$rc" -ne 0 ]; then bad "branch deletion refused" "$out"
-elif printf '%s' "$out" | grep -qF "$NOTE"; then bad "Finding (M3.1): note printed for a deletion alone" "$out"
-else ok "Finding (M3.1): a branch deletion alone isn't a difference"; fi
+if [ "$rc" -eq 0 ]; then ok "a branch deletion still passes"; else bad "branch deletion refused" "$out"; fi
 
 printf '\nsweep tests: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

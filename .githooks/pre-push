@@ -1,23 +1,7 @@
 #!/usr/bin/env bash
-# Identity and leak sweeps of the outgoing commits, then unit tests.
-# Fails closed: a missing script blocks the push.
+# Identity and leak sweeps of the outgoing commits. Fails closed: a missing script
+# blocks the push. Unit tests no longer run here: they took about 400 s, and CI runs
+# them on the pushed commit (D-76).
 root="$(git rev-parse --show-toplevel)" || exit 1
-for s in sweep.sh check.sh; do
-    [ -x "$root/scripts/$s" ] || { echo "pre-push: scripts/$s is missing; refusing to push." >&2; exit 1; }
-done
-updates="$(cat)"
-printf '%s\n' "$updates" | "$root/scripts/sweep.sh" --pre-push || exit 1
-
-# Unit tests run on the working copy, so say when that isn't what's being pushed.
-# From the M3.1 review.
-head="$(git rev-parse HEAD)"
-differs=0
-[ -z "$(git status --porcelain)" ] || differs=1
-while read -r _ sha _; do
-    [ -n "${sha:-}" ] || continue
-    case "$sha" in *[!0]*) [ "$sha" = "$head" ] || differs=1 ;; esac
-done <<< "$updates"
-if [ "$differs" -eq 1 ]; then
-    echo "pre-push: note: the unit tests below run on the working copy, which isn't what's being pushed. CI tests the pushed commit."
-fi
-exec "$root/scripts/check.sh" --unit
+[ -x "$root/scripts/sweep.sh" ] || { echo "pre-push: scripts/sweep.sh is missing; refusing to push." >&2; exit 1; }
+exec "$root/scripts/sweep.sh" --pre-push

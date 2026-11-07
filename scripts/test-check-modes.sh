@@ -326,7 +326,12 @@ ci_main() {  # base-sha-or-empty
     RC=$?
 }
 BASE="$(git rev-parse HEAD)"
-printf '%s\n' "swift build" "swift build -c release" "swift test" "test-guard" \
+# ci.sh runs the unit tests with --skip "(names)$" (D-76); build that line from its own list,
+# so the test follows the list and still catches a missing or malformed skip.
+SKIPS="$(awk '/^CI_SKIPPED_TESTS=\(/{f=1;next} /^\)/{f=0} f{printf "%s%s", (n++?"|":""), $1}' scripts/ci.sh)"
+if [ -n "$SKIPS" ]; then ok "ci.sh lists the tests CI skips"; else bad "ci.sh has no CI_SKIPPED_TESTS list"; fi
+CI_SWIFT_TEST="swift test --skip ($SKIPS)\$"
+printf '%s\n' "swift build" "swift build -c release" "$CI_SWIFT_TEST" "test-guard" \
     "SWEEP-RAN --tree" "SWEEP-RAN --outgoing $BASE..HEAD" "identity $BASE..HEAD" > "$WORK/main-want"
 FAIL=""; ci_main "$BASE"
 if [ "$RC" -ne 0 ]; then bad "ci.sh main failed with healthy stubs" "$OUT"

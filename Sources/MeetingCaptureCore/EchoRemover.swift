@@ -81,6 +81,26 @@ enum EchoRemover {
             lagMoved: lagMoved(track, ppm: drift))
     }
 
+    /// The recording as it was, with only the echo gone: channel 1 is the cleaned mic,
+    /// channel 2 the system track untouched, in the same layout as the raw file. The tracks
+    /// were recorded in step and cleaning doesn't shift the mic, so frame for frame they stay
+    /// in sync. The user asked for exactly this (M3.2); a mic-only file lost the other side.
+    static func mix(mic: URL, system: URL, to output: URL) throws {
+        let micReader = try MonoReader(mic)
+        let systemReader = try MonoReader(system)
+        let frames = max(micReader.length, systemReader.length)
+        let chunk = sampleRate * 10
+        let writer = try MonoWriter(output, channels: 2)
+        for start in stride(from: 0, to: frames, by: chunk) {
+            let count = min(chunk, frames - start)
+            // Same frame in, same frame out: the two channels stay in step, as recorded.
+            try writer.write([
+                try micReader.read(from: start, count: count), try systemReader.read(from: start, count: count),
+            ])
+        }
+        writer.close()
+    }
+
     // MARK: - Lag and drift
 
     struct LagPoint: Equatable {
@@ -615,12 +635,14 @@ final class WarpedReference {
 final class MonoWriter {
     private var file: AVAudioFile?
     private let format: AVAudioFormat
+    private let channels: Int
 
-    init(_ url: URL) throws {
+    /// int16 WAV, like the recording. Two channels are the recording's layout: mic, then system.
+    init(_ url: URL, channels: Int = 1) throws {
         let settings: [String: Any] = [
             AVFormatIDKey: kAudioFormatLinearPCM,
             AVSampleRateKey: EchoRemover.sampleRate,
-            AVNumberOfChannelsKey: 1,
+            AVNumberOfChannelsKey: channels,
             AVLinearPCMBitDepthKey: 16,
             AVLinearPCMIsFloatKey: false,
             AVLinearPCMIsBigEndianKey: false,
@@ -629,16 +651,29 @@ final class MonoWriter {
         let file = try AVAudioFile(
             forWriting: url, settings: settings, commonFormat: .pcmFormatFloat32, interleaved: false)
         self.file = file
+        self.channels = channels
+        // Whatever layout AVAudioFile settled on; write() fills that one, so a header it
+        // rewrote can't mismatch the buffer (see CLAUDE.md's WAV gotcha).
         format = file.processingFormat
     }
 
-    func write(_ samples: [Double]) throws {
-        guard let file, !samples.isEmpty,
-            let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(samples.count)),
-            let out = buffer.floatChannelData?[0]
+    func write(_ samples: [Double]) throws { try write([samples]) }
+
+    /// One array per channel, all the same length.
+    func write(_ tracks: [[Double]]) throws {
+        let count = tracks.first?.count ?? 0
+        guard let file, count > 0, tracks.count == channels, tracks.allSatisfy({ $0.count == count }),
+            let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(count)),
+            let data = buffer.floatChannelData
         else { return }
-        buffer.frameLength = AVAudioFrameCount(samples.count)
-        vDSP_vdpsp(samples, 1, out, 1, vDSP_Length(samples.count))
+        buffer.frameLength = AVAudioFrameCount(count)
+        if format.isInterleaved || channels == 1 {
+            for (c, track) in tracks.enumerated() {
+                vDSP_vdpsp(track, 1, data[0] + c, vDSP_Stride(channels), vDSP_Length(count))
+            }
+        } else {
+            for (c, track) in tracks.enumerated() { vDSP_vdpsp(track, 1, data[c], 1, vDSP_Length(count)) }
+        }
         try file.write(from: buffer)
     }
 

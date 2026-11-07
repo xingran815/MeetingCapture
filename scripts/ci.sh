@@ -17,7 +17,40 @@ range() {
     printf '%s..HEAD\n' "$BASE_SHA"
 }
 
-unit_tests() { PATH="$ROOT/Tests/FakeBin:$PATH" swift test; }
+# CI runs the core unit tests only, so it stays quick (D-76). These slow echo edge cases,
+# each 3-80 s of synthetic audio, run locally in `check.sh`; the core echo tests (reduction,
+# double-talk, drift, frame count, left-out lines, raw archive, no echo, off, the two-channel
+# clean file) stay here.
+CI_SKIPPED_TESTS=(
+    testACleanedPartKeepsItsReductionWithAFastMicClock
+    testTheNoteForLeftOutLinesHasTheCountAndStartTimesAndNoWords
+    testAShortFarSideInterjectionDoesNotTakeTheVoiceWithIt
+    testAStepInTheDelayMidPartLeavesANoteAndNoWords
+    testAStepInTheDelayMidPartMakesTheRemoverReportALagMove
+    testAnExistingFileAtTheCleanNameIsNeverOverwritten
+    testATranscriptionFailureOnALaterPartLeavesNoUnlistedCleanFile
+    testAFarSideOnlyBetweenScanWindowsIsStillCleaned
+    testLeftOutLineTimesSurviveInTheSidecar
+    testACleanEncodeFailureLosesNothingAndStillArmsRetentionForTheRawPart
+    testEachPartGetsItsOwnCleanFileAndNoneCountsAsAPart
+    testTheCleanCopyIsOnlyKeptWhenAsked
+    testNoLinesLeftOutMeansNoNote
+    testARawEncodeFailureStillKeepsTheRawWAVAndDoesNotArmRetention
+    testAnEchoLineWithPausesInItIsStillLeftOut
+    testWithTheVariableARealCallIsCleanedAndTheOutputIsWritten
+    testCleaningLeavesNoTemporaryFolderOnSuccess
+    testAnEchoAheadOfTheReferenceIsLeftAloneOrImproved
+    testSoftSpeechOverAnEchoIsNotReportedAsEchoWhenTheSameVoiceIsHeardAlone
+    testTheUsersVoiceAloneIsNotChangedWhileTheFarSideIsSilent
+    testAShortDelayIsRemovedToo
+    testTheLastFramesOfTheFileAreCleanedToo
+    testARepeatOfTheFarSidesWordsIsNotAnEcho
+)
+unit_tests() {
+    local skip
+    skip="$(IFS='|'; printf '%s' "${CI_SKIPPED_TESTS[*]}")"
+    PATH="$ROOT/Tests/FakeBin:$PATH" swift test --skip "($skip)\$"
+}
 
 build_and_test() {
     timed "debug build" swift build || die "debug build"

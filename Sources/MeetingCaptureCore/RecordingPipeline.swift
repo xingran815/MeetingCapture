@@ -56,7 +56,7 @@ struct RecordingPipeline {
         /// A track sounded like only noise, so its lines may be invented and only the
         /// audio can settle it. Finding from the deep-review re-check, D-54 and D-56.
         var hasDoubtfulTrack = false
-        /// The cleaned mic of each part, if asked for, beside the raw part.
+        /// Each part as recorded but with the mic's echo gone (cleaned mic + system), if asked for.
         var cleanedAudio: [URL] = []
         /// Start times of mic lines left out as leftover echo, across the whole recording.
         var leftOutLines: [String] = []
@@ -93,7 +93,7 @@ struct RecordingPipeline {
         var hasDoubtfulTrack = false
         var cleanedAudio: [URL] = []
         var leftOutLines: [String] = []
-        var pendingClean: [(from: URL, to: URL)] = []
+        var pendingClean: [(mic: URL, system: URL, to: URL)] = []
         for (index, part) in parts.enumerated() {
             // A crashed WAV reads as empty until its header is repaired. Nothing else
             // about the file changes, and a healthy one isn't touched.
@@ -154,7 +154,9 @@ struct RecordingPipeline {
                     }
                     mic = kept
                 }
-                if keepingCleanedAudio, source != url { pendingClean.append((source, Self.cleanedURL(for: part))) }
+                if keepingCleanedAudio, source != url, let system = tracks.system {
+                    pendingClean.append((source, system, Self.cleanedURL(for: part)))
+                }
             }
             if let url = tracks.system {
                 let segments = try await transcriber.transcribeSegments(path: url.path)
@@ -180,14 +182,16 @@ struct RecordingPipeline {
             }
             offset += RecordingFiles.duration(ofAudioAt: part.path) ?? merged.map(\.end).max() ?? 0
         }
-        // Only now: if a later part throws, a moved file would be listed nowhere, and
-        // retention would never remove it. From the M3.2 deep review.
+        // The file to listen to: the recording's two channels, with the mic's echo gone,
+        // the way the call sounded minus the echo. The user asked for it (M3.2). Only now: if a later
+        // part throws, a file written earlier would be listed nowhere, and retention would
+        // never remove it. From the M3.2 deep review.
         for clean in pendingClean {
             // Never over a file that may be something else of the user's.
             if !FileManager.default.fileExists(atPath: clean.to.path),
                 !FileManager.default.fileExists(
                     atPath: clean.to.deletingPathExtension().appendingPathExtension("m4a").path),
-                (try? FileManager.default.moveItem(at: clean.from, to: clean.to)) != nil
+                (try? EchoRemover.mix(mic: clean.mic, system: clean.system, to: clean.to)) != nil
             {
                 cleanedAudio.append(clean.to)
             }
@@ -209,6 +213,7 @@ struct RecordingPipeline {
             : String(format: "%d:%02d:%02d", whole / 3600, whole / 60 % 60, whole % 60)
     }
 
+    /// Where the listening copy goes: the recording with the mic's echo removed.
     /// `meeting.wav` gives `meeting_clean.wav`, and `meeting_part2.wav` gives
     /// `meeting_part2_clean.wav`. Neither reads as a part of the recording.
     static func cleanedURL(for part: URL) -> URL {

@@ -205,14 +205,11 @@ final class CLIRunner {
     /// Installed, logged in, and on the subscription. Costs no model call and
     /// isn't counted against the daily cap. Cached for this runner's life.
     func availability(_ cli: CLIKind) async -> Availability {
-        lock.lock()
-        let cached = availabilityCache[cli]
-        lock.unlock()
+        // withLock, because lock() and unlock() can't be called from async code.
+        let cached = lock.withLock { availabilityCache[cli] }
         if let cached { return cached }
         let result = await checkAvailability(cli)
-        lock.lock()
-        availabilityCache[cli] = result
-        lock.unlock()
+        lock.withLock { availabilityCache[cli] = result }
         return result
     }
 
@@ -314,9 +311,7 @@ final class CLIRunner {
     }
 
     private func codexFeaturesOff(executable path: String) async -> [String] {
-        lock.lock()
-        let cached = featuresOff
-        lock.unlock()
+        let cached = lock.withLock { featuresOff }
         if let cached { return cached }
 
         // CODEX_HOME points at an empty folder: no login, no user config, no model call.
@@ -333,9 +328,7 @@ final class CLIRunner {
             }
         }
         let result = CLIArguments.codexFeaturesOff(listed: listed)
-        lock.lock()
-        featuresOff = result
-        lock.unlock()
+        lock.withLock { featuresOff = result }
         return result
     }
 
