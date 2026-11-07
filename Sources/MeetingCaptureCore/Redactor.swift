@@ -98,6 +98,31 @@ enum Redactor {
     private static let priority: [String: Int] = Dictionary(
         uniqueKeysWithValues: rules.enumerated().map { ($1.type, $0) })
 
+    /// At most `maxCharacters` of `text`, never cut inside a value a rule matches in the
+    /// whole text. A cut email (`dana@exam`) or phone number no longer matches, so its
+    /// raw parts would go out unredacted; the cut moves back to the value's start
+    /// instead. For text cut before it is redacted, such as notes. From the M5.2 review
+    /// (the M5.1 session's question).
+    static func safePrefix(_ text: String, maxCharacters: Int) -> String {
+        guard text.count > maxCharacters else { return text }
+        let ns = text as NSString
+        var cut = NSRange(text.startIndex..<text.index(text.startIndex, offsetBy: maxCharacters), in: text).length
+        let whole = NSRange(location: 0, length: ns.length)
+        for rule in rules {
+            for match in rule.regex.matches(in: text, range: whole) {
+                let range = match.range(at: rule.group)
+                guard range.location != NSNotFound else { continue }
+                // Any match counts, valid or not: a cut through an unvalidated
+                // look-alike costs a few characters, never a leak.
+                if range.location < cut, cut < range.location + range.length { cut = range.location }
+            }
+        }
+        // Back off a split surrogate pair or combined character.
+        let r = ns.rangeOfComposedCharacterSequence(at: max(0, min(cut, ns.length - 1)))
+        if cut < ns.length, r.location < cut { cut = r.location }
+        return ns.substring(to: cut)
+    }
+
     static func redact(_ text: String) -> Result {
         let ns = text as NSString
         struct Span {

@@ -302,7 +302,9 @@ enum GroupContextBuilder {
             // Notes only where that report's own switch is on (D-94).
             let notes =
                 edits.sendNotesToLLM
-                ? Notebook.loadNotes(base: other).map { String($0.prefix(Notebook.maxNotes)) } : nil
+                ? Notebook.loadNotes(base: other).map {
+                    Redactor.safePrefix($0, maxCharacters: Notebook.maxNotes)
+                } : nil
             candidates.append(Candidate(title: merged.topic, date: date, report: merged, notes: notes, gone: false))
         }
         candidates.sort { $0.date != $1.date ? $0.date > $1.date : $0.title < $1.title }
@@ -404,7 +406,9 @@ enum GroupContextBuilder {
             lines.append("## The user's own notes on that recording")
             // Each report's notes are capped, so one long set can't push every report out.
             let one = line(notes)
-            lines.append(one.count > maxNotesPerReport ? String(one.prefix(maxNotesPerReport)) + "…" : one)
+            // Cut where no redactable value is split, since this is cut before redaction.
+            lines.append(
+                one.count > maxNotesPerReport ? Redactor.safePrefix(one, maxCharacters: maxNotesPerReport) + "…" : one)
         }
         return Redactor.withoutAnyTokenShape(lines.joined(separator: "\n"))
     }
@@ -439,7 +443,7 @@ struct ReportInputs {
         // edited outside the app skip its limit; only the limit's worth goes out.
         let notes =
             Notebook.sendsNotesToLLM(base: base)
-            ? Notebook.loadNotes(base: base).map { String($0.prefix(Notebook.maxNotes)) } : nil
+            ? Notebook.loadNotes(base: base).map { Redactor.safePrefix($0, maxCharacters: Notebook.maxNotes) } : nil
         var inputs = ReportInputs(notes: notes, context: GroupContextBuilder.build(for: base), scenario: flagScenario)
         if flagScenario == nil,
             let pin = GroupStore.group(of: base.lastPathComponent, in: base.deletingLastPathComponent())?.scenario

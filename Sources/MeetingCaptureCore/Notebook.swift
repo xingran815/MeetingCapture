@@ -201,7 +201,10 @@ enum Notebook {
                 stale.append(edit)
                 continue
             }
-            edit.field.set(&r.sections[s].items[i], cut(edit.text, SummaryPipeline.maxFieldLength))
+            // Edited text can go to the model as group context (M5.2), cut before it is
+            // redacted, so the cut never splits a redactable value.
+            edit.field.set(
+                &r.sections[s].items[i], Redactor.safePrefix(edit.text, maxCharacters: SummaryPipeline.maxFieldLength))
             applied += 1
         }
         if let title = edits.userTitle, !title.isEmpty { r.topic = title }
@@ -493,7 +496,6 @@ enum Notebook {
             .trimmingCharacters(in: .whitespaces)
     }
 
-    private static func cut(_ s: String, _ max: Int) -> String { s.count <= max ? s : String(s.prefix(max)) }
 }
 
 // MARK: - Delete to the Trash
