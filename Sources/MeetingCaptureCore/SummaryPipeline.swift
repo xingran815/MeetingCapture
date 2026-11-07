@@ -608,16 +608,37 @@ struct SummaryPipeline {
     /// concept containing one isn't searched (D-13).
     static func isSearchableConcept(_ name: String, speakers: Set<String>) -> Bool {
         guard (try? CLIRequest.validate(concepts: [name])) != nil else { return false }
-        let lower = name.lowercased()
+        func fold(_ s: String) -> String {
+            s.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: nil)
+        }
+        let concept = fold(name)
+        let conceptWords = concept.split(whereSeparator: { !$0.isLetter }).map(String.init)
         let generic = try! NSRegularExpression(pattern: #"^(You|Others|Speaker \d+.*)$"#)
         for speaker in speakers where !speaker.isEmpty {
             let ns = speaker as NSString
             if generic.firstMatch(in: speaker, range: NSRange(location: 0, length: ns.length)) != nil { continue }
-            for word in speaker.lowercased().split(whereSeparator: { !$0.isLetter }) where word.count >= 2 {
-                if lower.split(whereSeparator: { !$0.isLetter }).contains(word) { return false }
+            for word in fold(speaker).split(whereSeparator: { !$0.isLetter }).map(String.init) {
+                // Chinese, Japanese and similar scripts don't put spaces between words,
+                // so a name is found anywhere in the concept. Other scripts match whole words.
+                if word.unicodeScalars.contains(where: Self.isUnspacedScript) {
+                    if concept.contains(word) { return false }
+                } else if word.count >= 2, conceptWords.contains(word) {
+                    return false
+                }
             }
         }
         return true
+    }
+
+    /// Han, kana, Hangul and Thai: scripts written without spaces between words.
+    static func isUnspacedScript(_ s: Unicode.Scalar) -> Bool {
+        switch s.value {
+        case 0x3040...0x30FF, 0x3400...0x4DBF, 0x4E00...0x9FFF, 0xF900...0xFAFF, 0x20000...0x2FA1F,
+            0xAC00...0xD7AF, 0x1100...0x11FF, 0x0E00...0x0E7F:
+            return true
+        default:
+            return false
+        }
     }
 
     // MARK: - Small helpers

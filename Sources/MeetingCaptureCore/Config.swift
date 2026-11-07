@@ -172,13 +172,13 @@ struct Config: Codable, Equatable {
     }
 
     static var path: URL {
-        URL(fileURLWithPath: NSHomeDirectory())
+        AppHome.url()
             .appendingPathComponent(".config/MeetingCapture/config.json")
     }
 
     /// Pre-generalization location. Read once to migrate forward (see load()).
     static var legacyPath: URL {
-        URL(fileURLWithPath: NSHomeDirectory())
+        AppHome.url()
             .appendingPathComponent("Library/Application Support/MeetingCapture/config.json")
     }
 

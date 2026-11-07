@@ -334,13 +334,15 @@ enum ReportRenderer {
             let answer = (item.answer ?? "").isEmpty ? "I don't know." : oneLine(item.answer)
             line = "- **\(text)**\n  - AI: \(answer)"
         case .concepts:
-            line = "- **\(text)**"
+            // The unsure note goes on the name's line, not after the last source.
+            line = "- **\(text)**" + unsureSuffix(item)
             if let q = item.quote, !q.isEmpty { line += "\n  - Said: \(oneLine(q))" }
             if let a = item.answer, !a.isEmpty { line += "\n  - AI understands: \(oneLine(a))" }
             if let d = item.detail, !d.isEmpty { line += "\n  - More: \(oneLine(d))" }
             for link in item.sources ?? [] where safeURL(link.url) != nil {
                 line += "\n  - Source: [\(oneLine(link.title))](\(link.url))"
             }
+            return line + "\n"
         case .insights:
             line = "- AI: \(text)"
         case .bullets, .goals:
@@ -364,9 +366,13 @@ enum ReportRenderer {
 
     /// The summary for the terminal: plain text, sections in order, unsure items marked.
     static func terminalSummary(_ report: Report) -> String {
-        var out = "\(report.topic)  [\(report.scenarioTitle)\(report.reviewed ? "" : ", NOT REVIEWED")]\n"
+        var out =
+            terminalSafe(
+                "\(oneLine(report.topic))  [\(oneLine(report.scenarioTitle))\(report.reviewed ? "" : ", NOT REVIEWED")]"
+            )
+            + "\n"
         for section in report.sections {
-            out += "\n\(section.title)\n"
+            out += "\n\(terminalSafe(oneLine(section.title)))\n"
             if section.items.isEmpty {
                 out += "  (none)\n"
                 continue
@@ -410,11 +416,13 @@ enum ReportFileName {
         var out = ""
         var lastDash = true
         for ch in topic.precomposedStringWithCanonicalMapping {
-            // Emoji are symbols, not letters, so they become a dash too.
-            let isWordChar = ch.unicodeScalars.allSatisfy {
-                CharacterSet.letters.contains($0) || CharacterSet.decimalDigits.contains($0)
-                    || CharacterSet.nonBaseCharacters.contains($0)
-            }
+            // Emoji are symbols, not letters, so they become a dash too. A keycap such
+            // as 1️⃣ is a digit plus marks, so the emoji selector and keycap mark rule it out.
+            let isWordChar =
+                ch.unicodeScalars.allSatisfy {
+                    CharacterSet.letters.contains($0) || CharacterSet.decimalDigits.contains($0)
+                        || CharacterSet.nonBaseCharacters.contains($0)
+                } && !ch.unicodeScalars.contains { $0.value == 0xFE0F || $0.value == 0x20E3 }
             if isWordChar {
                 out.append(ch)
                 lastDash = false

@@ -16,7 +16,7 @@ enum APIKeyStore {
 
     static var path: URL {
         pathOverride
-            ?? URL(fileURLWithPath: NSHomeDirectory())
+            ?? AppHome.url()
             .appendingPathComponent(".config/MeetingCapture/llm_api_keys.json")
     }
 

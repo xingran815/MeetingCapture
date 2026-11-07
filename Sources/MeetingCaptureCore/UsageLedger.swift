@@ -14,7 +14,7 @@ final class UsageLedger {
     static let defaultCap = 200
 
     static var defaultPath: URL {
-        URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".config/MeetingCapture/usage.json")
+        AppHome.url().appendingPathComponent(".config/MeetingCapture/usage.json")
     }
 
     let path: URL

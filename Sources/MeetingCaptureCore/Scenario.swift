@@ -61,7 +61,7 @@ struct ScenarioCatalog {
     var general: ScenarioTemplate { template(named: Self.fallbackName) ?? Self.builtInGeneral }
 
     static var userDirectory: URL {
-        URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".config/MeetingCapture/scenarios")
+        AppHome.url().appendingPathComponent(".config/MeetingCapture/scenarios")
     }
 
     static var builtIn: ScenarioCatalog { ScenarioCatalog(templates: builtInTemplates) }
