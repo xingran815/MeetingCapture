@@ -58,6 +58,19 @@ enum ReportRenderer {
             body += "</ul>\n"
         }
 
+        let key = keyItems(report)
+        if !key.isEmpty {
+            body += "<aside class=\"glance\"><h2>At a glance</h2><ul>"
+            for (section, item) in key {
+                body += "<li><a class=\"from\" href=\"#s-\(escape(section.id))\">\(escape(section.title))</a> "
+                body += hl(item.text, item)
+                if let o = item.owner, !o.isEmpty { body += " <span class=\"tag\">Owner: \(escape(o))</span>" }
+                if let d = item.due, !d.isEmpty { body += " <span class=\"tag\">Due: \(escape(d))</span>" }
+                if item.isUnsure { body += " <span class=\"mark\">Unsure</span>" }
+                body += "</li>"
+            }
+            body += "</ul></aside>\n"
+        }
         body += "<nav><ul>"
         for s in report.sections { body += "<li><a href=\"#s-\(escape(s.id))\">\(escape(s.title))</a></li>" }
         body += "<li><a href=\"#transcript\">Transcript</a></li></ul></nav>\n<main>\n"
@@ -108,13 +121,15 @@ enum ReportRenderer {
         }
         switch section.kind {
         case .prose:
-            for item in section.items { h += "<div\(cls(item))>\(para(item.text))\(marks(item))</div>" }
+            for item in section.items {
+                h += "<div\(cls(item))>\(pri(item))\(para(item.text, keywords: item.keywords))\(marks(item))</div>"
+            }
         case .bullets, .insights:
             h += "<ul>"
             for item in section.items {
-                h += "<li\(cls(item))>"
+                h += "<li\(cls(item))>\(pri(item))"
                 if let s = item.speaker, !s.isEmpty { h += "<span class=\"speaker\">\(escape(s))</span> " }
-                h += escape(item.text ?? "")
+                h += hl(item.text, item)
                 if let q = item.quote, !q.isEmpty { h += "<q>\(escape(q))</q>" }
                 h += marks(item) + "</li>"
             }
@@ -122,7 +137,8 @@ enum ReportRenderer {
         case .actions:
             h += "<ul class=\"todo\">"
             for item in section.items {
-                h += "<li\(cls(item))><span class=\"box\" aria-hidden=\"true\"></span> \(escape(item.text ?? ""))"
+                h +=
+                    "<li\(cls(item))><span class=\"box\" aria-hidden=\"true\"></span> \(pri(item))\(hl(item.text, item))"
                 if let o = item.owner, !o.isEmpty { h += " <span class=\"tag\">Owner: \(escape(o))</span>" }
                 if let d = item.due, !d.isEmpty { h += " <span class=\"tag\">Due: \(escape(d))</span>" }
                 h += marks(item) + "</li>"
@@ -130,14 +146,15 @@ enum ReportRenderer {
             h += "</ul>"
         case .qa:
             for item in section.items {
-                h += "<div class=\"qa\(item.isUnsure ? " unsure" : "")\"><p class=\"q\">\(escape(item.text ?? ""))</p>"
+                h +=
+                    "<div class=\"qa\(item.isUnsure ? " unsure" : "")\(item.isHigh ? " high" : "")\"><p class=\"q\">\(pri(item))\(hl(item.text, item))</p>"
                 let answer = (item.answer ?? "").isEmpty ? "I don't know." : item.answer!
-                h += "<p class=\"a ai\"><span class=\"badge\">AI</span> \(escape(answer))</p>\(marks(item))</div>"
+                h += "<p class=\"a ai\"><span class=\"badge\">AI</span> \(hl(answer, item))</p>\(marks(item))</div>"
             }
         case .goals:
             h += "<ol class=\"goals\">"
             for item in section.items {
-                h += "<li\(cls(item))>\(escape(item.text ?? ""))"
+                h += "<li\(cls(item))>\(pri(item))\(hl(item.text, item))"
                 if let q = item.quote, !q.isEmpty {
                     h += "<br><span class=\"said\">In their words:</span> <q>\(escape(q))</q>"
                 }
@@ -148,11 +165,11 @@ enum ReportRenderer {
         case .concepts:
             for item in section.items {
                 h +=
-                    "<article class=\"concept\(item.isUnsure ? " unsure" : "")\"><h3>\(escape(item.text ?? ""))</h3><dl>"
+                    "<article class=\"concept\(item.isUnsure ? " unsure" : "")\(item.isHigh ? " high" : "")\"><h3>\(pri(item))\(escape(item.text ?? ""))</h3><dl>"
                 if let q = item.quote, !q.isEmpty { h += "<dt>What was said</dt><dd><q>\(escape(q))</q></dd>" }
                 if let a = item.answer, !a.isEmpty {
                     h +=
-                        "<dt>What the AI understands</dt><dd class=\"ai\"><span class=\"badge\">AI</span> \(escape(a))</dd>"
+                        "<dt>What the AI understands</dt><dd class=\"ai\"><span class=\"badge\">AI</span> \(hl(a, item))</dd>"
                 }
                 if let d = item.detail, !d.isEmpty { h += "<dt>More detail</dt><dd class=\"ai\">\(para(d))</dd>" }
                 h += "<dt>Sources</dt><dd>"
@@ -174,6 +191,8 @@ enum ReportRenderer {
         var names: [String] = []
         if item.isAI { names.append("ai") }
         if item.isUnsure { names.append("unsure") }
+        if item.isHigh { names.append("high") }
+        if item.isLow { names.append("low") }
         return names.isEmpty ? "" : " class=\"\(names.joined(separator: " "))\""
     }
 
@@ -189,9 +208,60 @@ enum ReportRenderer {
         return h
     }
 
-    private static func para(_ text: String?) -> String {
+    private static func para(_ text: String?, keywords: [String]? = nil) -> String {
         (text ?? "").components(separatedBy: "\n\n").filter { !$0.isEmpty }
-            .map { "<p>\(escape($0).replacingOccurrences(of: "\n", with: "<br>"))</p>" }.joined()
+            .map { "<p>\(highlight($0, keywords).replacingOccurrences(of: "\n", with: "<br>"))</p>" }.joined()
+    }
+
+    /// The badge for a high-priority item, so it stands out on a skim.
+    private static func pri(_ item: Report.Item) -> String {
+        item.isHigh ? "<span class=\"pri\">Key</span> " : ""
+    }
+
+    private static func hl(_ text: String?, _ item: Report.Item) -> String {
+        highlight(text ?? "", item.keywords)
+    }
+
+    /// Escapes `text` and wraps each keyword it contains in `<mark>`. The text is
+    /// cut into pieces first and every piece is escaped on its own, so a keyword
+    /// can never open or close markup.
+    static func highlight(_ text: String, _ keywords: [String]?) -> String {
+        wrap(text, keywords, open: "<mark>", close: "</mark>", piece: escape)
+    }
+
+    /// Cuts `text` at every keyword (any case; earliest first, longest first, no
+    /// overlaps), passes each piece through `piece`, and puts `open`/`close`
+    /// around the keyword pieces. Used for HTML, markdown and the terminal.
+    static func wrap(
+        _ text: String, _ keywords: [String]?, open: String, close: String, piece: (String) -> String
+    ) -> String {
+        let ns = text as NSString
+        var ranges: [NSRange] = []
+        for k in keywords ?? [] where !k.isEmpty {
+            var search = NSRange(location: 0, length: ns.length)
+            while true {
+                let r = ns.range(of: k, options: [.caseInsensitive], range: search)
+                if r.location == NSNotFound || r.length == 0 { break }
+                ranges.append(r)
+                let next = r.location + r.length
+                search = NSRange(location: next, length: ns.length - next)
+            }
+        }
+        // Earliest first, longest first at the same start; overlaps are dropped.
+        ranges.sort { $0.location != $1.location ? $0.location < $1.location : $0.length > $1.length }
+        var out = ""
+        var cursor = 0
+        for r in ranges where r.location >= cursor {
+            out += piece(ns.substring(with: NSRange(location: cursor, length: r.location - cursor)))
+            out += open + piece(ns.substring(with: r)) + close
+            cursor = r.location + r.length
+        }
+        return out + piece(ns.substring(from: cursor))
+    }
+
+    /// High-priority items from every section, for the top of the page.
+    static func keyItems(_ report: Report, limit: Int = 8) -> [(section: Report.Section, item: Report.Item)] {
+        Array(report.sections.flatMap { s in s.items.filter(\.isHigh).map { (s, $0) } }.prefix(limit))
     }
 
     static func linkHTML(_ link: Report.Link) -> String {
@@ -242,11 +312,11 @@ enum ReportRenderer {
     }
 
     private static let css = """
-        :root{--bg:#fbfaf8;--fg:#1d1d1f;--muted:#6b6b70;--line:#e3e1dc;--card:#fff;--ai:#5b4bb7;--ai-bg:#f3f0ff;--warn:#9a5b00;--warn-bg:#fff4e0;--link:#0a58ca}
-        @media (prefers-color-scheme:dark){:root{--bg:#161618;--fg:#ececee;--muted:#a0a0a8;--line:#2e2e33;--card:#1f1f23;--ai:#b9adff;--ai-bg:#26223a;--warn:#ffc46b;--warn-bg:#33270f;--link:#8ab4ff}}
+        :root{--hl:#fff1a8;--key:#c2410c;--bg:#fbfaf8;--fg:#1d1d1f;--muted:#6b6b70;--line:#e3e1dc;--card:#fff;--ai:#5b4bb7;--ai-bg:#f3f0ff;--warn:#9a5b00;--warn-bg:#fff4e0;--link:#0a58ca}
+        @media (prefers-color-scheme:dark){:root{--hl:#5c4a00;--key:#fb923c;--bg:#161618;--fg:#ececee;--muted:#a0a0a8;--line:#2e2e33;--card:#1f1f23;--ai:#b9adff;--ai-bg:#26223a;--warn:#ffc46b;--warn-bg:#33270f;--link:#8ab4ff}}
         *{box-sizing:border-box}
         body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB",sans-serif;padding:24px 16px 64px}
-        header,nav,main,footer,.banner,.notices{max-width:820px;margin-left:auto;margin-right:auto}
+        header,nav,main,footer,.banner,.notices,.glance{max-width:820px;margin-left:auto;margin-right:auto}
         h1{font-size:1.8rem;line-height:1.25;margin:.2rem 0}
         h2{font-size:1.2rem;margin:2rem 0 .6rem;padding-bottom:.3rem;border-bottom:1px solid var(--line)}
         h3{font-size:1.05rem;margin:0 0 .4rem}
@@ -271,6 +341,16 @@ enum ReportRenderer {
         .doubt{margin:.25rem 0 0;font-size:.88rem;color:var(--warn)}
         .mark{display:inline-block;font-weight:700;font-size:.72rem;background:var(--warn-bg);color:var(--warn);border:1px dashed var(--warn);border-radius:4px;padding:0 5px;margin-right:4px}
         .unsure{outline:1px dashed var(--warn);outline-offset:3px;border-radius:4px}
+        mark{background:var(--hl);color:inherit;font-weight:600;border-radius:3px;padding:0 2px}
+        .pri{display:inline-block;font-size:.7rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--bg);background:var(--key);border-radius:4px;padding:1px 5px;margin-right:4px;vertical-align:1px}
+        li.high,div.high,.qa.high,.concept.high{border-left:3px solid var(--key);padding-left:8px}
+        li.high{margin-left:-11px}
+        .low{color:var(--muted);font-size:.93rem}
+        .glance{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--key);border-radius:10px;padding:4px 16px 8px;margin-top:16px}
+        .glance h2{border:0;margin:.6rem 0 .2rem;font-size:1rem;text-transform:uppercase;letter-spacing:.06em;color:var(--key)}
+        .glance ul{padding-left:1.1rem}
+        .glance .from{font-size:.78rem;color:var(--muted);margin-right:4px;text-decoration:none}
+        .glance .from::after{content:" ›"}
         .qa,.concept{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:10px 0}
         .q{font-weight:600;margin:0 0 .4rem}
         .a{margin:0}
@@ -284,7 +364,7 @@ enum ReportRenderer {
         .time{font-variant-numeric:tabular-nums;color:var(--muted);font-size:.85rem}
         .suggestion{margin-top:4px;font-size:.9rem}
         .hidden{display:none}
-        @media print{body{background:#fff;color:#000;padding:0}nav,#q,.count{display:none}a{color:#000}a[href]::after{content:" (" attr(href) ")";font-size:.8em}.ai{background:none}details{display:block}details>summary{list-style:none}h2{break-after:avoid}.qa,.concept,li{break-inside:avoid}}
+        @media print{body{background:#fff;color:#000;padding:0}mark{background:none;text-decoration:underline}.pri{color:#000;background:none;border:1px solid #000}nav,#q,.count{display:none}a{color:#000}a[href]::after{content:" (" attr(href) ")";font-size:.8em}.ai{background:none}details{display:block}details>summary{list-style:none}h2{break-after:avoid}.qa,.concept,li{break-inside:avoid}}
         """
 
     /// Search filters transcript lines by their text content; it never builds HTML.
@@ -298,6 +378,16 @@ enum ReportRenderer {
         var md = "# \(report.topic)\n\n_\(report.scenarioTitle) · \(metaLine(report))_\n"
         if !report.reviewed {
             md += "\n> **Not reviewed.** The frontier review didn't run, so this is the first draft.\n"
+        }
+        let key = keyItems(report)
+        if !key.isEmpty {
+            md += "\n## At a glance\n\n"
+            for (section, item) in key {
+                md += "- \(mdBold(oneLine(item.text), item.keywords))"
+                if let o = item.owner, !o.isEmpty { md += " (owner: \(oneLine(o)))" }
+                if let d = item.due, !d.isEmpty { md += " (due: \(oneLine(d)))" }
+                md += " _(\(section.title))_\(unsureSuffix(item))\n"
+            }
         }
         for section in report.sections {
             md += "\n## \(section.title)\n"
@@ -321,11 +411,12 @@ enum ReportRenderer {
     }
 
     private static func markdownItem(_ item: Report.Item, kind: SectionKind) -> String {
-        let text = oneLine(item.text)
+        let text = (item.isHigh ? "**Key:** " : "") + mdBold(oneLine(item.text), item.keywords)
         var line: String
         switch kind {
         case .prose:
-            return (item.text ?? "") + unsureSuffix(item) + "\n\n"
+            return (item.isHigh ? "**Key:** " : "") + mdBold(item.text ?? "", item.keywords) + unsureSuffix(item)
+                + "\n\n"
         case .actions:
             line = "- [ ] \(text)"
             if let o = item.owner, !o.isEmpty { line += " (owner: \(oneLine(o)))" }
@@ -353,6 +444,10 @@ enum ReportRenderer {
         return line + unsureSuffix(item) + "\n"
     }
 
+    private static func mdBold(_ text: String, _ keywords: [String]?) -> String {
+        wrap(text, keywords, open: "**", close: "**", piece: { $0 })
+    }
+
     private static func unsureSuffix(_ item: Report.Item) -> String {
         guard item.isUnsure else { return "" }
         return " _(unsure: \(oneLine((item.reason ?? "").isEmpty ? "no reason given" : item.reason)))_"
@@ -365,33 +460,49 @@ enum ReportRenderer {
     // MARK: - Terminal
 
     /// The summary for the terminal: plain text, sections in order, unsure items marked.
-    static func terminalSummary(_ report: Report) -> String {
-        var out =
-            terminalSafe(
-                "\(oneLine(report.topic))  [\(oneLine(report.scenarioTitle))\(report.reviewed ? "" : ", NOT REVIEWED")]"
-            )
-            + "\n"
+    /// Every piece of model text goes through `terminalSafe`; the only escape codes
+    /// in the output are the bold ones added here, and only on a real terminal.
+    static func terminalSummary(_ report: Report, ansi: Bool = isatty(STDOUT_FILENO) != 0) -> String {
+        func t(_ s: String?) -> String { terminalSafe(oneLine(s)) }
+        func bold(_ s: String?, _ keywords: [String]?) -> String {
+            ansi
+                ? wrap(oneLine(s), keywords, open: "\u{1B}[1m", close: "\u{1B}[22m", piece: terminalSafe)
+                : t(s)
+        }
+        var out = "\(t(report.topic))  [\(t(report.scenarioTitle))\(report.reviewed ? "" : ", NOT REVIEWED")]\n"
+        let key = keyItems(report)
+        if !key.isEmpty {
+            out += "\nAT A GLANCE\n"
+            for (section, item) in key {
+                var line = "  ▶ \(bold(item.text, item.keywords))"
+                if let o = item.owner, !o.isEmpty { line += " (owner: \(t(o)))" }
+                if let d = item.due, !d.isEmpty { line += " (due: \(t(d)))" }
+                if item.isUnsure { line += " (unsure)" }
+                out += line + "  — \(t(section.title))\n"
+            }
+        }
         for section in report.sections {
-            out += "\n\(terminalSafe(oneLine(section.title)))\n"
+            out += "\n\(t(section.title))\n"
             if section.items.isEmpty {
                 out += "  (none)\n"
                 continue
             }
             for item in section.items {
-                var line = "  • "
-                if let s = item.speaker, !s.isEmpty, section.kind == .bullets { line += "\(oneLine(s)): " }
+                var line = item.isHigh ? "  ▶ KEY " : "  • "
+                if let s = item.speaker, !s.isEmpty, section.kind == .bullets { line += "\(t(s)): " }
                 if section.kind == .insights || item.isAI && section.kind != .qa { line += "[AI] " }
-                line += oneLine(item.text)
+                line += bold(item.text, item.keywords)
                 if section.kind == .qa {
-                    line += "\n      [AI] " + ((item.answer ?? "").isEmpty ? "I don't know." : oneLine(item.answer))
-                }
-                if let o = item.owner, !o.isEmpty { line += " (owner: \(oneLine(o)))" }
-                if let d = item.due, !d.isEmpty { line += " (due: \(oneLine(d)))" }
-                if item.isUnsure {
                     line +=
-                        "\n      ? unsure: \(oneLine((item.reason ?? "").isEmpty ? "no reason given" : item.reason))"
+                        "\n      [AI] "
+                        + ((item.answer ?? "").isEmpty ? "I don't know." : bold(item.answer, item.keywords))
                 }
-                out += terminalSafe(line) + "\n"
+                if let o = item.owner, !o.isEmpty { line += " (owner: \(t(o)))" }
+                if let d = item.due, !d.isEmpty { line += " (due: \(t(d)))" }
+                if item.isUnsure {
+                    line += "\n      ? unsure: \((item.reason ?? "").isEmpty ? "no reason given" : t(item.reason))"
+                }
+                out += line + "\n"
             }
         }
         for n in report.notices { out += "\n⚠  \(terminalSafe(n))" }

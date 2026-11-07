@@ -349,6 +349,10 @@ struct SummaryPipeline {
         - goals: the goal in "text", the person's own words in "quote", "due" if a time was set.
         - concepts: as the section says.
         - insights: your own view in "text", "source" "ai".
+
+        So the reader can skim, every item also has:
+        - "priority": "high" for the few things the reader must not miss (decisions, deadlines, commitments, risks, what changes next), "low" for background, otherwise "normal". Keep "high" rare: about one item in five at most, and none if nothing stands out.
+        - "keywords": one to three short phrases copied exactly from this item's "text" or "answer" that carry its meaning, such as a decision, a date, a number, an owner or a named thing; an empty list if none stand out.
         """
 
     static func rules(_ template: ScenarioTemplate, language: String) -> String {
@@ -414,11 +418,7 @@ struct SummaryPipeline {
         }
         var sections: [String: Any] = [:]
         for spec in template.sections {
-            sections[spec.id] = (draft[spec.id] ?? []).map { item -> [String: String] in
-                var d: [String: String] = [:]
-                for (k, v) in item.modelFields { d[k] = v }
-                return d
-            }
+            sections[spec.id] = (draft[spec.id] ?? []).map(\.modelFields)
         }
         let object: [String: Any] = ["topic": topic, "sections": sections]
         let data = (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])) ?? Data()
@@ -432,12 +432,19 @@ struct SummaryPipeline {
         "text", "speaker", "owner", "due", "answer", "quote", "detail", "confidence", "reason", "source",
     ]
 
+    static let maxKeywords = 3
+
     private static let itemSchema: [String: Any] = {
         var properties: [String: Any] = [:]
         for field in itemFields { properties[field] = ["type": "string"] }
         properties["confidence"] = ["type": "string", "enum": ["sure", "unsure"]]
         properties["source"] = ["type": "string", "enum": ["transcript", "ai"]]
-        return ["type": "object", "properties": properties, "required": itemFields, "additionalProperties": false]
+        properties["priority"] = ["type": "string", "enum": ["high", "normal", "low"]]
+        properties["keywords"] = ["type": "array", "items": ["type": "string"]]
+        return [
+            "type": "object", "properties": properties, "required": itemFields + ["priority", "keywords"],
+            "additionalProperties": false,
+        ]
     }()
 
     private static func json(_ object: [String: Any]) -> String {
@@ -570,10 +577,29 @@ struct SummaryPipeline {
             if let n = v as? NSNumber { return n.stringValue }
             return nil
         }
-        return Report.Item(
+        var item = Report.Item(
             text: s("text"), speaker: s("speaker"), owner: s("owner"), due: s("due"), answer: s("answer"),
             quote: s("quote"), detail: s("detail"), confidence: s("confidence"), reason: s("reason"),
             source: s("source"), sources: nil)
+        if let p = s("priority")?.lowercased(), ["high", "normal", "low"].contains(p) { item.priority = p }
+        item.keywords = keywords(object["keywords"], in: item)
+        return item
+    }
+
+    /// Only short phrases that really occur in the item's own text or answer are
+    /// kept, so a highlight can never show words the item doesn't contain.
+    static func keywords(_ raw: Any?, in item: Report.Item) -> [String]? {
+        let haystack = [item.text, item.answer].compactMap { $0 }.joined(separator: "\n")
+        var out: [String] = []
+        for case let k as String in raw as? [Any] ?? [] {
+            let k = k.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard (2...60).contains(k.count), !out.contains(where: { $0.caseInsensitiveCompare(k) == .orderedSame }),
+                haystack.range(of: k, options: [.caseInsensitive]) != nil
+            else { continue }
+            out.append(k)
+            if out.count == maxKeywords { break }
+        }
+        return out.isEmpty ? nil : out
     }
 
     struct FoundConcept {
@@ -670,11 +696,12 @@ struct SummaryPipeline {
 
 extension Report.Item {
     /// The fields a model writes, as they go back to the reviewer. No sources.
-    var modelFields: [String: String] {
+    var modelFields: [String: Any] {
         [
             "text": text ?? "", "speaker": speaker ?? "", "owner": owner ?? "", "due": due ?? "",
             "answer": answer ?? "", "quote": quote ?? "", "detail": detail ?? "",
             "confidence": confidence ?? "sure", "reason": reason ?? "", "source": source ?? "transcript",
+            "priority": priority ?? "normal", "keywords": keywords ?? [],
         ]
     }
 }
@@ -698,6 +725,7 @@ extension Report {
                 i.quote = m(i.quote)
                 i.detail = m(i.detail)
                 i.reason = m(i.reason)
+                i.keywords = i.keywords?.map(f)
                 return i
             }
             return section

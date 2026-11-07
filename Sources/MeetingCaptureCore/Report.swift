@@ -60,7 +60,13 @@ struct Report: Codable, Equatable {
         /// `ai` for the model's own view, `transcript` for what was said.
         var source: String?
         var sources: [Link]?
+        /// `high`, `normal` or `low`, so the reader can skim. Nil reads as normal.
+        var priority: String?
+        /// Short phrases from this item's own text or answer, highlighted when shown.
+        var keywords: [String]?
 
+        var isHigh: Bool { priority == "high" }
+        var isLow: Bool { priority == "low" }
         var isUnsure: Bool { confidence?.lowercased() == "unsure" }
         var isAI: Bool { source?.lowercased() == "ai" }
     }
