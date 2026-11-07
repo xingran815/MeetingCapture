@@ -30,43 +30,58 @@ build() {
     return "${PIPESTATUS[0]}"
 }
 
-# Two groups at once, each serial: the slow echo remover class, and every other class.
-# No test shares state with another (temp folders are per test, and all 584 passed under
-# `--parallel`), but two jobs is the memory limit. The test bundle is run directly,
-# because a second `swift test` waits on SwiftPM's lock on .build. About 225 s instead
-# of 390 s. The counts must add up to the listed total, so no test can drop out unseen.
-SLOW_CLASS=MeetingCaptureCoreTests.EchoRemoverTests
+# Classes run on a queue of two workers (the memory limit), slowest first: each class named
+# `…SlowTests` is its own job, all other classes share one job, and a class named
+# `…SerialTests` runs alone after the queue, for a test that can't share the machine. A test
+# may run in parallel when it uses its own temp folder, no fixed path and no real config
+# (D-77). The bundle is run through xctest, because a second `swift test` waits on SwiftPM's
+# lock on .build. The counts must add up to the listed total, so no test drops out unseen.
+UNIT_WORKERS=2
+unit_job() { "$ROOT/scripts/unit-job.sh" "$@"; }
 unit_tests() {
-    local bundle listed rest a b ea eb ran
+    local bundle listed classes slow fast serial dir job i ran want failed
     export PATH="$ROOT/Tests/FakeBin:$PATH"
     swift build --build-tests 2>&1 | grep -E 'error:' | tail -5
     [ "${PIPESTATUS[0]}" -eq 0 ] || return 1
-    bundle="$(find "$ROOT/.build/debug" -maxdepth 1 -name '*PackageTests.xctest' | head -1)"
-    listed="$(swift test list --skip-build 2>/dev/null)"
-    rest="$(printf '%s\n' "$listed" | sed -n 's/^\([A-Za-z]*Tests\.[A-Za-z]*\)\/.*/\1/p' | sort -u \
-        | grep -vx "$SLOW_CLASS" | paste -sd, -)"
-    [ -n "$rest" ] && [ -d "$bundle" ] || { echo "unit: couldn't list the tests"; return 1; }
-    a="$ROOT/dev/tmp/unit-slow.log"
-    b="$ROOT/dev/tmp/unit-rest.log"
-    xcrun xctest -XCTest "$SLOW_CLASS" "$bundle" >"$a" 2>&1 &
-    local pa=$!
-    xcrun xctest -XCTest "$rest" "$bundle" >"$b" 2>&1 &
-    local pb=$!
-    wait "$pa"; ea=$?
-    wait "$pb"; eb=$?
-    grep -hE 'error: -\[' "$a" "$b" | head -10
-    ran=0
-    for f in "$a" "$b"; do
-        local n last
-        last="$(grep -E 'Executed [0-9]+ tests' "$f" | tail -1)"
-        echo "$(basename "$f" .log):$last"
-        n="$(printf '%s' "$last" | sed -E 's/.*Executed ([0-9]+) tests.*/\1/')"
-        ran=$((ran + ${n:-0}))
+    bundle="$(find -H "$ROOT/.build/debug" -maxdepth 1 -name '*PackageTests.xctest' | head -1)"
+    listed="$(swift test list --skip-build 2>/dev/null)" || { echo "unit: couldn't list the tests"; return 1; }
+    classes="$(printf '%s\n' "$listed" | sed -n 's/^\([A-Za-z]*Tests\.[A-Za-z]*\)\/.*/\1/p' | sort -u)"
+    [ -n "$classes" ] && [ -d "$bundle" ] || { echo "unit: couldn't list the tests"; return 1; }
+    slow="$(printf '%s\n' "$classes" | grep -E 'SlowTests$' || true)"
+    serial="$(printf '%s\n' "$classes" | grep -E 'SerialTests$' || true)"
+    # The ordinary classes, split in two jobs that start first: together they're the biggest
+    # share, and starting them last left one worker idle at the end.
+    fast="$(printf '%s\n' "$classes" | grep -vE '(Slow|Serial)Tests$' || true)"
+    fast="$(printf '%s\n' "$fast" | awk 'NF && NR % 2 == 1' | paste -sd, -) $(printf '%s\n' "$fast" | awk 'NF && NR % 2 == 0' | paste -sd, -)"
+    dir="$ROOT/dev/tmp/unit"
+    rm -rf "$dir" && mkdir -p "$dir"
+    i=0
+    for job in $fast $slow; do  # class names hold no spaces
+        i=$((i + 1))
+        printf '%s' "$job" >"$dir/job$i.classes"
     done
-    local want
+    export UNIT_BUNDLE="$bundle"
+    seq 1 "$i" | xargs -P "$UNIT_WORKERS" -I {} "$ROOT/scripts/unit-job.sh" "$dir" {}
+    for job in $serial; do
+        i=$((i + 1))
+        printf '%s' "$job" >"$dir/job$i.classes"
+        unit_job "$dir" "$i"
+    done
+    grep -hE 'error: -\[' "$dir"/*.log 2>/dev/null | head -10
+    ran=0
+    failed=0
+    for f in "$dir"/*.log; do
+        [ -e "$f" ] || continue
+        local n last
+        last="$(grep -E 'Executed [0-9]+ tests?' "$f" | tail -1)"
+        n="$(printf '%s' "$last" | sed -E 's/.*Executed ([0-9]+) tests?.*/\1/')"
+        ran=$((ran + ${n:-0}))
+        [ "$(cat "$f.rc" 2>/dev/null)" = 0 ] || { failed=1; echo "unit: FAILED in $(basename "$f"): $last"; }
+    done
     want="$(printf '%s\n' "$listed" | grep -c '/')"
+    echo "unit: ran $ran of $want tests in $i jobs on $UNIT_WORKERS workers"
     [ "$ran" -eq "$want" ] || { echo "unit: ran $ran tests of $want listed"; return 1; }
-    [ "$ea" -eq 0 ] && [ "$eb" -eq 0 ]
+    [ "$failed" -eq 0 ]
 }
 
 sweep_self_tests() {

@@ -5,49 +5,8 @@ import XCTest
 /// `--clean-echo` reads a recording by path and writes a file, so like `--two-track-*` and
 /// `--finish-recording` it needs MEETINGCAPTURE_E2E=1 (CLAUDE.md). These run the built
 /// executable in a throwaway home folder, with no capture possible: the flag stops first.
-final class EchoScriptFlagTests: AudioTestCase {
+final class EchoScriptFlagTests: EchoScriptFlagTestCase {
 
-    private func executable() throws -> URL {
-        let products = Bundle(for: Self.self).bundleURL.deletingLastPathComponent()
-        let exe = products.appendingPathComponent("MeetingCaptureCLI")
-        guard FileManager.default.isExecutableFile(atPath: exe.path) else {
-            throw XCTSkip("MeetingCaptureCLI isn't built beside the tests: \(exe.path)")
-        }
-        return exe
-    }
-
-    private func run(
-        _ arguments: [String], e2e: String?, tmp: URL? = nil
-    ) throws -> (status: Int32, stdout: String, stderr: String) {
-        let process = Process()
-        process.executableURL = try executable()
-        process.arguments = arguments
-        var environment = ProcessInfo.processInfo.environment
-        environment["HOME"] = dir.path
-        environment["MEETINGCAPTURE_E2E"] = e2e
-        if e2e == nil { environment.removeValue(forKey: "MEETINGCAPTURE_E2E") }
-        if let tmp { environment["TMPDIR"] = tmp.path }
-        process.environment = environment
-        process.currentDirectoryURL = dir
-        let out = Pipe()
-        let err = Pipe()
-        process.standardOutput = out
-        process.standardError = err
-        process.standardInput = FileHandle.nullDevice
-        try process.run()
-        let deadline = Date().addingTimeInterval(20)  // a capture that started would still be running
-        while process.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.02) }
-        if process.isRunning {
-            process.terminate()
-            XCTFail("the executable didn't exit: \(arguments)")
-        }
-        process.waitUntilExit()
-        return (
-            process.terminationStatus,
-            String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self),
-            String(decoding: err.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-        )
-    }
 
     func testCleanEchoWithoutTheE2EVariableStopsWithAnError() throws {
         let args = ["--clean-echo", url("in.wav").path, "--clean-echo-out", url("out.wav").path]
@@ -79,16 +38,6 @@ final class EchoScriptFlagTests: AudioTestCase {
         XCTAssertEqual(result.status, 1, "\(result.stdout) \(result.stderr)")
         XCTAssertTrue(result.stderr.contains("both tracks"), result.stderr)
         XCTAssertFalse(exists("out.wav"))
-    }
-
-    func testWithTheVariableARealCallIsCleanedAndTheOutputIsWritten() throws {
-        let far = EchoLab.speech(seconds: 24, seed: 11, rms: 0.1)
-        let mic = EchoLab.sum(EchoLab.echo(of: far), EchoLab.noise(far.count, seed: 5, rms: 0.0003))
-        try EchoLab.writeTwoTrack(mic: mic, system: far, to: url("call.wav"))
-        let result = try run(["--clean-echo", url("call.wav").path, "--clean-echo-out", url("out.wav").path], e2e: "1")
-        XCTAssertEqual(result.status, 0, "\(result.stdout) \(result.stderr)")
-        XCTAssertTrue(result.stdout.contains("lag 150.0 ms"), result.stdout)
-        XCTAssertEqual(try EchoLab.read(url("out.wav")).count, mic.count)
     }
 
     // MARK: From the M3.2 review, finding 6
@@ -147,31 +96,6 @@ final class EchoScriptFlagTests: AudioTestCase {
             XCTAssertFalse(exists("out.wav"))
             XCTAssertFalse(exists("c.wav"))
         }
-    }
-
-    // MARK: From the M3.2 review, finding 7
-
-    /// Both tracks of the recording are copied into a folder in the temporary directory.
-    /// `exit` would skip the `defer` that removes it, so every way out must leave none.
-    /// The subprocess gets its own TMPDIR, so other tests running at once can't disturb this.
-    private func assertNoTempLeftBehind(
-        _ args: [String], expecting status: Int32, file: StaticString = #filePath, line: UInt = #line
-    ) throws {
-        let tmp = dir.appendingPathComponent("tmp-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
-        let result = try run(args, e2e: "1", tmp: tmp)
-        XCTAssertEqual(result.status, status, "\(result.stdout) \(result.stderr)", file: file, line: line)
-        let left = try FileManager.default.contentsOfDirectory(atPath: tmp.path)
-        XCTAssertEqual(left, [], "the temporary folder was left behind: \(args)", file: file, line: line)
-    }
-
-    func testCleaningLeavesNoTemporaryFolderOnSuccess() throws {
-        let far = EchoLab.speech(seconds: 24, seed: 11, rms: 0.1)
-        let mic = EchoLab.sum(EchoLab.echo(of: far), EchoLab.noise(far.count, seed: 5, rms: 0.0003))
-        try EchoLab.writeTwoTrack(mic: mic, system: far, to: url("call.wav"))
-        try assertNoTempLeftBehind(
-            ["--clean-echo", url("call.wav").path, "--clean-echo-out", url("out.wav").path], expecting: 0)
-        XCTAssertTrue(exists("out.wav"))
     }
 
     func testCleaningLeavesNoTemporaryFolderWhenNoEchoIsFound() throws {

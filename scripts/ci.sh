@@ -17,39 +17,23 @@ range() {
     printf '%s..HEAD\n' "$BASE_SHA"
 }
 
-# CI runs the core unit tests only, so it stays quick (D-76). These slow echo edge cases,
-# each 3-80 s of synthetic audio, run locally in `check.sh`; the core echo tests (reduction,
-# double-talk, drift, frame count, left-out lines, raw archive, no echo, off, the two-channel
-# clean file) stay here.
-CI_SKIPPED_TESTS=(
-    testACleanedPartKeepsItsReductionWithAFastMicClock
-    testTheNoteForLeftOutLinesHasTheCountAndStartTimesAndNoWords
-    testAShortFarSideInterjectionDoesNotTakeTheVoiceWithIt
-    testAStepInTheDelayMidPartLeavesANoteAndNoWords
-    testAStepInTheDelayMidPartMakesTheRemoverReportALagMove
-    testAnExistingFileAtTheCleanNameIsNeverOverwritten
-    testATranscriptionFailureOnALaterPartLeavesNoUnlistedCleanFile
-    testAFarSideOnlyBetweenScanWindowsIsStillCleaned
-    testLeftOutLineTimesSurviveInTheSidecar
-    testACleanEncodeFailureLosesNothingAndStillArmsRetentionForTheRawPart
-    testEachPartGetsItsOwnCleanFileAndNoneCountsAsAPart
-    testTheCleanCopyIsOnlyKeptWhenAsked
-    testNoLinesLeftOutMeansNoNote
-    testARawEncodeFailureStillKeepsTheRawWAVAndDoesNotArmRetention
-    testAnEchoLineWithPausesInItIsStillLeftOut
-    testWithTheVariableARealCallIsCleanedAndTheOutputIsWritten
-    testCleaningLeavesNoTemporaryFolderOnSuccess
-    testAnEchoAheadOfTheReferenceIsLeftAloneOrImproved
-    testSoftSpeechOverAnEchoIsNotReportedAsEchoWhenTheSameVoiceIsHeardAlone
-    testTheUsersVoiceAloneIsNotChangedWhileTheFarSideIsSilent
-    testAShortDelayIsRemovedToo
-    testTheLastFramesOfTheFileAreCleanedToo
-    testARepeatOfTheFarSidesWordsIsNotAnEcho
-)
+# CI runs the core unit tests only, so it stays quick (D-77): it skips every class named
+# `…SlowTests`, which `check.sh` runs locally. Each behaviour keeps a fast core test here.
+# The run must cover exactly the listed tests that aren't slow, so none drops out unseen.
+CI_SKIP='SlowTests/'
 unit_tests() {
-    local skip
-    skip="$(IFS='|'; printf '%s' "${CI_SKIPPED_TESTS[*]}")"
-    PATH="$ROOT/Tests/FakeBin:$PATH" swift test --skip "($skip)\$"
+    local listed want out ran
+    export PATH="$ROOT/Tests/FakeBin:$PATH"
+    swift build --build-tests || return 1
+    listed="$(swift test list --skip-build)" || return 1
+    want="$(printf '%s\n' "$listed" | grep '/' | grep -vc "$CI_SKIP")"
+    [ "$want" -gt 0 ] || { echo "ci: no unit tests listed"; return 1; }
+    out="$(swift test --skip-build --skip "$CI_SKIP" 2>&1)"
+    local rc=$?
+    printf '%s\n' "$out" | grep -E 'error: -\[|Executed [0-9]+ tests?' | tail -12
+    [ "$rc" -eq 0 ] || return 1
+    ran="$(printf '%s\n' "$out" | grep -E 'Executed [0-9]+ tests?' | tail -1 | sed -E 's/.*Executed ([0-9]+) tests?.*/\1/')"
+    [ "${ran:-0}" -eq "$want" ] || { echo "ci: ran ${ran:-0} unit tests, expected $want"; return 1; }
 }
 
 build_and_test() {
