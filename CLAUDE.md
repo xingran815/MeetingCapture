@@ -160,7 +160,7 @@ The Settings menu is grouped with dimmed `MenuItem.separator(...)` header rows (
 | **In scripts, capture output before matching it.** `cmd \| grep -q x` under `pipefail` can read a match as no match: `grep` exits at the first hit and `cmd` gets SIGPIPE. | It made a self-test fail, and another flaky without showing (M3.1). |
 | **Say when unsure,** in code comments, reports and LLM prompts alike. | User's rule for the product and for us. |
 | **After each compaction, re-read the files before anything else:** this file, `dev/NOW.md`, `dev/PLAN.md`, the end of `dev/DECISIONS.md`, the current spec and latest report, `git status` and `git log`. Where a summary disagrees, the files and git win. | User's rule; a summary is a recollection, the files are the facts. |
-| **Close every milestone with a report and rules on disk, then start the next one without waiting.** Steps below. | User's rule; only what's in files survives a session. |
+| **Close every milestone with a report and rules on disk, then start the next one, in a new session, without waiting.** Steps below. | User's rule; only what's in files survives a session. |
 
 ### Closing a milestone, then starting the next
 Order: M1 → M2 → M2.1 → M3 → M3.1 → M3.2 → M4 → M5 → M6.
@@ -171,7 +171,7 @@ Order: M1 → M2 → M2.1 → M3 → M3.1 → M3.2 → M4 → M5 → M6.
    - Reports are public: invented data only, and the sweeps apply.
 2. **Commit, merge and close the issues,** using the rules above.
 3. **Check nothing lives only in the conversation:** `git status` is clean, `main` matches `origin/main`, and `dev/NOW.md` names the next step.
-4. **Start the next milestone in this same session.** Don't start a new session or clear this one. Don't try to compact on purpose either; the app may still compact on its own when context runs long, which is why step 1 comes first.
+4. **Start the next milestone in a new session (user, 2026-11-07, from M4 on).** Hand it off with `dev/NOW.md` naming the first step, so the new session starts cold from the files. Don't try to compact on purpose; the app may still compact on its own when context runs long, which is why step 1 comes first.
 
 **Starting automatically never skips a gate.** Stop and ask at a 👤 check, a decision only the user can make, or a failure you can't fix. A milestone with an open 👤 check isn't closed, and the next one doesn't start. Only one session builds at a time.
 

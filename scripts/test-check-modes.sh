@@ -512,6 +512,19 @@ if [ "$RC" -eq 0 ] && [ "$(grep -c '^xcrun' "$STUB_TRACE")" = 2 ] && grep -qxF "
     ok "a listing with no slow or serial class runs just the two ordinary jobs"
 else bad "only-ordinary listing: rc $RC" "$OUT"; fi
 
+# Finding (M3.2 post-listen review): class names with digits or underscores were not parsed, so such a
+# class was never listed, run or counted. A digit class (M4AArchiveTests) runs, and its tests count.
+FAIL=""; STUB_LIST="MeetingCaptureCoreTests.M4AArchiveTests/testOne
+MeetingCaptureCoreTests.M4AArchiveTests/testTwo
+MeetingCaptureCoreTests.Echo_2SlowTests/testThree
+MeetingCaptureCoreTests.WavTests/testGamma" run_check scripts/check.sh --unit
+if [ "$RC" -eq 0 ] && printf '%s\n' "$OUT" | grep -qF "unit: ran 4 of 4 tests in 3 jobs" \
+    && grep -E '^xcrun' "$STUB_TRACE" | grep -qF "MeetingCaptureCoreTests.M4AArchiveTests" \
+    && grep -qxF "$(xc_line "MeetingCaptureCoreTests.Echo_2SlowTests")" "$STUB_TRACE"; then
+    ok "a class name with a digit or underscore (M4AArchiveTests, Echo_2SlowTests) is run and counted"
+else bad "digit/underscore class names: rc $RC" "$OUT
+$(cat "$STUB_TRACE")"; fi
+
 # Bug 1: .build/debug is a symlink to the real folder holding the bundle; the bundle is still found.
 mv .build/debug .build/real-debug && ln -s real-debug .build/debug
 FAIL=""; check_cmd --unit

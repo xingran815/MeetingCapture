@@ -38,6 +38,54 @@ final class EchoPipelineTests: EchoPipelineTestCase {
         XCTAssertEqual(try names(), ["m.wav", "m_clean.wav"])
     }
 
+    /// From the M3.2 post-listen review: the normal path mixes in the temporary folder and
+    /// moves the file into place, so the output folder holds only the part, the clean copy
+    /// (two channels, listed) and nothing else, such as a stray UUID-named .wav.
+    func testTheCleanCopyIsTwoChannelsListedAndLeavesNothingElseBehind() async throws {
+        let c = call(seconds: 12)
+        try EchoLab.writeTwoTrack(mic: c.mic, system: c.system, to: url("m.wav"))
+        let result = try await pipeline(scripted(mic: [ownWords]))
+            .transcribe(parts: [url("m.wav")], keepingCleanedAudio: true)
+
+        XCTAssertEqual(result.cleanedAudio, [url("m_clean.wav")])
+        XCTAssertEqual(try AVAudioFile(forReading: url("m_clean.wav")).fileFormat.channelCount, 2)
+        XCTAssertEqual(try names(), ["m.wav", "m_clean.wav"], "no stray temporary file in the output folder")
+    }
+
+    /// From the M3.2 post-listen review: when the clean copy can't be put in place, no
+    /// `_clean` file is left (retention could never remove one, and a later run would skip the
+    /// part because the name was taken), the list is empty, the transcript still succeeds,
+    /// and a similarly named file of the user's survives. The move fails because the folder is
+    /// read-only after the parts are written; the mix itself runs in the temporary folder.
+    /// (A mix failing partway can't be reached without a seam; it ends in the same branch.)
+    func testACleanCopyThatCantBeMovedIntoPlaceLeavesNothingAndKeepsUserFiles() async throws {
+        let c = call(seconds: 12)
+        try EchoLab.writeTwoTrack(mic: c.mic, system: c.system, to: url("m.wav"))
+        let notes1 = Data("my notes".utf8)
+        let notes2 = Data("my cleanup".utf8)
+        try touch("m_clean_notes.wav", contents: notes1)
+        try touch("m_cleanup.wav", contents: notes2)
+        let before = try names()
+        let raw = try Data(contentsOf: url("m.wav"))
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: dir.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dir.path) }
+        try XCTSkipIf(FileManager.default.isWritableFile(atPath: dir.path), "the folder is still writable (root?)")
+
+        let result = try await pipeline(scripted(mic: [ownWords]))
+            .transcribe(parts: [url("m.wav")], keepingCleanedAudio: true)
+
+        XCTAssertEqual(result.cleanedAudio, [])
+        XCTAssertTrue(result.segments.contains { $0.speaker == SpeakerLabels.you && $0.text == "my own words" })
+        XCTAssertTrue(result.segments.contains { $0.text == "system" })
+        XCTAssertEqual(try names(), before, "nothing was added")
+        XCTAssertFalse(exists("m_clean.wav"))
+        XCTAssertFalse(exists("m_clean.m4a"))
+        XCTAssertEqual(try Data(contentsOf: url("m_clean_notes.wav")), notes1)
+        XCTAssertEqual(try Data(contentsOf: url("m_cleanup.wav")), notes2)
+        XCTAssertEqual(try Data(contentsOf: url("m.wav")), raw)
+    }
+
     // MARK: 4. No echo, and the off switch
 
     func testNoEchoMeansTheRawMicIsTranscribedAndNoCopyIsMade() async throws {

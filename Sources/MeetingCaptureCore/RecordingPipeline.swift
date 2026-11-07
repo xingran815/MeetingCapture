@@ -188,12 +188,21 @@ struct RecordingPipeline {
         // never remove it. From the M3.2 deep review.
         for clean in pendingClean {
             // Never over a file that may be something else of the user's.
-            if !FileManager.default.fileExists(atPath: clean.to.path),
+            guard !FileManager.default.fileExists(atPath: clean.to.path),
                 !FileManager.default.fileExists(
-                    atPath: clean.to.deletingPathExtension().appendingPathExtension("m4a").path),
-                (try? EchoRemover.mix(mic: clean.mic, system: clean.system, to: clean.to)) != nil
-            {
+                    atPath: clean.to.deletingPathExtension().appendingPathExtension("m4a").path)
+            else { continue }
+            // Written in the temporary folder and moved in whole: a mix that fails partway, on a
+            // full disk say, then leaves nothing half-written that retention could never remove.
+            // From the M3.2 post-listen review.
+            let scratch = work.appendingPathComponent(UUID().uuidString + ".wav")
+            do {
+                try EchoRemover.mix(mic: clean.mic, system: clean.system, to: scratch)
+                try FileManager.default.moveItem(at: scratch, to: clean.to)
                 cleanedAudio.append(clean.to)
+            } catch {
+                // Only a file this run made: the name was free a moment ago.
+                try? FileManager.default.removeItem(at: clean.to)
             }
         }
         if parts.count > 1 && detectedSpeakers {

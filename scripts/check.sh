@@ -49,7 +49,7 @@ unit_tests() (
     [ "${PIPESTATUS[0]}" -eq 0 ] || return 1
     bundle="$(find -H "$ROOT/.build/debug" -maxdepth 1 -name '*PackageTests.xctest' | head -1)"
     listed="$(swift test list --skip-build 2>/dev/null)" || { echo "unit: couldn't list the tests"; return 1; }
-    classes="$(printf '%s\n' "$listed" | sed -n 's/^\([A-Za-z]*Tests\.[A-Za-z]*\)\/.*/\1/p' | sort -u)"
+    classes="$(printf '%s\n' "$listed" | sed -n 's/^\([A-Za-z0-9_]*Tests\.[A-Za-z0-9_]*\)\/.*/\1/p' | sort -u)"
     [ -n "$classes" ] && [ -d "$bundle" ] || { echo "unit: couldn't list the tests"; return 1; }
     slow="$(printf '%s\n' "$classes" | grep -E 'SlowTests$' || true)"
     serial="$(printf '%s\n' "$classes" | grep -E 'SerialTests$' || true)"

@@ -64,15 +64,23 @@ final class MicCapture {
 
     func start() throws {
         try control.sync {
-            engine.prepare()
-            try engine.start()
-            running = true
             // A device plugged or unplugged mid-call stops the engine, and without this the
             // mic stayed silent for the rest of the recording (M3.2, from the user's report).
+            // Registered before the start, so no change slips in between.
             observer = NotificationCenter.default.addObserver(
                 forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil
             ) { [weak self] _ in
                 self?.control.async { self?.restartAfterDeviceChange() }
+            }
+            running = true
+            engine.prepare()
+            do {
+                try engine.start()
+            } catch {
+                running = false
+                if let observer { NotificationCenter.default.removeObserver(observer) }
+                observer = nil
+                throw error
             }
         }
     }
