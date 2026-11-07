@@ -47,7 +47,8 @@ enum EchoRemover {
     }
 
     /// Writes the cleaned mic to `output`, or returns nil if no echo shows in the mic at
-    /// all, such as on headphones, where filtering could only harm the voice.
+    /// all, such as on headphones, where filtering could only harm the voice, or if the far
+    /// side never talks enough to fit a filter, where the output would just be the raw mic.
     static func clean(mic: URL, system: URL, to output: URL) throws -> Result? {
         let micReader = try MonoReader(mic)
         let systemReader = try MonoReader(system)
@@ -62,10 +63,11 @@ enum EchoRemover {
         let lagAtStart = lagAtFileStart(track, ppm: drift)
         let reference = try WarpedReference(
             reader: systemReader, ppm: drift, shift: max(lagAtStart - Int(leadSeconds * Double(sampleRate)), 0))
+        guard let seed = try firstFilter(mic: micReader, reference: reference, frames: frames) else { return nil }
         let writer = try MonoWriter(output)
         let suppressor = ResidualSuppressor(writer: writer)
         var evidence = EvidenceBuilder()
-        try fitAndSubtract(mic: micReader, reference: reference, frames: frames) { micChunk, estimate in
+        try fitAndSubtract(mic: micReader, reference: reference, frames: frames, seed: seed) { micChunk, estimate in
             var left = [Double](repeating: 0, count: micChunk.count)
             vDSP_vsubD(estimate, 1, micChunk, 1, &left, 1, vDSP_Length(micChunk.count))
             evidence.add(mic: micChunk, estimate: estimate)
@@ -97,7 +99,11 @@ enum EchoRemover {
         let fft = RealFFT(atLeast: 2 * min(window, frames))
         var points: [LagPoint] = []
         var starts = Array(stride(from: 0, to: max(frames - window, 1), by: hop))
-        if frames > window, let last = starts.last, last != frames - window { starts.append(frames - window) }
+        if frames > window, let last = starts.last {
+            // Not two near-identical windows, or one false peak would count twice.
+            if frames - window - last < hop / 2 { starts.removeLast() }
+            starts.append(frames - window)
+        }
         for start in starts {
             let m = try mic.read(from: start, count: min(window, frames - start))
             let r = try system.read(from: start, count: min(window, frames - start))
@@ -178,8 +184,25 @@ enum EchoRemover {
 
     // MARK: - Least squares
 
+    /// The first filter a window can support, so what comes before that window is cleaned
+    /// too, and its echo isn't taken for the user's own voice. From the M3.2 re-check.
+    private static func firstFilter(mic: MonoReader, reference: WarpedReference, frames: Int) throws -> [Double]? {
+        let window = Int(fitWindowSeconds * Double(sampleRate))
+        let hop = Int(fitHopSeconds * Double(sampleRate))
+        let fft = RealFFT(atLeast: max(window + filterTaps, 2 * hop + 2 * filterTaps))
+        for centre in stride(from: 0, to: frames, by: hop) {
+            let a = max(centre - window / 2, 0)
+            let b = min(centre + window / 2, frames)
+            let x = try reference.read(from: a, count: b - a)
+            guard activeSamples(x) >= Int(minimumActiveSeconds * Double(sampleRate)) else { continue }
+            let y = try mic.read(from: a, count: b - a)
+            if let taps = solveFilter(x: x, y: y, taps: filterTaps, fft: fft) { return taps }
+        }
+        return nil
+    }
+
     private static func fitAndSubtract(
-        mic: MonoReader, reference: WarpedReference, frames: Int,
+        mic: MonoReader, reference: WarpedReference, frames: Int, seed: [Double],
         emit: (_ mic: [Double], _ estimate: [Double]) throws -> Void
     ) throws {
         let window = Int(fitWindowSeconds * Double(sampleRate))
@@ -188,7 +211,7 @@ enum EchoRemover {
         let fft = RealFFT(atLeast: max(window + taps, 2 * hop + 2 * taps))
         // Hann over two hops sums to one, except at the very start and end.
         let fade = hann(2 * hop)
-        var filter: RealFFT.Spectrum?
+        var filter = fft.forward(seed)
         var estimate = [Double](repeating: 0, count: 2 * hop)
         var weight = [Double](repeating: 0, count: 2 * hop)
 
@@ -206,13 +229,11 @@ enum EchoRemover {
             let base = centre - hop
             let start = max(base, 0)
             let end = min(centre + hop, frames)
-            if let filter {
-                let context = max(start - taps, 0)
-                let input = try reference.read(from: context, count: end - context)
-                let output = fft.inverse(fft.forward(input).multiplied(by: filter))
-                for i in start..<end {
-                    estimate[i - base] += fade[i - base] * output[i - context]
-                }
+            let context = max(start - taps, 0)
+            let input = try reference.read(from: context, count: end - context)
+            let output = fft.inverse(fft.forward(input).multiplied(by: filter))
+            for i in start..<end {
+                estimate[i - base] += fade[i - base] * output[i - context]
             }
             for i in start..<end { weight[i - base] += fade[i - base] }
 

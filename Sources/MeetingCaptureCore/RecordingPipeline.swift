@@ -130,7 +130,7 @@ struct RecordingPipeline {
                         } else if tracks.soundsLikeNoise.isEmpty {
                             // A noise track has its own note, and wouldn't show an echo anyway.
                             notes.append(
-                                "\(part.lastPathComponent): no echo showed up between the tracks, "
+                                "\(part.lastPathComponent): no echo could be measured between the tracks, "
                                     + "so the mic was used as recorded.")
                         }
                     } catch {
@@ -203,7 +203,10 @@ struct RecordingPipeline {
     }
 
     private static func clock(_ seconds: Double) -> String {
-        String(format: "%d:%02d", Int(seconds) / 60, Int(seconds) % 60)
+        let whole = Int(seconds)
+        return whole < 3600
+            ? String(format: "%d:%02d", whole / 60, whole % 60)
+            : String(format: "%d:%02d:%02d", whole / 3600, whole / 60 % 60, whole % 60)
     }
 
     /// `meeting.wav` gives `meeting_clean.wav`, and `meeting_part2.wav` gives

@@ -152,7 +152,7 @@ final class EchoPipelineTests: AudioTestCase {
         XCTAssertEqual(result.segments.filter { $0.speaker == SpeakerLabels.you }.count, 2, "no line is judged")
         // From the M3.2 deep review, finding 3: no echo is said so, and nothing is said to have failed.
         XCTAssertEqual(result.notes.count, 1, "\(result.notes)")
-        XCTAssertTrue(result.notes[0].contains("no echo showed up"), "\(result.notes)")
+        XCTAssertTrue(result.notes[0].contains("no echo could be measured"), "\(result.notes)")
         XCTAssertFalse(result.notes.joined().contains("failed"), "\(result.notes)")
         XCTAssertEqual(result.cleanedAudio, [])
         XCTAssertEqual(try names(), ["m.wav"])
@@ -365,7 +365,7 @@ final class EchoPipelineTests: AudioTestCase {
         let result = try await pipeline(scripted(mic: [ownWords])).transcribe(parts: [url("m.wav")])
         let note = try XCTUnwrap(result.notes.first { $0.contains("moved") }, "\(result.notes)")
         XCTAssertTrue(note.hasPrefix("m.wav:"), note)
-        XCTAssertFalse(result.notes.contains { $0.contains("no echo showed up") }, "\(result.notes)")
+        XCTAssertFalse(result.notes.contains { $0.contains("no echo could be measured") }, "\(result.notes)")
     }
 
     /// Finding 5: the start times of lines left out last past the terminal, in the sidecar,
@@ -388,6 +388,41 @@ final class EchoPipelineTests: AudioTestCase {
         for word in ["uniqueechoword", "uniquemineword", "from the room"] {
             XCTAssertFalse(json.contains(word), "a line's words reached the sidecar: \(word)")
         }
+    }
+
+    /// From the M3.2 re-check: a far side that only speaks in 1 s bursts can't support a fit,
+    /// so the remover has nothing to give but the raw mic. It says so, transcribes the raw
+    /// mic, and leaves no clean file behind or in the sidecar's list.
+    func testFarSideTooSparseForAFitSaysSoAndListsNoClean() async throws {
+        let c = sparseCall()
+        try EchoLab.writeTwoTrack(mic: c.mic, system: c.system, to: url("m.wav"))
+        let transcriber = scripted(mic: [ownWords])
+        let result = try await finish([url("m.wav")], transcriber)
+
+        let notes = try XCTUnwrap(result?.notes)
+        XCTAssertTrue(notes.contains { $0.contains("no echo could be measured") }, "\(notes)")
+        XCTAssertFalse(notes.joined().contains("no echo showed up"), "\(notes)")
+        XCTAssertFalse(notes.joined().contains("failed"), "\(notes)")
+        XCTAssertTrue(transcriber.paths.contains { $0.hasSuffix("m.mic.wav") }, "\(transcriber.paths)")
+        XCTAssertEqual(result?.cleanedAudio, [])
+        XCTAssertEqual(result?.leftOutLines, [])
+        let left = try names()
+        XCTAssertFalse(left.contains { $0.contains("_clean") }, "\(left)")
+        let listed = try XCTUnwrap(loadSidecar("m")?.audioFiles)
+        XCTAssertFalse(listed.contains { $0.contains("_clean") }, "\(listed)")
+    }
+
+    /// 60 s: the far side says 1 s every 10 s, the room echoes it, the user speaks 30 to 45 s.
+    private func sparseCall() -> Call {
+        let far = EchoLab.speech(seconds: 60, seed: 11, rms: 0.1)
+        var system = [Double](repeating: 0, count: far.count)
+        for t in stride(from: 5.0, to: 60, by: 10.0) {
+            system = EchoLab.sum(system, EchoLab.only(far, seconds: t...(t + 1)))
+        }
+        let voice = EchoLab.only(EchoLab.speech(seconds: 60, seed: 77, rms: 0.1), seconds: 30...45)
+        let mic = EchoLab.sum(
+            EchoLab.sum(EchoLab.echo(of: system), voice), EchoLab.noise(far.count, seed: 5, rms: 0.0003))
+        return Call(mic: mic, system: system, voice: voice)
     }
 
     func testASidecarWithoutLeftOutLinesStillLoadsAndNothingIsWrittenForIt() throws {

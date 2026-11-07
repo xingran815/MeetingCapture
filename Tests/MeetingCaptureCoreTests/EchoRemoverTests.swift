@@ -264,7 +264,9 @@ final class EchoRemoverTests: AudioTestCase {
     func testOutputHasExactlyAsManyFramesAsTheInput() throws {
         // Not multiples of the 512 hop, the 2 s fit hop, or a power of two. The last two are
         // shorter than the 8 s fit window, and the first is shorter than the 20 s lag window.
-        for frames in [3 * EchoLab.rate + 777, 9 * EchoLab.rate + 511, 12 * EchoLab.rate + 1, 5 * EchoLab.rate + 100] {
+        // From the M3.2 re-check: 3 s of speech has under 2 s of far side talking, which is now
+        // no fit and nil (see the very-short-files test), so the shortest here is 6 s.
+        for frames in [6 * EchoLab.rate + 777, 9 * EchoLab.rate + 511, 12 * EchoLab.rate + 1, 5 * EchoLab.rate + 100] {
             let far = EchoLab.speech(frames: frames, seed: UInt64(frames), rms: 0.1)
             let mic = EchoLab.sum(EchoLab.echo(of: far), EchoLab.noise(frames, seed: 5, rms: 0.0003))
             let (_, out) = try XCTUnwrap(try clean(mic: mic, system: far), "\(frames) frames")
@@ -485,5 +487,114 @@ final class EchoRemoverTests: AudioTestCase {
         var faint = [Float](repeating: room, count: frames)
         for i in 1_000..<1_150 { faint[i] = room + 10 }
         XCTAssertTrue(EchoEvidence(micDB: micDB, cleanDB: faint, roomDB: room).looksLikeEcho(start: 0, end: 29.9))
+    }
+
+    // MARK: From the M3.2 re-check
+
+    /// 1 s of far side every 10 s from 5 s to 55 s, then continuous speech from 60 s to 100 s.
+    private func earlyBurstsThenTalk() -> (far: [Double], echo: [Double]) {
+        let speech = EchoLab.speech(seconds: 100, seed: 91, rms: 0.1)
+        var far = EchoLab.only(speech, seconds: 60...100)
+        for t in stride(from: 5.0, to: 56, by: 10.0) {
+            far = EchoLab.sum(far, EchoLab.only(speech, seconds: t...(t + 1)))
+        }
+        return (far, EchoLab.echo(of: far))
+    }
+
+    /// From the M3.2 re-check: a far side that never talks 2 s inside one fit window has no
+    /// fit, and the output would only be the raw mic. So the remover says "nothing" and
+    /// leaves no file (the helper checks).
+    func testFarSideTooSparseForAFitSaysSoAndListsNoClean() throws {
+        let speech = EchoLab.speech(seconds: 60, seed: 92, rms: 0.1)
+        var far = [Double](repeating: 0, count: speech.count)
+        for t in stride(from: 5.0, to: 60, by: 10.0) {
+            far = EchoLab.sum(far, EchoLab.only(speech, seconds: t...(t + 1)))
+        }
+        let mic = EchoLab.sum(EchoLab.echo(of: far), EchoLab.noise(far.count, seed: 5, rms: 0.0003))
+        XCTAssertNil(try clean(mic: mic, system: far))
+        XCTAssertFalse(exists("out.wav"))
+    }
+
+    /// From the M3.2 re-check: what comes before the first window that can be fitted used to
+    /// get no estimate at all. Now the first filter also cleans it.
+    func testEarlyBackchannelBeforeFirstFitIsRemoved() throws {
+        let (far, echo) = earlyBurstsThenTalk()
+        let mic = EchoLab.sum(echo, EchoLab.noise(far.count, seed: 5, rms: 0.0003))
+        let (_, out) = try XCTUnwrap(try clean(mic: mic, system: far))
+        let early = EchoLab.reductionDB(input: mic, output: out, from: 4, to: 56)
+        print("EchoRemoverTests: early bursts' echo reduced by \(early) dB")
+        XCTAssertGreaterThanOrEqual(early, 10)
+        XCTAssertEqual(out.count, mic.count)
+    }
+
+    /// From the M3.2 re-check: the echo before the first fit was counted as the user "alone"
+    /// (no estimate there), which raised `voiceDB` to the echo's level and the line ceiling
+    /// with it. A soft line between the bursts must set the level instead.
+    func testEchoBeforeFirstFitDoesNotRaiseVoiceLevel() throws {
+        let (far, echo) = earlyBurstsThenTalk()
+        let soft = EchoLab.only(EchoLab.speech(seconds: 100, seed: 77, rms: 0.003), seconds: 17...23)
+        let mic = EchoLab.sum(EchoLab.sum(echo, soft), EchoLab.noise(far.count, seed: 5, rms: 0.0003))
+        let (result, _) = try XCTUnwrap(try clean(mic: mic, system: far))
+
+        let e = result.evidence
+        let voiceDB = try XCTUnwrap(e.voiceDB, "the soft line alone wasn't measured")
+        // The user's own loudest fifth, in the same units as `voiceDB`.
+        let frames = EchoLab.framePower(soft).enumerated().filter { $0.offset >= 1_700 && $0.offset < 2_300 }
+        let loud = frames.map { Float(EchoLab.db($0.element)) }.sorted().suffix(frames.count / 5)
+        let wanted = loud.reduce(0, +) / Float(loud.count)
+        let echoDB = Float(EchoLab.db(EchoRemover.meanPower(Array(echo[(5 * EchoLab.rate)..<(6 * EchoLab.rate)]))))
+        print("EchoRemoverTests: voiceDB \(voiceDB), user \(wanted), echo \(echoDB), room \(e.roomDB)")
+        XCTAssertLessThan(voiceDB, echoDB - 15, "the early echo was taken for the user's voice")
+        XCTAssertEqual(voiceDB, wanted, accuracy: 6)
+        XCTAssertFalse(e.looksLikeEcho(start: 17.2, end: 22.8), "the soft line was reported as echo")
+        // The early echo itself is still recognised as echo.
+        XCTAssertTrue(e.looksLikeEcho(start: 5.2, end: 6.0))
+    }
+
+    /// From the M3.2 re-check: windows start every 15 s, and the last must end at the file's
+    /// end. A length of 20 s + 15k s + 1 sample used to give two windows one sample apart,
+    /// so one false peak counted twice. A near-identical window is now dropped.
+    func testOneFalsePeakSeenByTwoNearIdenticalWindowsIsNotAMove() throws {
+        let window = 20 * EchoLab.rate
+        let hop = 15 * EchoLab.rate
+        let far = EchoLab.speech(frames: window + 2 * hop + 1, seed: 93, rms: 0.1)
+        let mic = EchoLab.sum(EchoLab.echo(of: far), EchoLab.noise(far.count, seed: 5, rms: 0.0003))
+        let lengths = [
+            window - 5 * EchoLab.rate, window, window + 1, window + hop / 2 - 1, window + hop / 2,
+            window + hop, window + hop + 1, window + 2 * hop + 1,
+        ]
+        for frames in lengths {
+            try EchoLab.writeMono(Array(mic.prefix(frames)), to: url("mic.wav"))
+            try EchoLab.writeMono(Array(far.prefix(frames)), to: url("system.wav"))
+            let track = try EchoRemover.lagTrack(
+                mic: try MonoReader(url("mic.wav")), system: try MonoReader(url("system.wav")), frames: frames)
+            print("EchoRemoverTests: \(frames) frames: windows at \(track.map(\.seconds))")
+            XCTAssertFalse(track.isEmpty, "\(frames) frames")
+            for (a, b) in zip(track, track.dropFirst()) {
+                XCTAssertGreaterThanOrEqual(b.seconds - a.seconds, 7.5, "\(frames) frames: near-identical windows")
+            }
+            // The last window ends at the file's end (centre is 10 s before it), when there's more than one.
+            if frames >= window {
+                XCTAssertEqual(
+                    try XCTUnwrap(track.last).seconds, Double(frames) / Double(EchoLab.rate) - 10, accuracy: 0.01,
+                    "\(frames) frames")
+            }
+            // A file one sample over 20 s + k hops has the right number of windows.
+            let expected = frames < window ? 1 : 1 + Int((Double(frames - window) / Double(hop)).rounded())
+            XCTAssertEqual(track.count, expected, "\(frames) frames")
+        }
+    }
+
+    /// From the M3.2 re-check: under 2 s of far side is under the fit's minimum, and a lag
+    /// peak may well be found in it. Nothing is returned, nothing is written, nothing crashes.
+    func testVeryShortFilesWhereAPeakCouldBeFoundReturnNil() throws {
+        for seconds in [0.5, 1.0, 1.5, 1.99] {
+            let frames = Int(seconds * rate)
+            let far = EchoLab.speech(frames: frames, seed: 94, rms: 0.1)
+            let mic = EchoLab.sum(EchoLab.echo(of: far), EchoLab.noise(frames, seed: 5, rms: 0.0003))
+            let found = try clean(mic: mic, system: far)
+            XCTAssertNil(found, "\(seconds) s")
+            XCTAssertFalse(exists("out.wav"))
+        }
     }
 }
