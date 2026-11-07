@@ -278,6 +278,7 @@ struct SummaryPipeline {
                 "\(redacted.tokens.count) formatted value(s) were kept out of every request. Spoken names aren't caught."
             )
         }
+        report = Self.withoutRepeatedHighlights(report)
         report.notices += backend.notes
         return SummaryOutcome(report: report, redactedValues: redacted.tokens.count, flaggedTokens: flagged)
     }
@@ -352,7 +353,7 @@ struct SummaryPipeline {
 
         So the reader can skim, every item also has:
         - "priority": "high" for the few things the reader must not miss (decisions, deadlines, commitments, risks, what changes next), "low" for background, otherwise "normal". Keep "high" very rare: one or two items in the whole report at most, and none if nothing stands out.
-        - "keywords": usually an empty list. Give one short phrase, copied exactly from this item's "text" or "answer", only when the item holds a fact a reader would scan for: a decision, a date, a number or an owner. At most one item in three gets one; never highlight general words. Only "prose" and "bullets" sections get keywords; every other kind gets an empty list.
+        - "keywords": one or two short phrases copied exactly from this item's "text" or "answer", chosen so a reader who reads only the highlights still gets the point: who, when, what was decided, how, why. About half the items get some; never highlight general words, and never a fact already highlighted in another item. Only "prose" and "bullets" sections get keywords; every other kind gets an empty list.
         """
 
     static func rules(_ template: ScenarioTemplate, language: String) -> String {
@@ -432,7 +433,7 @@ struct SummaryPipeline {
         "text", "speaker", "owner", "due", "answer", "quote", "detail", "confidence", "reason", "source",
     ]
 
-    static let maxKeywords = 1
+    static let maxKeywords = 2
 
     private static let itemSchema: [String: Any] = {
         var properties: [String: Any] = [:]
@@ -831,5 +832,29 @@ enum SummaryRoute {
                     ?? LLMProvider.reasoningStyle(baseURL: baseURLString, providerID: profile.providerID),
                 reasoningEffort: profile.reasoningEffort),
             label: profile.displayName)
+    }
+}
+
+extension SummaryPipeline {
+    /// A fact is highlighted once per report (user, 2026-11-07): going through the
+    /// sections in order, a keyword equal to, inside, or containing one already
+    /// highlighted is dropped, ignoring case. The At a glance box repeats its items
+    /// as they are, so it isn't counted.
+    static func withoutRepeatedHighlights(_ report: Report) -> Report {
+        var seen: [String] = []
+        var out = report
+        for s in out.sections.indices {
+            for i in out.sections[s].items.indices {
+                guard let keywords = out.sections[s].items[i].keywords else { continue }
+                let kept = keywords.filter { k in
+                    let low = k.lowercased()
+                    guard !seen.contains(where: { $0.contains(low) || low.contains($0) }) else { return false }
+                    seen.append(low)
+                    return true
+                }
+                out.sections[s].items[i].keywords = kept.isEmpty ? nil : kept
+            }
+        }
+        return out
     }
 }

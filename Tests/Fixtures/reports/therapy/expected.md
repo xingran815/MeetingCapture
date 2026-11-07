@@ -4,7 +4,7 @@ _Therapy session · 2027-01-15 08:00 · about 00:04:25 · reviewed_
 
 ## At a glance
 
-- Worry about failing the **presentation**, with poor sleep and a tight chest. _(Issues raised by the client)_
+- Worry about failing the presentation, with poor sleep and a tight chest. _(Issues raised by the client)_
 - Write down three actions this week that fit being honest and prepared _(To-dos and actions)_
 
 ## Summary
@@ -14,13 +14,13 @@ The client described fear of failing an upcoming **presentation**, with a tight 
 
 ## Issues raised by the client
 
-- **Key:** Worry about failing the **presentation**, with poor sleep and a tight chest.
+- **Key:** Worry about failing the presentation, with poor sleep and a tight chest.
 - A recent argument with her sister about the holidays, and **difficulty** saying no.
 
 ## Therapist's suggestions and inspirations
 
-- **Speaker 1**: Worry about failing the **presentation**: try cognitive defusion, noticing "I'm having the thought that I'm going to fail". — “It puts a little space between you and the thought.”
-- **Speaker 1**: Worry about failing the **presentation**: a values exercise, writing three actions that fit being honest and prepared.
+- **Speaker 1**: Worry about failing the presentation: try cognitive defusion, noticing "I'm having the thought that I'm going to fail". — “It puts a little space between you and the thought.”
+- **Speaker 1**: Worry about failing the presentation: a values exercise, writing three actions that fit being honest and prepared.
 - **Speaker 1**: **Argument** with her sister: to be taken up next session.
 
 ## To-dos and actions

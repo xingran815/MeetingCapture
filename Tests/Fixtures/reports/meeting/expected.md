@@ -4,7 +4,7 @@ _Company meeting · 2027-01-15 08:00 · about 00:04:41 · reviewed_
 
 ## At a glance
 
-- Will fix the export and have it in review by Thursday; needs the failing account list sent to **nadia.okafor@example.com**. _(Who said what)_
+- Will fix the export and have it in review by **Thursday**; needs the failing account list sent to **nadia.okafor@example.com**. _(Who said what)_
 - Does the new cutover date clash with the audit window? _(Open questions)_ _(unsure: Nobody in the meeting knew; finance has to confirm.)_
 - Fix the invoice export and put it in review (owner: Speaker 2) (due: Thursday) _(Actions and to-dos)_
 
@@ -16,7 +16,7 @@ The platform team reviewed the billing **migration**, the weekend on-call rota a
 ## Who said what
 
 - **Speaker 1**: Billing migration is at **ninety percent**; the invoice export is the last blocker.
-- **Speaker 2**: **Key:** Will fix the export and have it in review by Thursday; needs the failing account list sent to **nadia.okafor@example.com**.
+- **Speaker 2**: **Key:** Will fix the export and have it in review by **Thursday**; needs the failing account list sent to **nadia.okafor@example.com**.
 - **You**: Cloud spend is **18,500** dollars over plan, mostly from the staging cluster.
 
 ## Open questions

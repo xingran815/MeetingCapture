@@ -15,7 +15,7 @@ A manager and report reviewed the quarter. The manager gave feedback on late des
 
 - **Speaker 1**: The search launch was well run and the incident write-up was **excellent**.
 - **Speaker 1**: Design docs often arrive the night before the review, **leaving** no time to comment.
-- **You**: **Priorities** should be written down; three asks came in last week with no order.
+- **You**: Priorities should be written down; three asks came in last week with no order.
 
 ## Commitments by each side
 

@@ -15,7 +15,7 @@ Two people planned a trip: train tickets, how to get the **apartment** keys, and
 
 ## Who said what
 
-- **You**: Cheapest train is **64** euros each if booked by Friday.
+- **You**: **Cheapest** train is **64** euros each if booked by Friday.
 - **Speaker 1**: **Key:** Will book on **Thursday** and check who has the discount card.
 - **You**: **Suggested** the museum on Sunday morning.
 
