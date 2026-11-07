@@ -68,6 +68,7 @@ SummaryPipeline.swift  the one transcript → report path: redact, classify (che
 Scenario.swift       scenario templates as JSON data: six built in, more from ~/.config/MeetingCapture/scenarios/*.json (D-82)
 Report.swift         the Report model every report renders from · TranscriptParser for `[hh:mm:ss] Speaker: text` lines
 ReportRenderer.swift  JSON → self-contained HTML (all text escaped, http/https links only, CSP blocks outside requests), markdown, terminal text · ReportFileName `<yyyyMMdd_HHmmss>_<topic>.html` · ReportFiles writes .md, .report.json and .html
+Notebook.swift       M5.1: the user's layer (`<base>.edits.json`, `<base>.notes.md`) merged at render · stale edits · delete to the Trash by the sidecar's lists only, sidecar last (D-93, D-95)
 Redactor.swift       regex redaction to `<EMAIL_1>`-style tokens before any LLM call, restored locally after
 LLMRouter.swift      which subscription CLI runs a call; tiers never mix across CLIs; switch only when usage is full
 ModelCLI.swift       pure description of a CLI call (args, tier, parsing); CLIRunner.swift starts it (no shell, allow-listed env)
@@ -109,6 +110,7 @@ These are load-bearing and not obvious from reading a single file:
 - **System audio drives the mix clock.** `TrackWriter.pushSystem()` consumes a matching number of mic frames from a FIFO per call. Mic FIFO is capped at 1 s to prevent unbounded growth if the mic is disconnected mid-recording.
 - **Long recordings are chunked.** `TrackWriter` rotates to a new WAV file every 30 minutes (`meeting.wav`, `meeting_part2.wav`, ...). This provides fault tolerance — if a crash occurs at minute 45, the first chunk is preserved. `Transcribe.transcribe(wavPaths:)` concatenates chunks with adjusted timestamps.
 - **VAD chunking is off for every model (D-39).** On `.en` it lost speech after silence, and a separated track is mostly silence. An earlier 22 s dropout at a 30 s window boundary was why it was on; that isn't proven gone, so watch for it. `scripts/e2e.sh` proves speech after silence survives.
+- **Delete to the Trash goes through `Notebook.trashPlan` (M5.1).** It moves only names the sidecar lists plus the fixed `<base>.*` names, regular files only, skipping names another sidecar lists, and the sidecar last. Nothing of the user's (title, edits, notes) goes in `report.json`, which every run rewrites.
 - **Only a recording's own listed files may be deleted (D-44).** Retention goes by the sidecar's `audioFiles`, never by name matching, and only after `transcribedAt` is set, which a kept WAV or a track that sounds like only noise prevents (D-52, D-54, D-56). It covers the configured output folder only (D-45). Anything that deletes audio needs a test where a similarly named file survives.
 - **Keys work before capture is live, so stops are held until `RecordingStopper.arm()`.** Without that, an early Enter hung the recording forever.
 - **`--two-track-*` and `--finish-recording` need `MEETINGCAPTURE_E2E=1`,** because they overwrite and delete by path. Without it they stop with an error, rather than falling through to a real capture.

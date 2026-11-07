@@ -23,7 +23,7 @@ For its owner, a professional meeting helper (terminal and macOS app): speaker-l
 | 3.2 | Remove speaker echo, keep the user's voice | #17 | `m3.2-echo` | yes | reviewer subagent (D-59), deep review and `/security-review` by risk | **records a test call; final listen and labels** | done (listen passed, D-78) |
 | 4 | Scenario summaries and HTML | #7 #8 | `m4-summaries-html` | yes | **yes** | reads a live report | done (read passed, D-88) |
 | 5 | Six designs, then the app | #9 | `m5-desktop` | yes | no | **picks a design** | done |
-| 5.1 | The report as a notebook: rename, notes, edit, delete to Trash | #22 | `m5.1-notebook` | yes | **yes** (deletes files) | no | todo |
+| 5.1 | The report as a notebook: rename, notes, edit, delete to Trash | #22 | `m5.1-notebook` | yes | **yes** (deletes files) | no | done |
 | 5.2 | Groups that share report context | #23 | `m5.2-groups` | yes | reviewer and `/security-review` (context leaves the machine) | **compares a report with and without group context** | todo |
 | 6 | Docs, security pass, SpeexDSP removal | #10 | `m6-docs-release` | yes | **yes** | no | todo |
 
