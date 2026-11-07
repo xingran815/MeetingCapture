@@ -147,6 +147,7 @@ The Settings menu is grouped with dimmed `MenuItem.separator(...)` header rows (
 | **Commits use the repo-local noreply author.** No `Co-Authored-By` lines for Claude or any AI. | Email must not leak; user's rule. |
 | **Never put email, keys, tokens or real transcripts in code, fixtures, issues, PRs, logs or prompts.** Fixtures are invented; read secrets from the environment and mask output. | Public repo, sensitive sessions. |
 | **Tests never use a real model, network or 30-minute audio by default.** Fake CLIs on `PATH`, injected clocks and chunk lengths, and 5–30 second `say` fixtures. `--live` is opt-in. | Fast tests that don't spend subscription usage. |
+| **In scripts, capture output before matching it.** `cmd \| grep -q x` under `pipefail` can read a match as no match: `grep` exits at the first hit and `cmd` gets SIGPIPE. | It made a self-test fail, and another flaky without showing (M3.1). |
 | **Say when unsure,** in code comments, reports and LLM prompts alike. | User's rule for the product and for us. |
 | **After each compaction, re-read the files before anything else:** this file, `dev/NOW.md`, `dev/PLAN.md`, the end of `dev/DECISIONS.md`, the current spec and latest report, `git status` and `git log`. Where a summary disagrees, the files and git win. | User's rule; a summary is a recollection, the files are the facts. |
 | **Close every milestone with a report and rules on disk, then start the next one without waiting.** Steps below. | User's rule; only what's in files survives a session. |
