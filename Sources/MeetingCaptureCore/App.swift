@@ -302,11 +302,17 @@ public enum MeetingCaptureApp {
                     backend: backend, redaction: redaction, catalog: scenarioLoad.catalog
                 ).run(transcript: transcript, forcedScenario: scenarioFlag)
             } catch {
+                // From --transcribe-only the source is the audio; the transcript is the .txt beside it.
+                let source = URL(fileURLWithPath: sourcePath)
+                let kept =
+                    ["txt", "md"].contains(source.pathExtension.lowercased())
+                    ? source.path : source.deletingPathExtension().appendingPathExtension("txt").path
                 throw Summarizer.SummarizerError.badResponse(
-                    "\(error.localizedDescription) The transcript is kept at \(sourcePath).")
+                    "\(error.localizedDescription) The transcript is kept at \(kept).")
             }
             ReportConsole.print(outcome.report, showTranscript: showTranscript)
-            let written = try ReportFiles.write(outcome.report, nextTo: URL(fileURLWithPath: sourcePath))
+            let written = try ReportFiles.write(
+                outcome.report, nextTo: URL(fileURLWithPath: sourcePath), fileTopic: outcome.fileTopic)
             ReportConsole.printPaths(written)
         }
 

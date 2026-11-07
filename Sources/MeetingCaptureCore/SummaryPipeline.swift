@@ -73,6 +73,9 @@ struct SummaryOutcome {
     let report: Report
     let redactedValues: Int
     let flaggedTokens: [String]
+    /// The topic before tokens were restored, with tokens taken out: what names the
+    /// HTML file, so a redacted value never reaches a file name.
+    var fileTopic: String? = nil
 }
 
 enum ReportError: Error, LocalizedError, Equatable {
@@ -151,7 +154,7 @@ struct SummaryPipeline {
 
         // 2. Sections. One retry on a malformed reply, then a clear failure.
         let sectionsSchema = Self.sectionsSchema(template, review: false)
-        let sectionsSystem = Self.sectionsPrompt(template, language: language) + suffix
+        let sectionsSystem = Self.sectionsPrompt(template, language: Self.safeLanguage(language)) + suffix
         let draft = try await withOneRetry(step: "sections") { retryNote in
             let reply = try await backend.complete(
                 tier: .normal, system: sectionsSystem, input: redacted.text + retryNote, schema: sectionsSchema)
@@ -170,6 +173,9 @@ struct SummaryPipeline {
             if skipped > 0 {
                 notices.append(
                     "\(skipped) concept name(s) weren't looked up, because they looked like more than a generic term.")
+            }
+            if names.count > 8 {
+                notices.append("Only the first 8 concepts were looked up; \(names.count - 8) more have no sources.")
             }
             if !names.isEmpty {
                 do {
@@ -208,7 +214,7 @@ struct SummaryPipeline {
         if review {
             do {
                 let reviewSchema = Self.sectionsSchema(template, review: true)
-                let system = Self.reviewPrompt(template, language: language) + suffix
+                let system = Self.reviewPrompt(template, language: Self.safeLanguage(language)) + suffix
                 let input = Self.reviewInput(numbered: numbered, draft: sections, template: template, topic: topic)
                 let result = try await withOneRetry(step: "review") { retryNote in
                     let reply = try await backend.complete(
@@ -216,7 +222,9 @@ struct SummaryPipeline {
                     return Self.decodeSections(reply.text, template: template).map { ($0, reply.model) }
                 }
                 models.frontier = result.1
-                sections = result.0.sections
+                // A section the review left out keeps the draft; only an explicit
+                // empty list clears one.
+                for (id, items) in result.0.sections { sections[id] = items }
                 changes = result.0.changes
                 suggestions = result.0.suggestions
                 reviewed = true
@@ -260,6 +268,8 @@ struct SummaryPipeline {
                 return entry
             })
 
+        let fileTopic = report.topic.replacingOccurrences(
+            of: #"<[A-Z]+_[0-9]+>"#, with: " ", options: .regularExpression)
         // Restore tokens everywhere a model wrote. The transcript is the original text.
         var flagged: [String] = []
         if redaction {
@@ -280,7 +290,8 @@ struct SummaryPipeline {
         }
         report = Self.withoutRepeatedHighlights(report)
         report.notices += backend.notes
-        return SummaryOutcome(report: report, redactedValues: redacted.tokens.count, flaggedTokens: flagged)
+        return SummaryOutcome(
+            report: report, redactedValues: redacted.tokens.count, flaggedTokens: flagged, fileTopic: fileTopic)
     }
 
     private func withOneRetry<T>(step: String, _ attempt: (String) async throws -> T?) async throws -> T {
@@ -783,12 +794,12 @@ enum SummaryRoute {
         var isEmpty: Bool { profile == nil && model == nil && baseURL == nil && apiKeyFlag == nil }
     }
 
-    static func makeRouter(config: Config, primary: CLIKind? = nil) -> LLMRouter {
+    static func makeRouter(config: Config, primary: CLIKind? = nil, ledger: UsageLedger = UsageLedger()) -> LLMRouter {
         let runner = CLIRunner(
             models: [.claude: config.claudeModels, .codex: config.codexModels],
             allowAPIBilling: config.allowCLIAPIBilling)
         return LLMRouter(
-            runner: runner, ledger: UsageLedger(),
+            runner: runner, ledger: ledger,
             primary: primary ?? config.primaryCLI, cap: config.dailyCLICallCap)
     }
 

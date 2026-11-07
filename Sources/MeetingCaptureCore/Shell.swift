@@ -317,7 +317,8 @@ final class Shell {
                 backend: backend, redaction: config.redactionEnabled, catalog: scenarios.catalog
             ).run(transcript: transcript)
             ReportConsole.print(outcome.report, showTranscript: showTranscript)
-            let written = try ReportFiles.write(outcome.report, nextTo: URL(fileURLWithPath: sourcePath))
+            let written = try ReportFiles.write(
+                outcome.report, nextTo: URL(fileURLWithPath: sourcePath), fileTopic: outcome.fileTopic)
             ReportConsole.printPaths(written)
         } catch {
             print("❌  Summarization failed: \(error.localizedDescription)\n   Transcript is still on disk.")
@@ -996,8 +997,8 @@ final class Shell {
     // MARK: - Utilities
 
     private func expand(_ path: String) -> String {
-        if path.hasPrefix("~/") { return NSHomeDirectory() + String(path.dropFirst(1)) }
-        if path == "~" { return NSHomeDirectory() }
+        if path.hasPrefix("~/") { return AppHome.url().path + String(path.dropFirst(1)) }
+        if path == "~" { return AppHome.url().path }
         return path
     }
 }

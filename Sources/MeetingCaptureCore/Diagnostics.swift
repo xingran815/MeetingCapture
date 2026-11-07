@@ -186,7 +186,7 @@ enum QualityCompare {
             print("That would pass today's cap of \(config.dailyCLICallCap), so nothing was run.")
             return false
         }
-        let router = SummaryRoute.makeRouter(config: config, primary: primary)
+        let router = SummaryRoute.makeRouter(config: config, primary: primary, ledger: ledger)
         guard await router.hasReadyCLI() else {
             print("No CLI is ready, so nothing was compared.")
             return false

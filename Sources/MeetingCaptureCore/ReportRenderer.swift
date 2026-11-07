@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 // Step 5 of spec 04: the final JSON becomes a self-contained HTML page, with no
@@ -99,7 +100,7 @@ enum ReportRenderer {
             <head>
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1">
-            <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+            <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src '\(scriptHash)'; img-src data:; base-uri 'none'; form-action 'none'">
             <meta name="referrer" content="no-referrer">
             <title>\(escape(report.topic))</title>
             <style>\(css)</style>
@@ -373,14 +374,19 @@ enum ReportRenderer {
         """
 
     /// Search filters transcript lines by their text content; it never builds HTML.
-    private static let script = """
+    /// The CSP allows only this exact script, by hash, so a missed escape still can't run one.
+    static var scriptHash: String {
+        "sha256-" + Data(SHA256.hash(data: Data(script.utf8))).base64EncodedString()
+    }
+
+    static let script = """
         (function(){var q=document.getElementById('q'),c=document.getElementById('count');if(!q)return;var rows=Array.prototype.slice.call(document.querySelectorAll('.lines li'));q.addEventListener('input',function(){var t=q.value.trim().toLowerCase(),n=0;rows.forEach(function(r){var hit=!t||r.textContent.toLowerCase().indexOf(t)>=0;r.classList.toggle('hidden',!hit);if(hit)n++;});c.textContent=t?n+' of '+rows.length+' lines':'';});document.querySelectorAll('details').forEach(function(d){window.addEventListener('beforeprint',function(){d.open=true;});});})();
         """
 
     // MARK: - Markdown, for tools that read `.md`
 
     static func markdown(_ report: Report) -> String {
-        var md = "# \(report.topic)\n\n_\(report.scenarioTitle) · \(metaLine(report))_\n"
+        var md = "# \(mdLine(report.topic))\n\n_\(report.scenarioTitle) · \(metaLine(report))_\n"
         if !report.reviewed {
             md += "\n> **Not reviewed.** The frontier review didn't run, so this is the first draft.\n"
         }
@@ -389,14 +395,14 @@ enum ReportRenderer {
             md += "\n## At a glance\n\n"
             for (section, item) in key {
                 md += "- \(mdBold(oneLine(item.text), item.keywords))"
-                if let o = item.owner, !o.isEmpty { md += " (owner: \(oneLine(o)))" }
-                if let d = item.due, !d.isEmpty { md += " (due: \(oneLine(d)))" }
-                md += " _(\(section.title))_\(unsureSuffix(item))\n"
+                if let o = item.owner, !o.isEmpty { md += " (owner: \(mdLine(o)))" }
+                if let d = item.due, !d.isEmpty { md += " (due: \(mdLine(d)))" }
+                md += " _(\(mdLine(section.title)))_\(unsureSuffix(item))\n"
             }
         }
         for section in report.sections {
-            md += "\n## \(section.title)\n"
-            if let note = section.note, !note.isEmpty { md += "_\(note)_\n" }
+            md += "\n## \(mdLine(section.title))\n"
+            if let note = section.note, !note.isEmpty { md += "_\(mdLine(note))_\n" }
             if section.items.isEmpty {
                 md += "\nNone.\n"
                 continue
@@ -406,10 +412,10 @@ enum ReportRenderer {
         }
         if !report.reviewChanges.isEmpty {
             md += "\n## What the review changed\n\n"
-            for c in report.reviewChanges { md += "- \(c.what)\(c.why.isEmpty ? "" : " — \(c.why)")\n" }
+            for c in report.reviewChanges { md += "- \(mdLine(c.what))\(c.why.isEmpty ? "" : " — \(mdLine(c.why))")\n" }
         }
         if !report.notices.isEmpty {
-            md += "\n---\n" + report.notices.map { "> Note: \($0)" }.joined(separator: "\n") + "\n"
+            md += "\n---\n" + report.notices.map { "> Note: \(mdLine($0))" }.joined(separator: "\n") + "\n"
         }
         md += "\n" + modelsLine(report) + "\n"
         return md
@@ -425,40 +431,59 @@ enum ReportRenderer {
                 + "\n\n"
         case .actions:
             line = "- [ ] \(text)"
-            if let o = item.owner, !o.isEmpty { line += " (owner: \(oneLine(o)))" }
-            if let d = item.due, !d.isEmpty { line += " (due: \(oneLine(d)))" }
+            if let o = item.owner, !o.isEmpty { line += " (owner: \(mdLine(o)))" }
+            if let d = item.due, !d.isEmpty { line += " (due: \(mdLine(d)))" }
         case .qa:
             let answer = (item.answer ?? "").isEmpty ? "I don't know." : oneLine(item.answer)
             // The question is bold already, so keywords are bolded in the answer only.
             let shown = (item.answer ?? "").isEmpty ? answer : mdBold(answer, item.keywords)
-            line = "- **\(item.isHigh ? "Key: " : "")\(oneLine(item.text))**\n  - AI: \(shown)"
+            line = "- **\(item.isHigh ? "Key: " : "")\(mdLine(item.text))**\n  - AI: \(shown)"
         case .concepts:
             // The unsure note goes on the name's line, not after the last source.
-            line = "- **\(item.isHigh ? "Key: " : "")\(oneLine(item.text))**" + unsureSuffix(item)
-            if let q = item.quote, !q.isEmpty { line += "\n  - Said: \(oneLine(q))" }
-            if let a = item.answer, !a.isEmpty { line += "\n  - AI understands: \(oneLine(a))" }
-            if let d = item.detail, !d.isEmpty { line += "\n  - More: \(oneLine(d))" }
-            for link in item.sources ?? [] where safeURL(link.url) != nil {
-                line += "\n  - Source: [\(oneLine(link.title))](\(link.url))"
+            line = "- **\(item.isHigh ? "Key: " : "")\(mdLine(item.text))**" + unsureSuffix(item)
+            if let q = item.quote, !q.isEmpty { line += "\n  - Said: \(mdLine(q))" }
+            if let a = item.answer, !a.isEmpty { line += "\n  - AI understands: \(mdLine(a))" }
+            if let d = item.detail, !d.isEmpty { line += "\n  - More: \(mdLine(d))" }
+            // The checked URL, not the raw string, with the characters that could end
+            // the link encoded; the title is escaped, so neither can form a new link.
+            for link in item.sources ?? [] {
+                guard let url = safeURL(link.url) else { continue }
+                let href = url.absoluteString.replacingOccurrences(of: "(", with: "%28")
+                    .replacingOccurrences(of: ")", with: "%29").replacingOccurrences(of: " ", with: "%20")
+                    .replacingOccurrences(of: "<", with: "%3C").replacingOccurrences(of: ">", with: "%3E")
+                line += "\n  - Source: [\(mdLine(link.title))](\(href))"
             }
             return line + "\n"
         case .insights:
             line = "- AI: \(text)"
         case .bullets, .goals:
-            line = "- " + ((item.speaker ?? "").isEmpty ? "" : "**\(oneLine(item.speaker))**: ") + text
-            if let q = item.quote, !q.isEmpty { line += " — “\(oneLine(q))”" }
-            if let d = item.due, !d.isEmpty, kind == .goals { line += " (by: \(oneLine(d)))" }
+            line = "- " + ((item.speaker ?? "").isEmpty ? "" : "**\(mdLine(item.speaker))**: ") + text
+            if let q = item.quote, !q.isEmpty { line += " — “\(mdLine(q))”" }
+            if let d = item.due, !d.isEmpty, kind == .goals { line += " (by: \(mdLine(d)))" }
         }
         return line + unsureSuffix(item) + "\n"
     }
 
     private static func mdBold(_ text: String, _ keywords: [String]?) -> String {
-        wrap(text, keywords, open: "**", close: "**", piece: { $0 })
+        wrap(text, keywords, open: "**", close: "**", piece: mdSafe)
     }
+
+    /// Model and transcript text in the `.md` can't form a link or raw HTML: the
+    /// characters that open them are backslash-escaped, which Markdown shows as is.
+    static func mdSafe(_ s: String) -> String {
+        var out = ""
+        for ch in s {
+            if "\\[]<>`".contains(ch) { out.append("\\") }
+            out.append(ch)
+        }
+        return out
+    }
+
+    private static func mdLine(_ s: String?) -> String { mdSafe(oneLine(s)) }
 
     private static func unsureSuffix(_ item: Report.Item) -> String {
         guard item.isUnsure else { return "" }
-        return " _(unsure: \(oneLine((item.reason ?? "").isEmpty ? "no reason given" : item.reason)))_"
+        return " _(unsure: \(mdLine((item.reason ?? "").isEmpty ? "no reason given" : item.reason)))_"
     }
 
     private static func oneLine(_ s: String?) -> String {
@@ -528,6 +553,7 @@ enum ReportRenderer {
 /// `<yyyyMMdd_HHmmss>_<short-topic>.html` (spec 04).
 enum ReportFileName {
     static let maxSlug = 40
+    static let maxSlugBytes = 160
 
     /// Keeps letters (Chinese included) and digits; anything else, path and shell
     /// characters and emoji included, becomes one `-`. At most 40 characters.
@@ -549,9 +575,12 @@ enum ReportFileName {
                 out.append("-")
                 lastDash = true
             }
-            if out.count >= maxSlug { break }
+            // Bytes too: letters can carry many combining marks, and a name over
+            // 255 bytes fails to write.
+            if out.count >= maxSlug || out.utf8.count >= maxSlugBytes { break }
         }
         var s = String(out.prefix(maxSlug))
+        while s.utf8.count > maxSlugBytes { s.removeLast() }
         while s.hasSuffix("-") { s.removeLast() }
         while s.hasPrefix("-") { s.removeFirst() }
         return s.isEmpty ? "report" : s
@@ -591,15 +620,24 @@ enum ReportFiles {
         let json: URL
     }
 
-    static func write(_ report: Report, nextTo source: URL, date: Date = Date()) throws -> Written {
+    /// `fileTopic` names the HTML; the pipeline passes the topic before tokens were
+    /// restored, so a redacted value never ends up in a file name.
+    static func write(_ report: Report, nextTo source: URL, fileTopic: String? = nil, date: Date = Date()) throws
+        -> Written
+    {
         let base = source.deletingPathExtension()
-        let md = base.appendingPathExtension("md")
+        var md = base.appendingPathExtension("md")
+        // A transcript kept as `.md` must never be overwritten by its own report.
+        if md.standardizedFileURL.resolvingSymlinksInPath() == source.standardizedFileURL.resolvingSymlinksInPath() {
+            md = base.appendingPathExtension("report.md")
+        }
         let json = base.appendingPathExtension("report.json")
         try (ReportRenderer.markdown(report)).write(to: md, atomically: true, encoding: .utf8)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         try encoder.encode(report).write(to: json, options: .atomic)
-        let html = ReportFileName.freeURL(in: source.deletingLastPathComponent(), topic: report.topic, date: date)
+        let html = ReportFileName.freeURL(
+            in: source.deletingLastPathComponent(), topic: fileTopic ?? report.topic, date: date)
         try ReportRenderer.html(report).write(to: html, atomically: true, encoding: .utf8)
         return Written(html: html, markdown: md, json: json)
     }

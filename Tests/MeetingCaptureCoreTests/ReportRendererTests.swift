@@ -44,7 +44,7 @@ final class ReportRendererTests: XCTestCase {
     func testTheContentSecurityPolicyBlocksEverythingExternal() {
         let html = ReportRenderer.html(hostileReport())
         let csp =
-            "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'"
+            "default-src 'none'; style-src 'unsafe-inline'; script-src '\(ReportRenderer.scriptHash)'; img-src data:; base-uri 'none'; form-action 'none'"
         XCTAssertTrue(html.contains("<meta http-equiv=\"Content-Security-Policy\" content=\"\(csp)\">"))
         XCTAssertTrue(html.contains("<meta name=\"referrer\" content=\"no-referrer\">"))
         XCTAssertTrue(html.hasPrefix("<!doctype html>"))

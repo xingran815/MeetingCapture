@@ -281,9 +281,9 @@ struct Config: Codable, Equatable {
     func resolvedOutputDirectory() throws -> URL {
         var expanded = outputDirectory
         if expanded.hasPrefix("~/") {
-            expanded = NSHomeDirectory() + String(expanded.dropFirst(1))
+            expanded = AppHome.url().path + String(expanded.dropFirst(1))
         } else if expanded == "~" {
-            expanded = NSHomeDirectory()
+            expanded = AppHome.url().path
         }
         let url = URL(fileURLWithPath: expanded)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
