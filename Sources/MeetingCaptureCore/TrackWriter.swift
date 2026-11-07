@@ -46,6 +46,19 @@ final class TrackWriter {
 
     private(set) var framesWritten: Int = 0
 
+    /// RMS of the last buffer written, mic and system, 0…1. For the app's waveform.
+    private var lastLevels: (mic: Float, system: Float) = (0, 0)
+    var levels: (mic: Float, system: Float) {
+        lock.lock()
+        defer { lock.unlock() }
+        return paused ? (0, 0) : lastLevels
+    }
+    var isPaused: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return paused
+    }
+
     // Pause state: when true, pushSystem/pushMic drop their input. The wall-
     // clock gap during pause simply does not appear in the output WAV — audio
     // time stays contiguous, transcript timestamps reflect audio time.
@@ -105,14 +118,21 @@ final class TrackWriter {
             return
         }
         let micTake = min(frames, micFIFO.count)
+        var micSquares: Float = 0
+        var systemSquares: Float = 0
         for f in 0..<frames {
             let system = (src[2 * f] + src[2 * f + 1]) * 0.5
             let mic = f < micTake ? micFIFO[f] : 0
+            micSquares += mic * mic
+            systemSquares += system * system
             dst[2 * f] = Int16(max(-1.0, min(1.0, mic)) * 32767)
             dst[2 * f + 1] = Int16(max(-1.0, min(1.0, system)) * 32767)
         }
         if micTake > 0 {
             micFIFO.removeFirst(micTake)
+        }
+        if frames > 0 {
+            lastLevels = ((micSquares / Float(frames)).squareRoot(), (systemSquares / Float(frames)).squareRoot())
         }
 
         do {

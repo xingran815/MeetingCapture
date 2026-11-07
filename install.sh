@@ -26,8 +26,8 @@ bold "[1/6] Preflight"
 [[ "$(uname -s)" == "Darwin" ]] || fail "macOS only."
 
 macos_major="$(sw_vers -productVersion | cut -d. -f1)"
-if (( macos_major < 14 )); then
-    warn "macOS 14+ recommended (you have $(sw_vers -productVersion)). WhisperKit may not work."
+if (( macos_major < 26 )); then
+    fail "macOS 26 or later needed (you have $(sw_vers -productVersion)); see D-92."
 fi
 
 command -v swift >/dev/null 2>&1 || fail "swift not found. Install Xcode or the Command Line Tools: xcode-select --install"

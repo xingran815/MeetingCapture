@@ -25,6 +25,16 @@ final class AudioCapture: NSObject {
     /// Audio actually written, which leaves out paused time.
     private var capturedFrames: Int { writer?.framesWritten ?? 0 }
 
+    /// Seconds of audio written so far, which leaves out paused time.
+    var elapsedSeconds: Double { Double(capturedFrames) / 48_000.0 }
+    /// Mic and system loudness of the latest audio, 0…1; zero while paused.
+    var levels: (mic: Float, system: Float) { writer?.levels ?? (0, 0) }
+    var isPaused: Bool { writer?.isPaused ?? false }
+    /// True once the stream has started and audio can arrive.
+    var isLive: Bool { captureStart != nil }
+    /// What is being recorded, such as "Zoom" or "all system audio". Set once capture starts.
+    private(set) var targetLabel = ""
+
     private var stream: SCStream?
     private var micCapture: MicCapture?
     private let micGate = MicStartGate()
@@ -100,6 +110,7 @@ final class AudioCapture: NSObject {
             }
         }
 
+        self.targetLabel = targetLabel
         print("  building filter…")
         // 3. Build content filter ─────────────────────────────────────────────
         let filter: SCContentFilter
@@ -233,10 +244,12 @@ final class AudioCapture: NSObject {
     /// Toggle pause state on the active recording. Frames received while
     /// paused are dropped — the wall-clock gap simply does not exist in
     /// the output WAV. Safe to call multiple times and from any queue.
-    func pauseToggle() {
-        guard let writer = writer else { return }
+    @discardableResult
+    func pauseToggle() -> Bool {
+        guard let writer = writer else { return false }
         let paused = writer.togglePause()
         print(paused ? "\n⏸  Paused — Space+Enter to resume." : "\n▶  Resumed.")
+        return paused
     }
 
     // ─── Internal ────────────────────────────────────────────────────────────

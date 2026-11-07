@@ -27,6 +27,9 @@ final class Transcriber {
         self.modelFolder = modelFolder
     }
 
+    /// How far the current file's transcription is, 0…1, as WhisperKit reports it.
+    var fractionCompleted: Double { pipe?.progress.fractionCompleted ?? 0 }
+
     private var isMultilingual: Bool { !modelName.contains(".en") }
 
     func load() async throws {

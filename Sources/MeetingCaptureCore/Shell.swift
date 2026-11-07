@@ -30,6 +30,7 @@ final class Shell {
                 MenuItem(key: "3", label: "Summarize a .txt"),
                 MenuItem(key: "4", label: "Rename or merge speakers"),
                 MenuItem(key: "5", label: "Settings"),
+                MenuItem(key: "6", label: "Library: open a report, re-run a step"),
                 MenuItem(key: "q", label: "Quit"),
             ]
             let pick = Menu.pick(header: mainHeader(), items: items, allowBack: false)
@@ -43,7 +44,8 @@ final class Shell {
                 case 2: await summarizeFlow()
                 case 3: speakersFlow()
                 case 4: await settingsFlow()
-                case 5: break loop
+                case 5: await libraryFlow()
+                case 6: break loop
                 default: break
                 }
             }
@@ -97,100 +99,73 @@ final class Shell {
     // MARK: - Record
 
     private func recordFlow() async {
-        let base: URL
-        do { base = try config.newMeetingBase() } catch {
-            print("❌  Couldn't prepare output directory: \(error.localizedDescription)")
-            return
-        }
-        let wavURL = base.appendingPathExtension("wav")
-        do {
-            // Written first, so a crash leaves something the next launch can find.
-            try RecordingSidecar.started().save(to: RecordingSidecar.url(forBase: base))
-        } catch {
+        let recorder: Recorder
+        do { recorder = try Recorder.prepare() } catch {
             print("❌  Couldn't prepare the recording: \(error.localizedDescription)")
             return
         }
-
-        let capture = AudioCapture()
-        let totalSec = Double(config.defaultDurationMinutes * 60)
-
         let modeHint: String = {
-            if config.captureAllAudio { return "  (all system audio)" }
-            return config.micEnabled ? "" : "  (system audio only — mic off)"
+            if recorder.captureAllAudio { return "  (all system audio)" }
+            return recorder.micEnabled ? "" : "  (system audio only — mic off)"
         }()
         print(
             """
 
-            🔴  Recording → \(wavURL.path)\(modeHint)
+            🔴  Recording → \(recorder.base.appendingPathExtension("wav").path)\(modeHint)
                 Space+Enter to pause/resume · Enter to stop.
             """)
 
-        RecordingKeys.install(on: capture)
+        RecordingKeys.install(on: recorder.audioCapture)
         defer { RecordingKeys.remove() }
 
         let wavFiles: [URL]
         do {
-            wavFiles = try await capture.run(
-                duration: totalSec,
-                outputPath: wavURL.path,
-                captureAllAudio: config.captureAllAudio,
-                meetingApps: MeetingApp.catalog.filter { config.enabledMeetingAppIDs.contains($0.id) },
-                enableMic: config.micEnabled
-            )
+            wavFiles = try await recorder.start()
         } catch {
             print("❌  Capture failed: \(error.localizedDescription)")
             return
         }
 
-        guard !wavFiles.isEmpty else {
-            print("❌  No audio files were saved.")
-            return
-        }
-
-        await finishRecording(parts: wavFiles, base: base)
+        await finishRecording(parts: wavFiles, base: recorder.base)
         cleanOldAudio()
     }
 
-    /// Transcribes, encodes, then summarizes. If transcription fails, the WAVs stay
-    /// and the next launch offers the recording again.
+    /// Transcribes, encodes, then summarizes, through the same `MeetingProcessor` the app
+    /// uses. If transcription fails, the WAVs stay and the next launch offers them again.
     private func finishRecording(parts: [URL], base: URL) async {
-        var transcript: String?
-        do {
-            let pipeline = config.autoTranscribe ? try await makePipeline() : nil
-            if let result = try await RecordingPipeline.finish(parts: parts, base: base, pipeline: pipeline) {
-                transcript = show(result, txtURL: base.appendingPathExtension("txt"))
-            }
-        } catch {
-            print("❌  Transcription failed: \(error.localizedDescription)")
-            print("   The audio is kept, and the next launch offers it again.")
-            return
-        }
-
-        if config.autoSummarize {
-            if let text = transcript {
-                await runSummarize(
-                    transcript: text, sourcePath: base.appendingPathExtension("txt").path, showTranscript: false)
-            } else {
-                print("ℹ  Skipping summary: auto-transcribe is off, no transcript available.")
-            }
+        let processor = MeetingProcessor(config: config)
+        let result = await processor.finish(parts: parts, base: base, onEvent: Self.printEvent)
+        report(result, processor: processor, printTranscript: true)
+        if result.transcript == nil, result.failure == nil, config.autoSummarize {
+            print("ℹ  Skipping summary: auto-transcribe is off, no transcript available.")
         }
     }
 
-    private func makePipeline() async throws -> RecordingPipeline {
-        let transcriber = Transcriber(model: config.whisperModel, language: config.whisperLanguage)
-        try await transcriber.load()
-        return RecordingPipeline(
-            transcriber: transcriber, detector: SpeakerKitDetector(), removeEcho: config.aecEnabled)
+    /// Prints a stage once as it starts. Progress is left to the app.
+    private static func printEvent(_ event: MeetingProcessor.Event) {
+        if case .stage(.writingReport, _, _) = event { print("🧩  Writing the report…") }
     }
 
-    private func show(_ result: RecordingPipeline.Transcript, txtURL: URL) -> String {
-        let text = result.formatted
-        print("\n──── transcript ──────────────────────────")
-        print(text)
-        print("──────────────────────────────────────────")
+    /// `printTranscript` prints the transcript text first; `transcriptInReport` has the
+    /// report's terminal view include it instead, as `--summarize-only` did.
+    private func report(
+        _ result: MeetingProcessor.Result, processor: MeetingProcessor, printTranscript: Bool,
+        transcriptInReport: Bool = false
+    ) {
+        if let text = result.transcript, printTranscript {
+            print("\n──── transcript ──────────────────────────")
+            print(text)
+            print("──────────────────────────────────────────")
+        }
         for note in result.notes { print("⚠  \(note)") }
-        print("   txt:  \(txtURL.path)")
-        return text
+        if let txt = result.transcriptURL, result.transcript != nil { print("   txt:  \(txt.path)") }
+        if let report = processor.lastReport {
+            ReportConsole.print(report, showTranscript: transcriptInReport)
+            if let html = result.reportHTML, let md = result.reportMarkdown, let json = result.reportJSON {
+                ReportConsole.printPaths(ReportFiles.Written(html: html, markdown: md, json: json))
+            }
+        }
+        if let failure = result.failure { print("❌  \(failure)") }
     }
 
     // MARK: - Old and unfinished audio
@@ -219,11 +194,89 @@ final class Shell {
         }
     }
 
+    // MARK: - Library (the same list the app shows)
+
+    private func libraryFlow() async {
+        guard let dir = outputDirectoryURL else { return }
+        let entries = Library.entries(in: dir)
+        guard !entries.isEmpty else {
+            print("No recordings in \(dir.path) yet.")
+            return
+        }
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        f.timeStyle = .short
+        let items = entries.map { e -> MenuItem in
+            let what =
+                e.isUnfinished
+                ? "unfinished" : (e.scenarioTitle ?? (e.hasTranscript ? "transcript only" : "audio only"))
+            return MenuItem(label: "\(f.string(from: e.createdAt))  \(e.topic ?? e.base.lastPathComponent)  (\(what))")
+        }
+        guard case .selected(let i) = Menu.pick(title: "\nLibrary  (\(dir.path))\n", items: items, allowBack: true)
+        else { return }
+        let entry = entries[i]
+        let actions: [MenuItem] = [
+            MenuItem(key: "o", label: "Open report", enabled: entry.hasReport),
+            MenuItem(key: "t", label: "Transcribe again", enabled: !entry.audioFiles.isEmpty),
+            MenuItem(key: "w", label: "Write the report again", enabled: entry.hasTranscript),
+            MenuItem(key: "s", label: "Rename or merge speakers", enabled: entry.hasTranscript),
+            MenuItem(key: "f", label: "Show in Finder"),
+        ]
+        guard
+            case .selected(let a) = Menu.pick(
+                title: "\n\(entry.topic ?? entry.base.lastPathComponent)\n", items: actions, allowBack: true)
+        else { return }
+        switch actions[a].key {
+        case "o":
+            guard let html = entry.reportHTML() else { return }
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent(
+                "\(entry.base.lastPathComponent).html")
+            do {
+                try html.write(to: url, atomically: true, encoding: .utf8)
+                openWithSystem([url.path])
+            } catch { print("❌  Couldn't open it: \(error.localizedDescription)") }
+        case "t":
+            if let first = entry.audioFiles.first { await runTranscribe(wavPaths: [first.path]) }
+        case "w":
+            await runSummarize(transcript: "", sourcePath: entry.transcriptURL.path, showTranscript: false)
+        case "s":
+            speakersFlow(transcript: entry.transcriptURL)
+        case "f":
+            openWithSystem(["-R", (entry.audioFiles.first ?? entry.transcriptURL).path])
+        default: break
+        }
+    }
+
+    /// `/usr/bin/open` with plain arguments, no shell.
+    private func openWithSystem(_ arguments: [String]) {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        p.arguments = arguments
+        try? p.run()
+    }
+
+    private func testCLIConnection() {
+        let sem = DispatchSemaphore(value: 0)
+        Task {
+            for (id, label) in SummaryService.cliChoices {
+                let problem = await SummaryService.connectionProblem(cli: id)
+                print(problem.map { "✗  \(label): \($0)" } ?? "✓  \(label) CLI is ready, on the subscription.")
+            }
+            sem.signal()
+        }
+        sem.wait()
+    }
+
     // MARK: - Speakers
 
-    private func speakersFlow() {
-        guard let raw = askLine("Path to the transcript .txt"), !raw.isEmpty else { return }
-        let url = URL(fileURLWithPath: expand(raw))
+    private func speakersFlow(transcript known: URL? = nil) {
+        let url: URL
+        if let known {
+            url = known
+        } else {
+            guard let raw = askLine("Path to the transcript .txt"), !raw.isEmpty else { return }
+            url = URL(fileURLWithPath: expand(raw))
+        }
         guard let text = try? String(contentsOf: url, encoding: .utf8) else {
             print("❌  Couldn't read file: \(url.path)")
             return
@@ -291,38 +344,17 @@ final class Shell {
 
     @discardableResult
     private func runTranscribe(wavPaths: [String]) async -> String? {
-        guard !wavPaths.isEmpty else { return nil }
-
-        let first = URL(fileURLWithPath: wavPaths[0])
-        let baseName = RecordingFiles.baseName(of: first.deletingPathExtension().lastPathComponent)
-        let txtURL = first.deletingLastPathComponent().appendingPathComponent(baseName).appendingPathExtension("txt")
-        do {
-            let pipeline = try await makePipeline()
-            let result = try await pipeline.transcribe(parts: wavPaths.map { URL(fileURLWithPath: $0) })
-            try (result.formatted + "\n").write(to: txtURL, atomically: true, encoding: .utf8)
-            return show(result, txtURL: txtURL)
-        } catch {
-            print("❌  Transcription failed: \(error.localizedDescription)")
-            return nil
-        }
+        guard let first = wavPaths.first else { return nil }
+        let processor = MeetingProcessor(config: config)
+        let result = await processor.transcribe(audio: URL(fileURLWithPath: first))
+        report(result, processor: processor, printTranscript: true)
+        return result.transcript
     }
 
     private func runSummarize(transcript: String, sourcePath: String, showTranscript: Bool) async {
-        do {
-            let backend = try await SummaryRoute.backend(config: config)
-            print("🧩  Writing the report via \(backend.label)…")
-            let scenarios = ScenarioCatalog.load()
-            for warning in scenarios.warnings { print("⚠  \(warning)") }
-            let outcome = try await SummaryPipeline(
-                backend: backend, redaction: config.redactionEnabled, catalog: scenarios.catalog
-            ).run(transcript: transcript)
-            ReportConsole.print(outcome.report, showTranscript: showTranscript)
-            let written = try ReportFiles.write(
-                outcome.report, nextTo: URL(fileURLWithPath: sourcePath), fileTopic: outcome.fileTopic)
-            ReportConsole.printPaths(written)
-        } catch {
-            print("❌  Summarization failed: \(error.localizedDescription)\n   Transcript is still on disk.")
-        }
+        let processor = MeetingProcessor(config: config)
+        let result = await processor.summarize(transcriptAt: URL(fileURLWithPath: sourcePath), onEvent: Self.printEvent)
+        report(result, processor: processor, printTranscript: false, transcriptInReport: showTranscript)
     }
 
     /// The route in a few words, for the header and Settings.
@@ -400,6 +432,7 @@ final class Shell {
                     key: "t", label: "CLI tier models         [\(c.claudeModels.normal) · \(c.codexModels.normal)]"),
                 MenuItem(key: "l", label: "Daily CLI call cap      [\(c.dailyCLICallCap) per CLI]"),
                 MenuItem(key: "x", label: "Redaction               [\(c.redactionEnabled ? "on" : "off")]"),
+                MenuItem(key: "k", label: "Test CLI connection"),
                 MenuItem(key: "6", label: "API configurations      [\(c.llmProfiles.count) saved]"),
                 .separator("   \(ledger.summaryLine(.claude, cap: c.dailyCLICallCap))"),
                 .separator("   \(ledger.summaryLine(.codex, cap: c.dailyCLICallCap))"),
@@ -431,6 +464,7 @@ final class Shell {
             case "t": promptTierModels()
             case "l": promptInt(\.dailyCLICallCap, label: "daily calls per CLI", min: 1, max: 10_000)
             case "x": toggle(\.redactionEnabled, label: "Redaction")
+            case "k": testCLIConnection()
             case "a":
                 if config.micEnabled {
                     toggle(\.aecEnabled, label: "Echo removal")
@@ -734,14 +768,12 @@ final class Shell {
     }
 
     private func promptWhisperModel() {
-        let models: [(id: String, blurb: String)] = [
-            ("openai_whisper-tiny.en", "~75 MB, fastest, rough"),
-            ("openai_whisper-base.en", "~140 MB"),
-            ("openai_whisper-small.en", "~470 MB, English only"),
-            ("openai_whisper-medium.en", "~1.5 GB, best for accents"),
-            ("openai_whisper-small", "multilingual, for Chinese etc."),
-            ("openai_whisper-medium", "multilingual"),
-        ]
+        let models: [(id: String, blurb: String)] = WhisperModelCatalog.models.map {
+            (
+                $0.id,
+                "~\($0.approxMB >= 1000 ? String(format: "%.1f GB", Double($0.approxMB) / 1000) : "\($0.approxMB) MB"), \($0.blurb)"
+            )
+        }
         var items = models.enumerated().map { (i, m) in
             let marker = (m.id == config.whisperModel) ? "●" : " "
             return MenuItem(key: Character("\(i + 1)"), label: "\(marker) \(m.id)   (\(m.blurb))")

@@ -47,6 +47,21 @@ final class SpeakerKitDetector: SpeakerDetecting {
     }
 }
 
+/// The steps after a call, in order. `writingReport` belongs to the summary, after these.
+public enum ProcessingStage: String, CaseIterable, Sendable {
+    case removingEcho, transcribing, labellingSpeakers, savingAudio, writingReport
+
+    public var title: String {
+        switch self {
+        case .removingEcho: return "Removing echo from your mic"
+        case .transcribing: return "Transcribing"
+        case .labellingSpeakers: return "Labelling speakers"
+        case .savingAudio: return "Saving audio as M4A"
+        case .writingReport: return "Writing the report"
+        }
+    }
+}
+
 struct RecordingPipeline {
 
     struct Transcript {
@@ -67,6 +82,9 @@ struct RecordingPipeline {
     let detector: SpeakerDetecting?
     /// Off for `--no-aec` and the AEC setting.
     var removeEcho = true
+    /// Told as each stage starts, with the part number (1-based) and the part count.
+    /// The app shows it; the terminal leaves it nil.
+    var onStage: ((ProcessingStage, Int, Int) -> Void)? = nil
 
     /// Transcribes every part of a recording. A part with a silent track skips it,
     /// which is how a recording with the mic off ends up with no `You` label.
@@ -117,6 +135,7 @@ struct RecordingPipeline {
                 var source = url
                 var evidence: EchoEvidence?
                 if removeEcho, let system = tracks.system {
+                    onStage?(.removingEcho, index + 1, parts.count)
                     do {
                         let cleaned = work.appendingPathComponent(UUID().uuidString + ".wav")
                         if let result = try EchoRemover.clean(mic: url, system: system, to: cleaned) {
@@ -139,6 +158,7 @@ struct RecordingPipeline {
                                 + "and its lines may include the other side: \(error.localizedDescription)")
                     }
                 }
+                onStage?(.transcribing, index + 1, parts.count)
                 mic = SpeakerLabels.labelMic(try await transcriber.transcribeSegments(path: source.path))
                 if let evidence {
                     let dropped = mic.filter { evidence.looksLikeEcho(start: $0.start, end: $0.end) }
@@ -159,9 +179,11 @@ struct RecordingPipeline {
                 }
             }
             if let url = tracks.system {
+                onStage?(.transcribing, index + 1, parts.count)
                 let segments = try await transcriber.transcribeSegments(path: url.path)
                 var turns: [SpeakerTurn] = []
                 if let detector {
+                    onStage?(.labellingSpeakers, index + 1, parts.count)
                     do {
                         turns = try await detector.detectTurns(path: url.path)
                     } catch {
@@ -259,7 +281,9 @@ struct RecordingPipeline {
     /// retention delete the audio later (finding from the deep review). A capture
     /// with no transcript keeps its audio until the user deals with it.
     static func finish(
-        parts: [URL], base: URL, pipeline: RecordingPipeline?, encoder: AudioEncoding = AACEncoder(), now: Date = Date()
+        parts: [URL], base: URL, pipeline: RecordingPipeline?, encoder: AudioEncoding = AACEncoder(),
+        now: Date = Date(),
+        onStage: ((ProcessingStage, Int, Int) -> Void)? = nil
     ) async throws -> Transcript? {
         var transcript: Transcript?
         if let pipeline {
@@ -268,6 +292,7 @@ struct RecordingPipeline {
                 to: base.appendingPathExtension("txt"), atomically: true, encoding: .utf8)
             transcript = result
         }
+        onStage?(.savingAudio, 1, 1)
         let archived = archive(parts: parts, encoder: encoder)
         let sidecarURL = RecordingSidecar.url(forBase: base)
         var sidecar = RecordingSidecar.load(at: sidecarURL) ?? RecordingSidecar(createdAt: now, state: .recording)

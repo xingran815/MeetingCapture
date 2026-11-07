@@ -12,7 +12,7 @@ Current state (v0.6): capture + transcribe + summarize all work. Echo is removed
 
 ## Build & run
 
-Swift Package Manager, one external dep (WhisperKit). Requires macOS 14+.
+Swift Package Manager, one external dep (WhisperKit). Requires macOS 26 (D-92). The desktop app: `scripts/build-app.sh [--install]` makes `.build/MeetingCapture.app`.
 
 End-user / fresh-machine path: `./install.sh` builds release, installs to `~/.local/bin/meetingcapture`, triggers the mic prompt via the hidden `--permission-probe` flag, and walks the user through the Screen Recording grant. Idempotent.
 

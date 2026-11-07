@@ -23,7 +23,7 @@ for tool in shellcheck actionlint; do
 done
 
 # Sources/Speexdsp is vendored, so it isn't ours to format.
-SWIFT_ROOTS=(Package.swift Sources/MeetingCaptureCore Sources/MeetingCaptureCLI Tests)
+SWIFT_ROOTS=(Package.swift Sources/MeetingCaptureCore Sources/MeetingCaptureCLI Sources/MeetingCaptureDesktop Tests)
 
 format_failed() {
     echo "lint: FAILED, swift format. Fix with: swift format -i -r ${SWIFT_ROOTS[*]}" >&2
@@ -43,7 +43,7 @@ if [ "$MODE" = "--staged" ]; then
     git diff --cached --name-only -z --diff-filter=ACMRT > "$listing" || { echo "lint: FAILED, couldn't list staged files." >&2; exit 1; }
     while IFS= read -r -d '' path; do
         case "$path" in
-            Package.swift|Sources/MeetingCaptureCore/*.swift|Sources/MeetingCaptureCLI/*.swift|Tests/*.swift)
+            Package.swift|Sources/MeetingCaptureCore/*.swift|Sources/MeetingCaptureCLI/*.swift|Sources/MeetingCaptureDesktop/*.swift|Tests/*.swift)
                 swift_files+=("$path") ;;
             .swift-format) all_swift=1 ;;
             scripts/*.sh|.githooks/*) shell_files+=("$path") ;;
