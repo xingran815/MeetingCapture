@@ -8,7 +8,7 @@ Updated: 2026-11-07 · M3.2 built, PR 19 open, not merged · issue 17 stays open
 
 Open loops:
 - **Pushing:** use `GIT_SSH_COMMAND="ssh -o ServerAliveInterval=30"` (D-75), and give the hook about 7 minutes.
-- **PR 19's logs:** check for `Cache hit for restore-key: swiftbuild-main-`, which finishes proving M3.1's Done-when 6, and compare the run time with M3.1's table.
+- **PR 19's CI:** merge needs all 7 green on the merged commit. E2E failed once on `4289e08`, unexplained (report, Gates). M3.1's Done-when 6 is proven by its first run.
 - **Worktree `.claude/worktrees/m3.2-echo`:** locked, branch `worktree-m3.2-echo`, only made audio for M3.2. The user said (2026-11-07) to delete it when M3.2 finishes. It holds the uncommitted `keep-wav.patch` change, a saved copy of which is in the takes folder, plus 50 MB of ignored `dev/tmp`. Delete when M3.2 closes, and report what was removed.
 - M5 settles the macOS setting: `Package.swift` says 14, untested; the specs say 26 (D-51).
 - Local `feature/coding-interview` and `feat/multi-provider-reasoning` keep old metadata and stay unpushed. `scripts/protected-commits.sha256` is a snapshot of the former, and the pre-push hook now checks it too (D-62).
