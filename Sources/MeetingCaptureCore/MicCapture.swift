@@ -21,10 +21,7 @@ final class MicCapture {
     var onSamples: ((UnsafePointer<Float>, Int) -> Void)?
 
     init() throws {
-        // Mic emits MONO at 48 kHz. The downstream stage (EchoCanceller or
-        // TrackWriter) deals with the mono → stereo expansion. Mono out keeps
-        // the AEC's reference and capture buffers symmetric and avoids a
-        // double downmix when AEC is enabled.
+        // Mic emits MONO at 48 kHz, one track of TrackWriter's two.
         targetFormat = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
             sampleRate: TrackWriter.sampleRate,

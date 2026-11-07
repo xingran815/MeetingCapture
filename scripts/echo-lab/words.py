@@ -193,4 +193,10 @@ def run(method, take):
 
 
 if __name__ == "__main__":
-    run(sys.argv[1], sys.argv[2])
+    if sys.argv[1] == "--txt":
+        # An existing transcript: words.py --txt <path> <take> <name>
+        _, ref = lab.load_take(sys.argv[3])
+        off = lab.playback_offset(ref, sys.argv[3])
+        print(json.dumps({"method": sys.argv[4], "take": sys.argv[3], **score(parse(sys.argv[2]), off, sys.argv[3])}))
+    else:
+        run(sys.argv[1], sys.argv[2])

@@ -135,8 +135,7 @@ final class Shell {
                 outputPath: wavURL.path,
                 captureAllAudio: config.captureAllAudio,
                 meetingApps: MeetingApp.catalog.filter { config.enabledMeetingAppIDs.contains($0.id) },
-                enableMic: config.micEnabled,
-                aecEnabled: config.micEnabled && config.aecEnabled
+                enableMic: config.micEnabled
             )
         } catch {
             print("❌  Capture failed: \(error.localizedDescription)")
@@ -179,7 +178,8 @@ final class Shell {
     private func makePipeline() async throws -> RecordingPipeline {
         let transcriber = Transcriber(model: config.whisperModel, language: config.whisperLanguage)
         try await transcriber.load()
-        return RecordingPipeline(transcriber: transcriber, detector: SpeakerKitDetector())
+        return RecordingPipeline(
+            transcriber: transcriber, detector: SpeakerKitDetector(), removeEcho: config.aecEnabled)
     }
 
     private func show(_ result: RecordingPipeline.Transcript, txtURL: URL) -> String {
@@ -418,7 +418,7 @@ final class Shell {
                 .separator("   \(ledger.summaryLine(.claude, cap: c.dailyCLICallCap))"),
                 .separator("   \(ledger.summaryLine(.codex, cap: c.dailyCLICallCap))"),
                 .separator("── Audio ────────────────────────────"),
-                MenuItem(key: "a", label: "AEC (echo cancel)       [\(aecDesc)]"),
+                MenuItem(key: "a", label: "Echo removal            [\(aecDesc)]"),
                 MenuItem(key: "m", label: "Mic capture             [\(c.micEnabled ? "on" : "off")]"),
                 MenuItem(key: "s", label: "Audio source            [\(appsDesc)]"),
                 MenuItem(
@@ -447,9 +447,9 @@ final class Shell {
             case "x": toggle(\.redactionEnabled, label: "Redaction")
             case "a":
                 if config.micEnabled {
-                    toggle(\.aecEnabled, label: "AEC")
+                    toggle(\.aecEnabled, label: "Echo removal")
                 } else {
-                    print("AEC has no effect while mic is off — enable mic first.")
+                    print("Echo removal has no effect while mic is off — enable mic first.")
                 }
             case "m": toggle(\.micEnabled, label: "Mic capture")
             case "s": promptMeetingApps()

@@ -60,7 +60,9 @@ public enum MeetingCaptureApp {
 
         // Finding from the security re-check: ignoring these flags without the variable
         // went on to a real capture of up to 8 hours, so they stop here instead.
-        let scriptFlags = ["--two-track-mic", "--two-track-system", "--two-track-out", "--finish-recording"]
+        let scriptFlags = [
+            "--two-track-mic", "--two-track-system", "--two-track-out", "--finish-recording", "--clean-echo",
+        ]
         if !AudioFixtures.scriptFlagsEnabled(), let used = scriptFlags.first(where: args.flag) {
             fputs("❌  \(used) is only for the test scripts, and needs MEETINGCAPTURE_E2E=1.\n", stderr)
             exit(2)
@@ -77,6 +79,32 @@ public enum MeetingCaptureApp {
                 exit(0)
             } catch {
                 fputs("fixture: \(error.localizedDescription)\n", stderr)
+                exit(1)
+            }
+        }
+        // The cleaned mic alone, so the echo lab can measure the code a user gets.
+        if AudioFixtures.scriptFlagsEnabled(), let path = args.option("--clean-echo"),
+            let out = args.option("--clean-echo-out")
+        {
+            do {
+                let work = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
+                defer { try? FileManager.default.removeItem(at: work) }
+                let tracks = try AudioTracks.split(URL(fileURLWithPath: path), into: work)
+                guard let mic = tracks.mic, let system = tracks.system else {
+                    fputs("❌  \(path) doesn't have both tracks.\n", stderr)
+                    exit(1)
+                }
+                guard
+                    let result = try EchoRemover.clean(mic: mic, system: system, to: URL(fileURLWithPath: out))
+                else {
+                    print("No echo found, so nothing was written.")
+                    exit(0)
+                }
+                print(String(format: "lag %.1f ms, drift %.2f ppm", result.lagSeconds * 1000, result.driftPPM))
+                exit(0)
+            } catch {
+                fputs("❌  \(error.localizedDescription)\n", stderr)
                 exit(1)
             }
         }
@@ -124,7 +152,7 @@ public enum MeetingCaptureApp {
                                          proven good                       (default: meeting_<ts>.wav)
                   --all-audio           Capture ALL system audio          (default: meeting app only)
                   --no-mic              Disable mic capture               (default: mic on its own track)
-                  --no-aec              Disable acoustic echo cancellation (default: AEC on)
+                  --no-aec              Skip removing speaker echo after the call (default: on)
 
                 Transcription options:
                   --transcribe          Transcribe the recording after capture
@@ -282,7 +310,7 @@ public enum MeetingCaptureApp {
                 if let path = transcribeOnly {
                     let text = try await runTranscription(
                         wavPaths: RecordingFiles.allParts(of: path), model: whisperModel, modelFolder: whisperFolder,
-                        language: whisperLang)
+                        language: whisperLang, removeEcho: !noAec && persistedConfig.aecEnabled)
                     if summarizeFlag {
                         try await runSummarization(transcript: text, sourcePath: path)
                     }
@@ -311,8 +339,7 @@ public enum MeetingCaptureApp {
                     captureAllAudio: allAudio,
                     meetingApps: allAudio
                         ? [] : MeetingApp.catalog.filter { persistedConfig.enabledMeetingAppIDs.contains($0.id) },
-                    enableMic: !noMic,
-                    aecEnabled: !noAec && persistedConfig.aecEnabled
+                    enableMic: !noMic
                 )
 
                 guard !wavFiles.isEmpty else { exit(0) }
@@ -322,7 +349,9 @@ public enum MeetingCaptureApp {
                     let transcriber = Transcriber(
                         model: whisperModel, language: whisperLang, modelFolder: whisperFolder)
                     try await transcriber.load()
-                    pipeline = RecordingPipeline(transcriber: transcriber, detector: SpeakerKitDetector())
+                    pipeline = RecordingPipeline(
+                        transcriber: transcriber, detector: SpeakerKitDetector(),
+                        removeEcho: !noAec && persistedConfig.aecEnabled)
                 }
                 let result = try await RecordingPipeline.finish(parts: wavFiles, base: base, pipeline: pipeline)
                 cleanOldAudio(persistedConfig)
@@ -367,9 +396,9 @@ public enum MeetingCaptureApp {
     }
 
     @available(macOS 14.0, *)
-    private static func runTranscription(wavPaths: [String], model: String, modelFolder: String?, language: String?)
-        async throws -> String
-    {
+    private static func runTranscription(
+        wavPaths: [String], model: String, modelFolder: String?, language: String?, removeEcho: Bool
+    ) async throws -> String {
         guard !wavPaths.isEmpty else {
             throw NSError(
                 domain: "Transcription", code: -1,
@@ -380,7 +409,8 @@ public enum MeetingCaptureApp {
 
         let transcriber = Transcriber(model: model, language: language, modelFolder: modelFolder)
         try await transcriber.load()
-        let pipeline = RecordingPipeline(transcriber: transcriber, detector: SpeakerKitDetector())
+        let pipeline = RecordingPipeline(
+            transcriber: transcriber, detector: SpeakerKitDetector(), removeEcho: removeEcho)
         let result = try await pipeline.transcribe(parts: wavPaths.map { URL(fileURLWithPath: $0) })
         for note in result.notes { print("⚠  \(note)") }
         let text = result.formatted

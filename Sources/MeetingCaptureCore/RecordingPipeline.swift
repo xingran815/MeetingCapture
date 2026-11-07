@@ -49,11 +49,15 @@ struct RecordingPipeline {
         /// A track sounded like only noise, so its lines may be invented and only the
         /// audio can settle it. Finding from the deep-review re-check, D-54 and D-56.
         var hasDoubtfulTrack = false
+        /// The cleaned mic of each part, if asked for, beside the raw part.
+        var cleanedAudio: [URL] = []
         var formatted: String { SpeakerLabels.format(segments) }
     }
 
     let transcriber: SpeechTranscribing
     let detector: SpeakerDetecting?
+    /// Off for `--no-aec` and the AEC setting.
+    var removeEcho = true
 
     /// Transcribes every part of a recording. A part with a silent track skips it,
     /// which is how a recording with the mic off ends up with no `You` label.
@@ -65,7 +69,10 @@ struct RecordingPipeline {
     /// review: showing that as one speaker states a guess as fact, and a rename would
     /// then merge different people. So later parts carry their own labels, such as
     /// `Speaker 1 (part 2)`, and renaming two to one name is how they're joined.
-    func transcribe(parts: [URL]) async throws -> Transcript {
+    ///
+    /// The mic goes through `EchoRemover` first, working on copies, so the raw part is
+    /// never changed. If that fails, the raw mic is transcribed instead and a note says so.
+    func transcribe(parts: [URL], keepingCleanedAudio: Bool = false) async throws -> Transcript {
         let work = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: work) }
@@ -75,6 +82,7 @@ struct RecordingPipeline {
         var offset = 0.0
         var detectedSpeakers = false
         var hasDoubtfulTrack = false
+        var cleanedAudio: [URL] = []
         for (index, part) in parts.enumerated() {
             // A crashed WAV reads as empty until its header is repaired. Nothing else
             // about the file changes, and a healthy one isn't touched.
@@ -95,7 +103,42 @@ struct RecordingPipeline {
                         + "so you can check them against it.")
             }
             if let url = tracks.mic {
-                mic = SpeakerLabels.labelMic(try await transcriber.transcribeSegments(path: url.path))
+                var source = url
+                var evidence: EchoEvidence?
+                if removeEcho, let system = tracks.system {
+                    do {
+                        let cleaned = work.appendingPathComponent(UUID().uuidString + ".wav")
+                        if let result = try EchoRemover.clean(mic: url, system: system, to: cleaned) {
+                            source = result.cleaned
+                            evidence = result.evidence
+                        }
+                    } catch {
+                        notes.append(
+                            "\(part.lastPathComponent): echo removal failed, so the raw mic was transcribed, "
+                                + "and its lines may include the other side: \(error.localizedDescription)")
+                    }
+                }
+                mic = SpeakerLabels.labelMic(try await transcriber.transcribeSegments(path: source.path))
+                if let evidence {
+                    let kept = mic.filter { !evidence.looksLikeEcho(start: $0.start, end: $0.end) }
+                    if kept.count < mic.count {
+                        notes.append(
+                            "\(part.lastPathComponent): left out \(mic.count - kept.count) mic line(s) that were only "
+                                + "leftover echo, judged by timing and level, not by their words.")
+                    }
+                    mic = kept
+                }
+                if keepingCleanedAudio, source != url {
+                    let beside = Self.cleanedURL(for: part)
+                    // Never over a file that may be something else of the user's.
+                    if !FileManager.default.fileExists(atPath: beside.path),
+                        !FileManager.default.fileExists(
+                            atPath: beside.deletingPathExtension().appendingPathExtension("m4a").path),
+                        (try? FileManager.default.moveItem(at: source, to: beside)) != nil
+                    {
+                        cleanedAudio.append(beside)
+                    }
+                }
             }
             if let url = tracks.system {
                 let segments = try await transcriber.transcribeSegments(path: url.path)
@@ -126,7 +169,16 @@ struct RecordingPipeline {
                 "This recording has \(parts.count) parts, and speakers are detected separately in each. "
                     + "Speaker 1 (part 2) may be the same person as Speaker 1. Give them one name to join them.")
         }
-        return Transcript(segments: all, notes: notes, hasDoubtfulTrack: hasDoubtfulTrack)
+        return Transcript(
+            segments: all, notes: notes, hasDoubtfulTrack: hasDoubtfulTrack, cleanedAudio: cleanedAudio)
+    }
+
+    /// `meeting.wav` gives `meeting_clean.wav`, and `meeting_part2.wav` gives
+    /// `meeting_part2_clean.wav`. Neither reads as a part of the recording.
+    static func cleanedURL(for part: URL) -> URL {
+        part.deletingLastPathComponent()
+            .appendingPathComponent(part.deletingPathExtension().lastPathComponent + "_clean")
+            .appendingPathExtension("wav")
     }
 
     /// Encodes each WAV to M4A, keeping any WAV whose M4A can't be proven good.
@@ -161,7 +213,7 @@ struct RecordingPipeline {
     ) async throws -> Transcript? {
         var transcript: Transcript?
         if let pipeline {
-            let result = try await pipeline.transcribe(parts: parts)
+            let result = try await pipeline.transcribe(parts: parts, keepingCleanedAudio: true)
             try (result.formatted + "\n").write(
                 to: base.appendingPathExtension("txt"), atomically: true, encoding: .utf8)
             transcript = result
@@ -171,7 +223,10 @@ struct RecordingPipeline {
         var sidecar = RecordingSidecar.load(at: sidecarURL) ?? RecordingSidecar(createdAt: now, state: .recording)
         sidecar.state = .processed
         sidecar.pid = nil
-        sidecar.audioFiles = archived.files.map(\.lastPathComponent)
+        // The cleaned mic is extra, made from the raw part, which is archived on its own
+        // above. So a problem here can't cost the recording, or block retention's proof.
+        let cleaned = archive(parts: transcript?.cleanedAudio ?? [], encoder: encoder)
+        sidecar.audioFiles = (archived.files + cleaned.files).map(\.lastPathComponent)
         // A WAV that couldn't be archived may hold audio the transcript never reached,
         // such as after a stale header, so it mustn't become eligible for deletion. The
         // same goes for a doubtful track, because only the audio can settle its lines.
@@ -181,7 +236,7 @@ struct RecordingPipeline {
             sidecar.transcribedAt = now
         }
         try sidecar.save(to: sidecarURL)
-        for line in archived.kept { print("⚠  \(line)") }
+        for line in archived.kept + cleaned.kept { print("⚠  \(line)") }
         return transcript
     }
 }

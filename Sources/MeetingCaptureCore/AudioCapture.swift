@@ -27,7 +27,6 @@ final class AudioCapture: NSObject {
 
     private var stream: SCStream?
     private var micCapture: MicCapture?
-    private var echo: EchoCanceller?
     private let micGate = MicStartGate()
 
     // Continuation that run() awaits; resumed when capture ends
@@ -60,8 +59,7 @@ final class AudioCapture: NSObject {
     }
 
     func run(
-        duration: Double, outputPath: String, captureAllAudio: Bool, meetingApps: [MeetingApp], enableMic: Bool,
-        aecEnabled: Bool
+        duration: Double, outputPath: String, captureAllAudio: Bool, meetingApps: [MeetingApp], enableMic: Bool
     ) async throws -> [URL] {
         targetDuration = duration
 
@@ -150,32 +148,16 @@ final class AudioCapture: NSObject {
         print("  WAV file created")
 
         // 6b. Optionally start mic capture and route into the writer ──────────
-        // When AEC is enabled, mic samples flow through EchoCanceller first;
-        // its onCleanMic callback then feeds TrackWriter. When AEC is off,
-        // MicCapture feeds TrackWriter directly.
+        // The mic goes in raw: echo is removed after the call, from a copy (`EchoRemover`),
+        // so the recording itself can always be gone back to.
         var micStatus = "disabled"
-        var aecStatus = "off"
         var mic: MicCapture?
-        var canceller: EchoCanceller?
         if enableMic {
             do {
                 let m = try MicCapture()
-                if aecEnabled {
-                    let c = EchoCanceller()
-                    c.onCleanMic = { [weak writer] ptr, frames in
-                        writer?.pushMic(mono: ptr, frameCount: frames)
-                    }
-                    m.onSamples = { [weak c, micGate] ptr, frames in
-                        guard micGate.passes else { return }
-                        c?.pushMic(ptr, frameCount: frames)
-                    }
-                    canceller = c
-                    aecStatus = "on (Speex, \(EchoCanceller.tailMs) ms tail)"
-                } else {
-                    m.onSamples = { [weak writer, micGate] ptr, frames in
-                        guard micGate.passes else { return }
-                        writer?.pushMic(mono: ptr, frameCount: frames)
-                    }
+                m.onSamples = { [weak writer, micGate] ptr, frames in
+                    guard micGate.passes else { return }
+                    writer?.pushMic(mono: ptr, frameCount: frames)
                 }
                 try m.start()
                 mic = m
@@ -186,7 +168,6 @@ final class AudioCapture: NSObject {
             }
         }
         self.micCapture = mic
-        self.echo = canceller
 
         // 7. Print summary ─────────────────────────────────────────────────────
         print(
@@ -194,7 +175,6 @@ final class AudioCapture: NSObject {
             ┌──────────────────────────────────────────┐
             │  Capture target : \(targetLabel.padding(toLength: 22, withPad: " ", startingAt: 0))│
             │  Mic            : \(micStatus.padding(toLength: 22, withPad: " ", startingAt: 0))│
-            │  AEC            : \(aecStatus.padding(toLength: 22, withPad: " ", startingAt: 0))│
             │  Duration       : \("\(Int(duration))s".padding(toLength: 22, withPad: " ", startingAt: 0))│
             │  Format         : \(Self.formatDescription.padding(toLength: 22, withPad: " ", startingAt: 0))│
             │  Output         : \(url.lastPathComponent.padding(toLength: 22, withPad: " ", startingAt: 0))│
@@ -230,7 +210,6 @@ final class AudioCapture: NSObject {
                     if self.stopper.claimStop() {
                         self.micCapture?.stop()
                         self.micCapture = nil
-                        self.echo = nil
                         _ = self.writer?.finish()
                         self.writer = nil
                         self.stopCont = nil
@@ -272,7 +251,6 @@ final class AudioCapture: NSObject {
             try? await stream?.stopCapture()
             micCapture?.stop()
             micCapture = nil
-            echo = nil
 
             let frames = capturedFrames
             let captured = Double(frames) / 48_000.0
@@ -394,7 +372,6 @@ extension AudioCapture: SCStreamOutput {
         }
         micGate.open()
         writer?.pushSystem(pcmBuffer)
-        echo?.pushReference(pcmBuffer)
         printProgress(frameLength: Int(pcmBuffer.frameLength))
     }
 

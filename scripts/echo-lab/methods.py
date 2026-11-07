@@ -374,3 +374,27 @@ METHODS.update({"dtln-512": lambda m, r: dtln(m, r, 512)})
 METHODS.update({
     "ls8h2-res": _ls(win=8.0, hop=2.0, res={"floor_db": -50, "over": 16.0}),
 })
+
+
+def product(mic, ref):
+    """The code a user gets, through the binary's test-only flag."""
+    import os
+    import wave
+
+    n = min(len(mic), len(ref))
+    with tempfile.TemporaryDirectory(dir=lab.LAB) as d:
+        two, one = Path(d, "two.wav"), Path(d, "one.wav")
+        with wave.open(str(two), "wb") as w:
+            w.setnchannels(2)
+            w.setsampwidth(2)
+            w.setframerate(lab.SR)
+            w.writeframes((np.clip(np.stack([mic[:n], ref[:n]], axis=1), -1, 1) * 32767).astype(np.int16).tobytes())
+        env = dict(os.environ, MEETINGCAPTURE_E2E="1")
+        subprocess.run(
+            [str(lab.REPO / ".build/release/MeetingCaptureCLI"), "--clean-echo", str(two), "--clean-echo-out", str(one)],
+            check=True, env=env, stdout=subprocess.DEVNULL,
+        )
+        return lab.read_wav(one)[0][:, 0]
+
+
+METHODS.update({"product": product})

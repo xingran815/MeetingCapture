@@ -11,31 +11,10 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "Speexdsp",
-            path: "Sources/Speexdsp",
-            exclude: ["UPSTREAM.md", "LICENSE"],
-            sources: [
-                "mdf.c",
-                "preprocess.c",
-                "fftwrap.c",
-                "kiss_fft.c",
-                "kiss_fftr.c",
-                "filterbank.c",
-            ],
-            publicHeadersPath: "include",
-            cSettings: [
-                .headerSearchPath("."),
-                .define("FLOATING_POINT"),
-                .define("USE_KISS_FFT"),
-                .define("EXPORT", to: ""),
-            ]
-        ),
-        .target(
             name: "MeetingCaptureCore",
             dependencies: [
                 .product(name: "WhisperKit", package: "WhisperKit"),
                 .product(name: "SpeakerKit", package: "WhisperKit"),
-                "Speexdsp",
             ],
             path: "Sources/MeetingCaptureCore"
         ),

@@ -131,7 +131,7 @@ final class TrackWriter {
         lock.unlock()
     }
 
-    // Called from the mic tap (or from EchoCanceller.onCleanMic when AEC is on).
+    // Called from the mic tap.
     // `samples` is mono float32 — one float per frame.
     func pushMic(mono samples: UnsafePointer<Float>, frameCount: Int) {
         lock.lock()
