@@ -44,6 +44,7 @@ make_stub() {  # file name
 line="$2"
 for a in "\$@"; do line="\$line \${a##*/}"; done
 echo "\$line" >> "\$STUB_TRACE"
+echo "\$line|\$PATH" >> "\${STUB_PATHS:-/dev/null}"
 # Like the real sweep.sh and identity.sh, which exit 2 on an empty range. ci.sh
 # itself carries on after a failed \$(range), so that is what stops it.
 for a in "\$@"; do [ -n "\$a" ] || { echo "bad range" >&2; exit 2; }; done
@@ -93,6 +94,7 @@ cat > "$WORK/bin/swift" <<'STUB'
 if [ "${1:-}" = "--version" ]; then echo "stub swift ${STUB_SWIFT_VERSION:-1}"; exit 0; fi
 line="swift $*"
 echo "$line" >> "$STUB_TRACE"
+echo "$line|$PATH" >> "${STUB_PATHS:-/dev/null}"
 # `swift test list` prints only the listed tests (the unit step counts lines with a slash).
 if [ "${1:-}" = "test" ] && [ "${2:-}" = "list" ]; then
     if [ "${STUB_FAIL:-}" = "$line" ]; then echo "error: seeded failure" >&2; exit 1; fi
@@ -133,6 +135,7 @@ fi
 n="$(printf '%s\n' "$LIST" | awk -v c="$3" 'BEGIN{split(c,a,",");for(i in a)w[a[i]]=1} {split($0,p,"/"); if(p[1] in w)k++} END{print k+0}')"
 if [ -n "${XC_DELTA_FOR:-}" ]; then case "$3" in *"$XC_DELTA_FOR"*) n=$((n + XC_DELTA)) ;; esac; fi
 echo "$line" >> "$STUB_TRACE"
+echo "$line|$PATH" >> "${STUB_PATHS:-/dev/null}"
 touch "$XC_DIR/run.$$"
 echo "$3 $(ls "$XC_DIR" | grep -c '^run\.')" >> "$XC_DIR/counts"
 echo "start $3" >> "$XC_DIR/events"
@@ -209,6 +212,38 @@ for mode in --unit --production --full --live; do
     same "$mode runs its listed steps, in order" "$WORK/want"
     if grep -qxE 'LINT-RAN.*|SWEEP-RAN.*' "$STUB_TRACE"; then bad "$mode ran lint.sh or sweep.sh"
     else ok "$mode doesn't run lint.sh or sweep.sh"; fi
+done
+
+# Finding (M3.2 --full): unit_tests put Tests/FakeBin on PATH in the calling shell, so the
+# no-fake-CLI guard ran with the fake CLIs and failed. The stubs record their PATH; the unit
+# step's stubs must see FakeBin and the guard's stub must not. Matched on the last path part,
+# since the temporary repo's own path is in every PATH entry.
+export STUB_PATHS="$WORK/paths.log"
+path_has_fakebin() {  # line-prefix: 0 when every recorded line with that prefix has FakeBin on PATH
+    local found=1 l
+    while IFS= read -r l; do
+        found=0
+        case ":${l#*|}:" in *"/Tests/FakeBin:"*) ;; *) return 1 ;; esac
+    done < <(grep -F "$1" "$STUB_PATHS")
+    return "$found"
+}
+path_lacks_fakebin() {  # line-prefix: 0 when at least one such line exists and none has FakeBin
+    local found=1 l
+    while IFS= read -r l; do
+        found=0
+        case ":${l#*|}:" in *"/Tests/FakeBin:"*) return 1 ;; esac
+    done < <(grep -F "$1" "$STUB_PATHS")
+    return "$found"
+}
+for mode in --production --full; do
+    : > "$STUB_PATHS"; FAIL=""; check_cmd "$mode"
+    if [ "$RC" -ne 0 ]; then bad "Finding (M3.2 --full): check.sh $mode failed with healthy stubs" "$OUT"; continue; fi
+    if path_has_fakebin "swift build --build-tests" && path_has_fakebin "xcrun xctest"; then
+        ok "Finding (M3.2 --full): check.sh $mode's unit step sees Tests/FakeBin on PATH"
+    else bad "check.sh $mode: the unit step's stubs didn't see Tests/FakeBin" "$(cat "$STUB_PATHS")"; fi
+    if path_lacks_fakebin "test-guard|"; then
+        ok "Finding (M3.2 --full): check.sh $mode runs the guard without Tests/FakeBin on PATH"
+    else bad "check.sh $mode: the guard ran with Tests/FakeBin on PATH (or didn't run)" "$(cat "$STUB_PATHS")"; fi
 done
 
 expected --production > "$WORK/want"
@@ -583,6 +618,16 @@ if [ "$RC" -ne 0 ] && printf '%s' "$OUT" | grep -q "BASE_SHA isn't set"; then
     ok "Finding (M3.1): ci.sh main without BASE_SHA fails"
 else bad "ci.sh main without BASE_SHA: exit $RC" "trace: $(cat "$STUB_TRACE")
 $OUT"; fi
+
+# Finding (M3.2 --full): the same for ci.sh's test job.
+: > "$STUB_PATHS"; FAIL=""; ci_main "$BASE"
+if [ "$RC" -ne 0 ]; then bad "Finding (M3.2 --full): ci.sh main failed with healthy stubs" "$OUT"
+else
+    if path_has_fakebin "swift test --skip-build"; then ok "Finding (M3.2 --full): ci.sh's unit step sees Tests/FakeBin on PATH"
+    else bad "ci.sh: the unit step didn't see Tests/FakeBin" "$(cat "$STUB_PATHS")"; fi
+    if path_lacks_fakebin "test-guard|"; then ok "Finding (M3.2 --full): ci.sh runs the guard without Tests/FakeBin on PATH"
+    else bad "ci.sh: the guard ran with Tests/FakeBin on PATH (or didn't run)" "$(cat "$STUB_PATHS")"; fi
+fi
 
 printf '\ncheck-modes tests: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

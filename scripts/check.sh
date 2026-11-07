@@ -38,7 +38,8 @@ build() {
 # lock on .build. The counts must add up to the listed total, so no test drops out unseen.
 UNIT_WORKERS=2
 unit_job() { "$ROOT/scripts/unit-job.sh" "$@"; }
-unit_tests() {
+# A subshell, so the fake CLIs on PATH never reach the guard that must run without them.
+unit_tests() (
     local bundle listed classes slow fast serial dir job i ran want failed
     export PATH="$ROOT/Tests/FakeBin:$PATH"
     swift build --build-tests 2>&1 | grep -E 'error:' | tail -5
@@ -82,7 +83,7 @@ unit_tests() {
     echo "unit: ran $ran of $want tests in $i jobs on $UNIT_WORKERS workers"
     [ "$ran" -eq "$want" ] || { echo "unit: ran $ran tests of $want listed"; return 1; }
     [ "$failed" -eq 0 ]
-}
+)
 
 sweep_self_tests() {
     scripts/test-sweeps.sh | tail -1

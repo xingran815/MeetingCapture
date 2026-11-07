@@ -21,7 +21,8 @@ range() {
 # `…SlowTests`, which `check.sh` runs locally. Each behaviour keeps a fast core test here.
 # The run must cover exactly the listed tests that aren't slow, so none drops out unseen.
 CI_SKIP='SlowTests/'
-unit_tests() {
+# A subshell, so the fake CLIs on PATH never reach the guard that must run without them.
+unit_tests() (
     local listed want out ran
     export PATH="$ROOT/Tests/FakeBin:$PATH"
     swift build --build-tests || return 1
@@ -34,7 +35,7 @@ unit_tests() {
     [ "$rc" -eq 0 ] || return 1
     ran="$(printf '%s\n' "$out" | grep -E 'Executed [0-9]+ tests?' | tail -1 | sed -E 's/.*Executed ([0-9]+) tests?.*/\1/')"
     [ "${ran:-0}" -eq "$want" ] || { echo "ci: ran ${ran:-0} unit tests, expected $want"; return 1; }
-}
+)
 
 build_and_test() {
     timed "debug build" swift build || die "debug build"
