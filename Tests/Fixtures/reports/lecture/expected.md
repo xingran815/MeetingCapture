@@ -47,7 +47,7 @@ An **introduction** to gradient descent: the loss landscape, the learning rate, 
 ## AI insights
 _Suggestions from the AI, not things that were said._
 
-- AI: **Implement** the toy dataset exercise with two learning rates and compare the loss curves.
+- AI: Implement the toy dataset exercise with two learning rates and compare the loss curves.
 
 ## What the review changed
 

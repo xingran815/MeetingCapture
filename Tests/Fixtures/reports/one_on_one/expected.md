@@ -20,9 +20,9 @@ A manager and report reviewed the quarter. The manager gave feedback on late des
 ## Commitments by each side
 
 - [ ] **Key:** Send design doc drafts two days ahead (owner: You) (due: from now on)
-- [ ] Post a ranked **priority** list in the team channel (owner: Speaker 1) (due: Wednesday)
-- [ ] Ask **platform** whether the build-cache work can be shared as a cross-team project (owner: Speaker 1)
-- [ ] Start **mentoring** the new hire (owner: You)
+- [ ] Post a ranked priority list in the team channel (owner: Speaker 1) (due: Wednesday)
+- [ ] Ask platform whether the build-cache work can be shared as a cross-team project (owner: Speaker 1)
+- [ ] Start mentoring the new hire (owner: You)
 
 ## Career and growth topics
 
@@ -36,7 +36,7 @@ A manager and report reviewed the quarter. The manager gave feedback on late des
 ## AI insights
 _Suggestions from the AI, not things that were said._
 
-- AI: Sending drafts early also helps the tech lead goal, since it shows **influence** across teams.
+- AI: Sending drafts early also helps the tech lead goal, since it shows influence across teams.
 
 ## What the review changed
 

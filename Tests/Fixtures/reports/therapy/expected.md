@@ -5,7 +5,7 @@ _Therapy session · 2027-01-15 08:00 · about 00:04:25 · reviewed_
 ## At a glance
 
 - Worry about failing the **presentation**, with poor sleep and a tight chest. _(Issues raised by the client)_
-- Write down three actions this week that fit being honest and **prepared** _(To-dos and actions)_
+- Write down three actions this week that fit being honest and prepared _(To-dos and actions)_
 
 ## Summary
 
@@ -25,12 +25,12 @@ The client described fear of failing an upcoming **presentation**, with a tight 
 
 ## To-dos and actions
 
-- [ ] **Key:** Write down three actions this week that fit being honest and **prepared**
-- [ ] **Practise** the defusion phrase twice a day
+- [ ] **Key:** Write down three actions this week that fit being honest and prepared
+- [ ] Practise the defusion phrase twice a day
 
 ## S.M.A.R.T. goals
 
-- **Practise** the defusion phrase twice a day and rehearse the opening of the talk out loud three times before Friday. — “Twice a day and three rehearsals by Friday. I can do that.” (by: Friday)
+- Practise the defusion phrase twice a day and rehearse the opening of the talk out loud three times before Friday. — “Twice a day and three rehearsals by Friday. I can do that.” (by: Friday)
 
 ## Concepts to explore
 
@@ -49,8 +49,8 @@ The client described fear of failing an upcoming **presentation**, with a tight 
 ## AI insights on each issue
 _From the AI, not the therapist, and not clinical advice._
 
-- AI: The thought sounded less true to the client once it was **reworded**, which suggests defusion may suit her. _(unsure: One reaction in one session.)_
-- AI: **Rehearsing** out loud and the values exercise both give the client something concrete before Friday.
+- AI: The thought sounded less true to the client once it was reworded, which suggests defusion may suit her. _(unsure: One reaction in one session.)_
+- AI: Rehearsing out loud and the values exercise both give the client something concrete before Friday.
 
 ## What the review changed
 

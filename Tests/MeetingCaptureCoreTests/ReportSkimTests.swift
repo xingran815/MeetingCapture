@@ -194,7 +194,9 @@ final class ReportSkimTests: XCTestCase {
     func testKeywordsKeepOnlyPhrasesThatAreInTheItem() {
         let it = item("Ship the beta on Friday", answer: "Maybe Tuesday")
         let kept = SummaryPipeline.keywords(["beta", "Zebra", "Friday", "tuesday"], in: it)
-        XCTAssertEqual(kept, ["beta", "Friday", "tuesday"], "a phrase from the answer counts; Zebra is not there")
+        XCTAssertEqual(kept, ["beta"], "only the first valid phrase is kept")
+        let skipped = SummaryPipeline.keywords(["Zebra", "Friday", "beta"], in: it)
+        XCTAssertEqual(skipped, ["Friday"], "Zebra is not in the item, so it is skipped and Friday is the one kept")
         XCTAssertNil(SummaryPipeline.keywords(["Zebra", "Unicorn"], in: it), "nothing found is nil, not []")
     }
 
@@ -218,38 +220,45 @@ final class ReportSkimTests: XCTestCase {
         let it = item("x \(long61) y b")
         XCTAssertNil(SummaryPipeline.keywords(["b", " b ", "", "   ", long61], in: it))
         let both = item("ok \(long60) and ab")
-        XCTAssertEqual(SummaryPipeline.keywords(["ab", long60, long61], in: both), ["ab", long60])
+        XCTAssertEqual(
+            SummaryPipeline.keywords([long61, "b", "", "ab", long60], in: both), ["ab"], "bad ones skipped first")
+        XCTAssertEqual(SummaryPipeline.keywords([long61, "b", long60, "ab"], in: both), [long60], "60 is allowed")
     }
 
     func testDuplicatesInAnyCaseAndWhitespaceAreCollapsed() {
         let it = item("Ship the beta on Friday")
         XCTAssertEqual(
-            SummaryPipeline.keywords(["Beta", "beta", "BETA", " beta ", "friday"], in: it), ["Beta", "friday"])
+            SummaryPipeline.keywords(["Beta", "beta", "BETA", " beta ", "friday"], in: it), ["Beta"])
+        XCTAssertEqual(
+            SummaryPipeline.keywords(["", "  ", "Beta", "beta"], in: it), ["Beta"],
+            "blank first, then the first real one")
     }
 
     func testNonStringKeywordsAreIgnored() {
         let it = item("Ship the beta on Friday 12")
         let raw: [Any] = [1, NSNull(), ["beta"], ["a": "b"], true, "beta", 12, "Friday"]
-        XCTAssertEqual(SummaryPipeline.keywords(raw, in: it), ["beta", "Friday"])
+        XCTAssertEqual(SummaryPipeline.keywords(raw, in: it), ["beta"])
+        let rawFirst: [Any] = [1, NSNull(), ["beta"], true, 12, "Friday"]
+        XCTAssertEqual(SummaryPipeline.keywords(rawFirst, in: it), ["Friday"], "non-strings skipped, first string kept")
         XCTAssertNil(SummaryPipeline.keywords("beta", in: it), "a string instead of a list")
         XCTAssertNil(SummaryPipeline.keywords(nil, in: it))
         XCTAssertNil(SummaryPipeline.keywords([String: Any](), in: it))
         XCTAssertNil(SummaryPipeline.keywords([Any](), in: it))
     }
 
-    func testAtMostThreeKeywordsAreKept() {
+    func testAtMostOneKeywordIsKept() {
         let it = item("one two three four five")
-        XCTAssertEqual(
-            SummaryPipeline.keywords(["one", "two", "three", "four", "five"], in: it), ["one", "two", "three"])
-        XCTAssertEqual(SummaryPipeline.maxKeywords, 3)
-        // A dropped phrase doesn't use up a place.
-        XCTAssertEqual(
-            SummaryPipeline.keywords(["zzz", "one", "yyy", "two", "three", "four"], in: it), ["one", "two", "three"])
+        XCTAssertEqual(SummaryPipeline.keywords(["one", "two", "three", "four", "five"], in: it), ["one"])
+        XCTAssertEqual(SummaryPipeline.maxKeywords, 1)
+        // A dropped phrase doesn't use up the place.
+        XCTAssertEqual(SummaryPipeline.keywords(["zzz", "yyy", "two", "three", "four"], in: it), ["two"])
     }
 
     func testKeywordsLookInTheTextAndTheAnswerOfTheItem() {
         let qa = item("What is the plan?", answer: "Launch in March")
-        XCTAssertEqual(SummaryPipeline.keywords(["plan", "March"], in: qa), ["plan", "March"])
+        XCTAssertEqual(SummaryPipeline.keywords(["plan", "March"], in: qa), ["plan"])
+        XCTAssertEqual(
+            SummaryPipeline.keywords(["Zebra", "March"], in: qa), ["March"], "a phrase only in the answer counts")
         let noText = Report.Item(answer: "only an answer here")
         XCTAssertEqual(SummaryPipeline.keywords(["answer"], in: noText), ["answer"])
         let empty = Report.Item()
@@ -400,28 +409,28 @@ final class ReportSkimTests: XCTestCase {
         let list: [[String: Any]] = [
             rawItem(
                 "Ship the beta on Friday", priority: "high",
-                keywords: ["beta", "Zebra", String(repeating: "b", count: 61), "BETA", 3, "Friday", "ship", "the"]),
+                keywords: ["Zebra", String(repeating: "b", count: 61), 3, "", "Friday", "beta", "ship"]),
             rawItem("No keywords here", keywords: "not a list"),
             rawItem("Question text", keywords: ["answer word"], answer: "an answer word appears"),
         ]
         let (outcome, _) = try await run(
-            sections: reply(["actions": list]), review: reply(["actions": list], review: true))
-        let got = items(outcome.report, "actions")
-        XCTAssertEqual(got[0].keywords, ["beta", "Friday", "ship"])
+            sections: reply(["who_said_what": list]), review: reply(["who_said_what": list], review: true))
+        let got = items(outcome.report, "who_said_what")
+        XCTAssertEqual(got[0].keywords, ["Friday"], "invalid phrases first are skipped; one is kept")
         XCTAssertNil(got[1].keywords)
         XCTAssertEqual(got[2].keywords, ["answer word"])
     }
 
     func testTheReviewIsGivenEachItemsPriorityAndKeywords() async throws {
         let draft: [[String: Any]] = [
-            rawItem("Ship the beta on Friday", priority: "high", keywords: ["beta", "Friday"]),
+            rawItem("Ship the beta on Friday", priority: "high", keywords: ["Zebra", "Friday", "beta"]),
             rawItem("Plain item"),
         ]
         let (_, backend) = try await run(
-            sections: reply(["actions": draft]), review: reply(["actions": draft], review: true))
+            sections: reply(["who_said_what": draft]), review: reply(["who_said_what": draft], review: true))
         let input = try XCTUnwrap(backend.calls(.frontier).first).input
         XCTAssertTrue(input.contains("\"priority\":\"high\""), input)
-        XCTAssertTrue(input.contains("\"keywords\":[\"beta\",\"Friday\"]"), input)
+        XCTAssertTrue(input.contains("\"keywords\":[\"Friday\"]"), input)
         XCTAssertTrue(input.contains("\"priority\":\"normal\""), "an unset priority goes out as normal")
         XCTAssertTrue(input.contains("\"keywords\":[]"), "no keywords go out as an empty list")
     }
@@ -436,19 +445,89 @@ final class ReportSkimTests: XCTestCase {
         }
     }
 
+    func testTheUserSaidTooManyHighlightsSoThePromptAsksForFewKeywords() throws {
+        let template = try XCTUnwrap(ScenarioCatalog.builtIn.template(named: "meeting"))
+        let prompt = SummaryPipeline.sectionsPrompt(template, language: "English")
+        let line = try XCTUnwrap(
+            prompt.split(separator: "\n").first { $0.contains("\"keywords\"") }.map(String.init), prompt)
+        XCTAssertTrue(line.contains("usually an empty list"), line)
+        XCTAssertTrue(line.contains("one short phrase"), line)
+        XCTAssertTrue(line.contains("At most one item in three"), line)
+        XCTAssertTrue(line.contains("Only \"prose\" and \"bullets\" sections get keywords"), line)
+        XCTAssertTrue(line.contains("every other kind gets an empty list"), line)
+        XCTAssertFalse(line.contains("three phrases") || line.contains("up to three"), line)
+        XCTAssertEqual(SummaryPipeline.maxKeywords, 1)
+    }
+
+    func testNotEverySectionNeedsHighlightsOnlyProseAndBulletsKeepKeywords() async throws {
+        let specs = SectionKind.allCases.map {
+            """
+            {"id":"s_\($0.rawValue)","title":"Sec \($0.rawValue)","kind":"\($0.rawValue)","instructions":"x"}
+            """
+        }.joined(separator: ",")
+        let json = """
+            {"name":"meeting","title":"Every kind","description":"d","rules":[],"sections":[\(specs)]}
+            """
+        let template = try JSONDecoder().decode(ScenarioTemplate.self, from: Data(json.utf8))
+        let catalog = ScenarioCatalog(templates: [template])
+        var raw: [String: [[String: Any]]] = [:]
+        for kind in SectionKind.allCases {
+            raw["s_\(kind.rawValue)"] = [rawItem("Marker \(kind.rawValue) text", keywords: ["Marker"])]
+        }
+        let backend = ScriptedBackend(
+            onComplete: { call in
+                switch call.tier {
+                case .cheap: return Replies.classify("meeting")
+                case .normal: return self.reply(raw)
+                case .frontier: return self.reply(raw, review: true)
+                }
+            })
+        let outcome = try await ReportFixtures.pipeline(backend, redaction: false, catalog: catalog).run(
+            transcript: "[00:00:05] You: Hello there.\n[00:00:09] Speaker 1: Hi, let's begin.", forcedScenario: nil)
+        let html = ReportRenderer.html(outcome.report)
+        for kind in SectionKind.allCases {
+            let id = "s_\(kind.rawValue)"
+            let got = items(outcome.report, id).first?.keywords
+            let start = try XCTUnwrap(html.range(of: "id=\"s-\(id)\""), id)
+            let rest = html[start.upperBound...]
+            let end = rest.range(of: "</section>")?.lowerBound ?? rest.endIndex
+            let marked = rest[..<end].contains("<mark>Marker</mark>")
+            if kind == .prose || kind == .bullets {
+                XCTAssertEqual(got, ["Marker"], "\(kind) keeps its keyword")
+                XCTAssertTrue(marked, "\(kind) is highlighted")
+            } else {
+                XCTAssertNil(got, "\(kind) gets no keywords")
+                XCTAssertFalse(marked, "\(kind) has no <mark>")
+            }
+        }
+    }
+
+    func testActionsAndToDosNeedNoHighlights() async throws {
+        let actions: [[String: Any]] = [rawItem("Send the report on Friday", priority: "high", keywords: ["Friday"])]
+        let bullets: [[String: Any]] = [rawItem("We chose Postgres for storage", keywords: ["Postgres"])]
+        let both = ["actions": actions, "who_said_what": bullets]
+        let (outcome, _) = try await run(sections: reply(both), review: reply(both, review: true))
+        XCTAssertNil(items(outcome.report, "actions").first?.keywords)
+        XCTAssertEqual(items(outcome.report, "who_said_what").first?.keywords, ["Postgres"])
+        let html = ReportRenderer.html(outcome.report)
+        XCTAssertTrue(html.contains("<mark>Postgres</mark>"))
+        XCTAssertFalse(html.contains("<mark>Friday</mark>"))
+    }
+
     // MARK: Tokens
 
     func testAKeywordThatWasATokenComesBackRestoredAndStillHighlights() async throws {
         let transcript = "[00:00:01] You: Mail priya@example.com now."
         let list: [[String: Any]] = [
-            rawItem("Send the file to <EMAIL_1> today", priority: "high", keywords: ["<EMAIL_1>", "today"])
+            rawItem("Send the file to <EMAIL_1> today", priority: "high", keywords: ["<EMAIL_1>"])
         ]
         let (outcome, backend) = try await run(
-            sections: reply(["actions": list]), review: reply(["actions": list], review: true), redaction: true,
+            sections: reply(["who_said_what": list]), review: reply(["who_said_what": list], review: true),
+            redaction: true,
             transcript: transcript)
         let email = "priya@example.com"
-        let it = try XCTUnwrap(items(outcome.report, "actions").first)
-        XCTAssertEqual(it.keywords, [email, "today"])
+        let it = try XCTUnwrap(items(outcome.report, "who_said_what").first)
+        XCTAssertEqual(it.keywords, [email])
         XCTAssertEqual(it.text, "Send the file to \(email) today")
         XCTAssertEqual(outcome.flaggedTokens, [])
         let input = try XCTUnwrap(backend.calls(.frontier).first).input
@@ -467,9 +546,10 @@ final class ReportSkimTests: XCTestCase {
         let transcript = "[00:00:01] You: Mail priya@example.com now."
         let list: [[String: Any]] = [rawItem("Mail <EMAIL_1> now", keywords: ["Mail <EMAIL_1>"])]
         let (outcome, _) = try await run(
-            sections: reply(["actions": list]), review: reply(["actions": list], review: true), redaction: true,
+            sections: reply(["who_said_what": list]), review: reply(["who_said_what": list], review: true),
+            redaction: true,
             transcript: transcript)
-        XCTAssertEqual(items(outcome.report, "actions").first?.keywords, ["Mail priya@example.com"])
+        XCTAssertEqual(items(outcome.report, "who_said_what").first?.keywords, ["Mail priya@example.com"])
     }
 
     // MARK: Markdown

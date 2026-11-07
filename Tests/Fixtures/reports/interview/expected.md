@@ -34,13 +34,13 @@ A backend **engineering** interview covering a past migration project, teamwork,
 
 ## Follow-ups
 
-- [ ] Expect the take-home **exercise** details by email on Monday (due: Monday)
-- [ ] Send **references** to the recruiting contact tonight (due: tonight)
+- [ ] Expect the take-home exercise details by email on Monday (due: Monday)
+- [ ] Send references to the recruiting contact tonight (due: tonight)
 
 ## AI insights
 _Suggestions from the AI, not things that were said._
 
-- AI: Raising the clock-skew **uncertainty** was received well; do it again, and add what you would read to close the gap.
+- AI: Raising the clock-skew uncertainty was received well; do it again, and add what you would read to close the gap.
 
 ## What the review changed
 

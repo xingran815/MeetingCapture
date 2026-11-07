@@ -352,7 +352,7 @@ struct SummaryPipeline {
 
         So the reader can skim, every item also has:
         - "priority": "high" for the few things the reader must not miss (decisions, deadlines, commitments, risks, what changes next), "low" for background, otherwise "normal". Keep "high" very rare: one or two items in the whole report at most, and none if nothing stands out.
-        - "keywords": one to three short phrases copied exactly from this item's "text" or "answer" that carry its meaning, such as a decision, a date, a number, an owner or a named thing; an empty list if none stand out.
+        - "keywords": usually an empty list. Give one short phrase, copied exactly from this item's "text" or "answer", only when the item holds a fact a reader would scan for: a decision, a date, a number or an owner. At most one item in three gets one; never highlight general words. Only "prose" and "bullets" sections get keywords; every other kind gets an empty list.
         """
 
     static func rules(_ template: ScenarioTemplate, language: String) -> String {
@@ -432,7 +432,7 @@ struct SummaryPipeline {
         "text", "speaker", "owner", "due", "answer", "quote", "detail", "confidence", "reason", "source",
     ]
 
-    static let maxKeywords = 3
+    static let maxKeywords = 1
 
     private static let itemSchema: [String: Any] = {
         var properties: [String: Any] = [:]
@@ -547,11 +547,16 @@ struct SummaryPipeline {
         var sections: [String: [Report.Item]] = [:]
         for id in ids {
             guard let value = raw[id] else { continue }
+            // Only long text needs a highlight to skim; actions, questions, goals, concepts
+            // and insights are short already, so their items carry none (user, 2026-11-07).
+            let highlights = [.prose, .bullets].contains(template.sections.first { $0.id == id }?.kind)
             guard let array = value as? [Any] else { return nil }
             var items: [Report.Item] = []
             for element in array {
                 guard let object = element as? [String: Any] else { return nil }
-                items.append(item(from: object))
+                var decoded = item(from: object)
+                if !highlights { decoded.keywords = nil }
+                items.append(decoded)
             }
             sections[id] = items
         }
