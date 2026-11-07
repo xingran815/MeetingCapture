@@ -178,6 +178,29 @@
 .meter i { width: 4px; border-radius: 2px; background: var(--label3); display: block; }
 .meter.live i { background: var(--accent); }
 .meter.you i { background: var(--green-dot); }
+/* Recording waveform: mirrored bars scrolling right to left, newest at the now-line */
+.wave-card { background: var(--window2); border-radius: 14px; padding: 14px 16px 10px; display: flex; flex-direction: column; gap: 10px; }
+.wtrack { display: grid; grid-template-columns: 112px minmax(0, 1fr) 54px; gap: 12px; align-items: center; }
+.wtrack .who { display: flex; flex-direction: column; gap: 1px; }
+.wtrack .who b { font-size: 13px; font-weight: 600; }
+.wtrack .who span { font-size: 11px; color: var(--label2); }
+.wave { position: relative; height: 56px; display: flex; align-items: center; justify-content: flex-end; gap: 2px; overflow: hidden; padding-right: 6px; }
+.wave::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: var(--sep); }
+.wave i { position: relative; flex: none; width: 2px; border-radius: 1px; display: block; }
+.wave.you i { background: var(--green-dot); }
+.wave.them i { background: var(--accent); }
+.wave.frozen i { background: var(--label3); }
+.wave .now { position: absolute; right: 0; top: 2px; bottom: 2px; width: 2px; border-radius: 1px; background: var(--red-dot); }
+.wave.frozen .now { background: var(--orange); }
+.lvl { display: flex; flex-direction: column-reverse; gap: 2px; height: 56px; justify-content: flex-start; }
+.lvl i { height: 4px; width: 100%; border-radius: 1px; background: var(--fill2); display: block; }
+.lvl i.g { background: var(--green-dot); }
+.lvl i.y { background: #ffcc00; }
+.lvl i.r { background: var(--red-dot); }
+.lvlpair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px; align-items: end; }
+.wruler { display: grid; grid-template-columns: 112px minmax(0, 1fr) 54px; gap: 12px; font-size: 11px; color: var(--label2); font-variant-numeric: tabular-nums; }
+.wruler div { display: flex; justify-content: space-between; }
+
 .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--red-dot); display: inline-block; flex: none; }
 .dot.pulse { box-shadow: 0 0 0 4px var(--red-soft); }
 .dot.paused { background: var(--orange); box-shadow: none; }

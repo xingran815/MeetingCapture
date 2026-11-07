@@ -1,7 +1,7 @@
 # Now
-Updated: 2026-11-07 · M5 started on branch `m5-desktop` (issue 9). Step 1 done: six mock-ups published; **waiting on the user's pick.**
+Updated: 2026-11-07 · M5 started on branch `m5-desktop` (issue 9). Step 1 done: the user picked **option 1** (D-91).
 
-**Next step:** 👤 the user picks one of the six mock-ups (private canvas: https://claude.ai/artifact/MGkWWcLXwvs1q3WBqsg73A; sources and the HIG notes in `dev/evidence/m5-mockups/` and `dev/evidence/2026-11-07-m5-hig-and-mockups.md`). Then record the pick as a decision in `dev/DECISIONS.md`, settle the macOS target (`Package.swift` says 14, the spec says 26, D-51), and start step 2 of `docs/specs/05-desktop.md`. No app code before the pick.
+**Next step:** step 2 of `docs/specs/05-desktop.md`: build option 1 (D-91) as a SwiftUI app on `MeetingCaptureCore`. First settle the macOS target (`Package.swift` says 14, the spec says 26, D-51) and whether SwiftPM can make a proper `.app`. Mock-ups: https://claude.ai/artifact/MGkWWcLXwvs1q3WBqsg73A, sources in `dev/evidence/m5-mockups/`, HIG notes in `dev/evidence/2026-11-07-m5-hig-and-mockups.md`.
 **How to check M4:** `dev/evidence/2026-11-07-m4-report.md`: each Done-when, every review finding with its test, and the assumptions with their reasons.
 
 Open loops:
@@ -17,4 +17,4 @@ Open loops:
 - `NetworkRefusal` only covers `URLSession.shared`.
 
 Needs you:
-- M5's design pick: the six mock-ups are up (link above).
+- Confirm the macOS 26 target before app code.

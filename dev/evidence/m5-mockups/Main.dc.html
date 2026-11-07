@@ -94,11 +94,19 @@ body{margin:0}
           <div style="position: absolute; inset: 52px 0 0 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; padding-bottom: 60px;">
             <div style="display: flex; align-items: center; gap: 10px;"><span class="dot {{dotCls}}"></span><span class="h3" style="color: var(--red);">{{recLabel}}</span></div>
             <div class="tabnum" style="font-size: 64px; font-weight: 300; letter-spacing: -.02em;">{{timer}}</div>
-            <div class="card" style="width: 460px; display: flex; flex-direction: column; gap: 10px;">
-              <div style="display: flex; align-items: center; gap: 12px;"><span style="width: 120px;">You · mic</span><div class="meter you">
-                <sc-for list="{{meterYou}}" as="m" hint-placeholder-count="24"><i style="height: {{m}}px;"></i></sc-for></div></div>
-              <div style="display: flex; align-items: center; gap: 12px;"><span style="width: 120px;">Others · Zoom</span><div class="meter live">
-                <sc-for list="{{meterThem}}" as="m" hint-placeholder-count="24"><i style="height: {{m}}px;"></i></sc-for></div></div>
+            <div class="wave-card" style="width: 640px;">
+              <div class="wtrack">
+                <div class="who"><b>You</b><span>Built-in microphone</span></div>
+                <div class="wave you {{frozen}}" aria-label="Your microphone waveform"><sc-for list="{{waveYou}}" as="b" hint-placeholder-count="120"><i style="height: {{b.h}}px; opacity: {{b.o}};"></i></sc-for><span class="now"></span></div>
+                <div class="lvlpair" title="Level"><div class="lvl"><sc-for list="{{lvlYou}}" as="l" hint-placeholder-count="10"><i class="{{l}}"></i></sc-for></div><div class="lvl"><sc-for list="{{lvlYou}}" as="l" hint-placeholder-count="10"><i class="{{l}}"></i></sc-for></div></div>
+              </div>
+              <div class="hr"></div>
+              <div class="wtrack">
+                <div class="who"><b>Others</b><span>Zoom audio</span></div>
+                <div class="wave them {{frozen}}" aria-label="Call audio waveform"><sc-for list="{{waveThem}}" as="b" hint-placeholder-count="120"><i style="height: {{b.h}}px; opacity: {{b.o}};"></i></sc-for><span class="now"></span></div>
+                <div class="lvlpair" title="Level"><div class="lvl"><sc-for list="{{lvlThem}}" as="l" hint-placeholder-count="10"><i class="{{l}}"></i></sc-for></div><div class="lvl"><sc-for list="{{lvlThem}}" as="l" hint-placeholder-count="10"><i class="{{l}}"></i></sc-for></div></div>
+              </div>
+              <div class="wruler"><span></span><div><span>−30 s</span><span>−20 s</span><span>−10 s</span><span>now</span></div><span style="text-align: center;">level</span></div>
             </div>
             <div style="display: flex; gap: 10px;"><button class="btn big" onClick="{{togglePause}}">{{pauseLabel}}  <kbd>⇧⌘P</kbd></button><button class="btn big red" onClick="{{goProc}}">Stop  <kbd style="color: rgba(255,255,255,.85);">⌘.</kbd></button></div>
             <div class="muted small">Saved in 30-minute parts as it goes, so a crash keeps what was recorded.</div>
@@ -145,6 +153,25 @@ body{margin:0}
 <script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":884}}'>
 class Component extends DCLogic {
   constructor(p) { super(p); this.state = { screen: 'idle', dark: false, paused: false }; }
+  /* A speech-like envelope: turns of talk with syllable bumps and quiet gaps.
+     The other side talks while you are quiet, with a little overlap. Older bars fade. */
+  wave(isYou, paused) {
+    const n = 120, out = [];
+    const turns = [[0, 22, false], [22, 30, true], [30, 58, false], [58, 61, true], [61, 84, true], [84, 104, false], [104, 120, false]];
+    for (let i = 0; i < n; i++) {
+      const t = turns.find((r) => i >= r[0] && i < r[1]);
+      const mine = t[2] === isYou;
+      const pos = (i - t[0]) / (t[1] - t[0]);
+      const shape = Math.sin(Math.PI * Math.min(1, pos * 1.15));
+      const syll = .55 + .45 * Math.abs(Math.sin(i * 2.31 + (isYou ? 1.3 : 0.4)) * Math.cos(i * .73));
+      const gap = (i % 9 === 0 || i % 13 === 5) ? .35 : 1;
+      let h = mine ? 6 + 46 * shape * syll * gap : 2 + 3 * Math.abs(Math.sin(i * 1.9));
+      if (isYou && !mine && i > 100) h = 2;
+      out.push({ h: Math.max(2, Math.round(h)), o: paused ? '1' : (0.35 + 0.65 * (i / n)).toFixed(2) });
+    }
+    return out;
+  }
+  level(k) { return Array.from({ length: 10 }, (_, i) => i >= k ? '' : (i < 6 ? 'g' : (i < 8 ? 'y' : 'r'))); }
   renderVals() {
     const s = this.state.screen, go = (x) => () => this.setState({ screen: x, paused: false });
     const names = [['idle','Idle'],['rec','Recording'],['proc','Processing'],['report','Report'],['settings','Settings'],['setup','First run']];
@@ -163,6 +190,9 @@ class Component extends DCLogic {
       clockMin: s === 'rec' ? '15' : (s === 'proc' ? '45' : '02'),
       timer: '12:48', recLabel: paused ? 'Paused' : 'Recording', dotCls: paused ? 'paused' : 'pulse', pauseLabel: paused ? 'Resume' : 'Pause',
       meterYou: paused ? bars(1).map(() => 4) : bars(1), meterThem: paused ? bars(3).map(() => 4) : bars(3),
+      waveYou: this.wave(true, paused), waveThem: this.wave(false, paused),
+      lvlYou: this.level(paused ? 0 : 3), lvlThem: this.level(paused ? 0 : 7),
+      frozen: paused ? 'frozen' : '',
       winTitle: s === 'report' ? 'Roadmap sync' : (s === 'rec' ? 'New recording' : (s === 'proc' ? 'Fri 10:02 recording' : 'Recordings')),
       winSub: s === 'report' ? 'Today 10:02 · 42 min · Company meeting' : (s === 'rec' ? 'Zoom + microphone' : (s === 'proc' ? '42 min · 2 tracks' : '5 recordings')),
       today: rows([{ title: 'Roadmap sync', meta: '10:02 · 42 min · Meeting' }], sel),
