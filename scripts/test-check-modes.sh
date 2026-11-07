@@ -44,8 +44,13 @@ make_stub() {  # file name
 line="$2"
 for a in "\$@"; do line="\$line \${a##*/}"; done
 echo "\$line" >> "\$STUB_TRACE"
+# Like the real sweep.sh and identity.sh, which exit 2 on an empty range. ci.sh
+# itself carries on after a failed \$(range), so that is what stops it.
+for a in "\$@"; do [ -n "\$a" ] || { echo "bad range" >&2; exit 2; }; done
 echo "Executed 3 tests, key \$SEED_SECRET at \$SEED_PATH"
 echo "noise \$SEED_SECRET" >&2
+# A case can make one step change the repo, to see the record notice it.
+if [ -n "\${STUB_HOOK:-}" ] && [ "\${STUB_HOOK_LINE:-}" = "\$line" ]; then eval "\$STUB_HOOK"; fi
 if [ "\${STUB_FAIL:-}" = "\$line" ]; then
     echo "error: seeded failure" >&2
     exit 1
@@ -58,6 +63,7 @@ for n in test-guard e2e e2e-full test-sweeps test-sweeps-isolation test-identity
     make_stub "scripts/$n.sh" "$n"
 done
 make_stub .build/debug/MeetingCaptureCLI MeetingCaptureCLI
+make_stub scripts/identity.sh identity
 # The stub test-check-modes.sh above stands in for this script, which check.sh
 # runs; the real one never calls itself.
 # These must never run from check.sh, so any call is traceable and fails.
@@ -249,6 +255,34 @@ git checkout -q -- scripts/e2e.sh
 rm -f "$REC"; check_cmd --full
 record_has "tree is clean again after the cleanup" "tree clean"
 
+# Finding (M3.1): the record must name the commit the run STARTED on, and call the
+# tree dirty if HEAD moved or the tree was dirty at either end.
+FAIL=""
+export STUB_HOOK_LINE="e2e-full" STUB_HOOK='git commit -q --allow-empty -m "test: mid-run"'
+rm -f "$REC"; check_cmd --full
+unset STUB_HOOK_LINE STUB_HOOK
+record_has "Finding (M3.1): a commit made mid-run records the start sha and tree dirty" \
+    "commit $HEAD_SHA" "tree dirty" "result passed"
+git reset -q --hard "$HEAD_SHA"
+
+printf 'x\n' > stray.txt
+export STUB_HOOK_LINE="e2e-full" STUB_HOOK='rm -f stray.txt'
+rm -f "$REC"; check_cmd --full
+unset STUB_HOOK_LINE STUB_HOOK
+if [ -z "$(git status --porcelain)" ]; then ok "the stub cleaned the tree by the end"; else bad "tree still dirty after the stub"; fi
+record_has "Finding (M3.1): a tree dirty at the start but clean at the end records tree dirty" \
+    "commit $HEAD_SHA" "tree dirty"
+rm -f stray.txt
+
+# Finding (M3.1): a tree that becomes dirty only at the end counts too.
+export STUB_HOOK_LINE="e2e-full" STUB_HOOK='printf late > late.txt'
+rm -f "$REC"; check_cmd --full
+unset STUB_HOOK_LINE STUB_HOOK
+record_has "Finding (M3.1): a tree dirtied during the run records tree dirty" "tree dirty"
+rm -f late.txt
+rm -f "$REC"; check_cmd --full
+record_has "an untouched clean run still records tree clean" "commit $HEAD_SHA" "tree clean"
+
 for mode in --unit --production; do
     rm -f "$REC"; FAIL=""; check_cmd "$mode"
     if [ -e "$REC" ]; then bad "$mode wrote a record"; else ok "$mode writes no record"; fi
@@ -270,6 +304,49 @@ if printf '%s' "$id2" | grep -qE '^id=[0-9a-f]{16}$' && [ "$id2" != "$id1" ]; th
 else bad "cache-id didn't change with Package.resolved" "$id1 / $id2"; fi
 if [ "$(cache_id 2)" != "$id2" ]; then ok "cache-id changes with the compiler version"; else bad "cache-id ignored the compiler version"; fi
 git checkout -q -- Package.resolved
+
+# Finding (M3.1): cache-id dies when Package.resolved is missing, rather than
+# hashing the compiler version alone.
+mv Package.resolved "$WORK/resolved.keep"
+out="$(cache_id)"; rc=$?
+if [ "$rc" -ne 0 ] && ! printf '%s' "$out" | grep -q '^id=' && printf '%s' "$out" | grep -q 'Package.resolved is missing'; then
+    ok "Finding (M3.1): cache-id fails when Package.resolved is missing"
+else bad "cache-id with no Package.resolved: exit $rc" "$out"; fi
+mv "$WORK/resolved.keep" Package.resolved
+
+# Finding (M3.1): ci.sh main had no test. Its steps, in order; a failure at each
+# stops it; no BASE_SHA fails. The sweep and identity stubs trace as SWEEP-RAN and identity.
+ci_main() {  # base-sha-or-empty
+    : > "$STUB_TRACE"
+    if [ -n "$1" ]; then
+        OUT="$(env -u CI PATH="$WORK/bin:$PATH" STUB_FAIL="$FAIL" BASE_SHA="$1" scripts/ci.sh main 2>&1)"
+    else
+        OUT="$(env -u CI -u BASE_SHA PATH="$WORK/bin:$PATH" STUB_FAIL="$FAIL" scripts/ci.sh main 2>&1)"
+    fi
+    RC=$?
+}
+BASE="$(git rev-parse HEAD)"
+printf '%s\n' "swift build" "swift build -c release" "swift test" "test-guard" \
+    "SWEEP-RAN --tree" "SWEEP-RAN --outgoing $BASE..HEAD" "identity $BASE..HEAD" > "$WORK/main-want"
+FAIL=""; ci_main "$BASE"
+if [ "$RC" -ne 0 ]; then bad "ci.sh main failed with healthy stubs" "$OUT"
+else same "Finding (M3.1): ci.sh main runs its seven steps in order" "$WORK/main-want"; fi
+cp "$WORK/main-want" "$WORK/main-steps"
+i=0
+while IFS= read -r line; do
+    i=$((i+1))
+    head -n "$i" "$WORK/main-want" > "$WORK/want"
+    FAIL="$line"; ci_main "$BASE"
+    if [ "$RC" -eq 0 ]; then bad "ci.sh main: failing '$line' still exited 0" "$OUT"
+    elif [ "$(cat "$STUB_TRACE")" != "$(cat "$WORK/want")" ]; then bad "ci.sh main: failing '$line' didn't stop the run" "$(cat "$STUB_TRACE")"
+    else ok "ci.sh main stops at failing '$line'"; fi
+done < "$WORK/main-steps"
+FAIL=""
+ci_main ""
+if [ "$RC" -ne 0 ] && printf '%s' "$OUT" | grep -q "BASE_SHA isn't set"; then
+    ok "Finding (M3.1): ci.sh main without BASE_SHA fails"
+else bad "ci.sh main without BASE_SHA: exit $RC" "trace: $(cat "$STUB_TRACE")
+$OUT"; fi
 
 printf '\ncheck-modes tests: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

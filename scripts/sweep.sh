@@ -213,8 +213,10 @@ sweep_outgoing() {  # rev-list arguments
     for sha in $shas; do
         local short="${sha:0:9}"
         identity_of "$sha"
-        feed scan_filenames -- git diff-tree --root --no-commit-id -r --name-only --diff-filter=ACMRT "$sha"
-        feed scan_diff -- git diff-tree --root --no-commit-id -p -U0 --no-color --no-ext-diff --diff-filter=ACMRT "$sha"
+        # -m: without it, diff-tree prints nothing for a merge, so what a merge adds
+        # went unswept until CI's tree sweep. From the M3.1 security review.
+        feed scan_filenames -- git diff-tree -m --root --no-commit-id -r --name-only --diff-filter=ACMRT "$sha"
+        feed scan_diff -- git diff-tree -m --root --no-commit-id -p -U0 --no-color --no-ext-diff --diff-filter=ACMRT "$sha"
     done
 }
 

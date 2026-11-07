@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.head_ref }}
+  group: ci-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 # Logic lives in scripts/ci.sh, so every job can be run locally too.

@@ -172,6 +172,34 @@ staged_refuses "staged .swift-format change judges all Swift" "lint: FAILED, swi
 git reset -q --hard HEAD~1
 reset_tree
 
+# Finding (M3.1): --staged runs the STAGED check-workflows.sh, not the working copy's.
+printf '#!/usr/bin/env bash\necho "staged check-workflows refuses everything" >&2\nexit 1\n' > scripts/check-workflows.sh
+git add scripts/check-workflows.sh
+git show HEAD:scripts/check-workflows.sh > scripts/check-workflows.sh
+staged_refuses "Finding (M3.1): staged check-workflows.sh that refuses, good working copy" "staged check-workflows refuses everything"
+reset_tree
+
+printf '# staged edit\n' >> scripts/check-workflows.sh
+git add scripts/check-workflows.sh
+printf '#!/usr/bin/env bash\necho "working copy refuses everything" >&2\nexit 1\n' > scripts/check-workflows.sh
+staged_passes "Finding (M3.1): staged good check-workflows.sh, working copy that refuses"
+reset_tree
+
+# Finding (M3.1): a .yaml workflow was never seen by any rule.
+cp .github/workflows/ci.yml .github/workflows/x.yaml
+git add .github/workflows/x.yaml
+staged_refuses "Finding (M3.1): staged .yaml workflow refused by lint.sh --staged" "name it .yml"
+reset_tree
+cp .github/workflows/ci.yml .github/workflows/x.yaml
+if out="$(scripts/lint.sh 2>&1)"; then
+    fail=$((fail+1)); printf '  FAIL  Finding (M3.1): plain lint.sh passed with a .yaml workflow\n'
+elif printf '%s' "$out" | grep -qF "name it .yml"; then
+    pass=$((pass+1)); printf '  ok    Finding (M3.1): plain lint.sh refuses a .yaml workflow\n'
+else
+    fail=$((fail+1)); printf '  FAIL  Finding (M3.1): .yaml refused for another reason\n%s\n' "$out"
+fi
+reset_tree
+
 # Seconds, not minutes: a seeded refusal comes back well inside 15 s.
 printf 'let  probe=1\n' > Sources/MeetingCaptureCore/Probe.swift
 git add Sources/MeetingCaptureCore/Probe.swift
@@ -209,6 +237,31 @@ else
     fail=$((fail+1)); printf '  FAIL  missing tools, staged: refused for another reason\n%s\n' "$out"
 fi
 reset_tree
+
+# Finding (M3.1): lint.sh --staged never ran through a real `git commit`. Here the
+# real pre-commit hook runs, with a stub sweep.sh, and git itself refuses or commits.
+cp "$SRC/.githooks/pre-commit" .githooks/pre-commit
+printf '#!/usr/bin/env bash\nexit 0\n' > scripts/sweep.sh
+chmod +x .githooks/pre-commit scripts/sweep.sh
+git add .githooks/pre-commit scripts/sweep.sh
+git -c core.hooksPath=/dev/null commit -qm "chore: real hook and stub sweep"
+head_before="$(git rev-parse HEAD)"
+printf 'let  probe=1\n' > Sources/MeetingCaptureCore/Probe.swift
+git add Sources/MeetingCaptureCore/Probe.swift
+out="$(git -c core.hooksPath=.githooks commit -qm "test: bad format" 2>&1)"; rc=$?
+if [ "$rc" -ne 0 ] && [ "$(git rev-parse HEAD)" = "$head_before" ] && printf '%s' "$out" | grep -qF "lint: FAILED, swift format"; then
+    pass=$((pass+1)); printf '  ok    Finding (M3.1): git commit with the real hook refuses bad Swift\n'
+else
+    fail=$((fail+1)); printf '  FAIL  Finding (M3.1): git commit with bad Swift: exit %s\n%s\n' "$rc" "$out"
+fi
+printf 'let probe = 15\n' > Sources/MeetingCaptureCore/Probe.swift
+git add Sources/MeetingCaptureCore/Probe.swift
+out="$(git -c core.hooksPath=.githooks commit -qm "test: good format" 2>&1)"; rc=$?
+if [ "$rc" -eq 0 ] && [ "$(git rev-parse HEAD)" != "$head_before" ]; then
+    pass=$((pass+1)); printf '  ok    Finding (M3.1): git commit with the real hook accepts good Swift\n'
+else
+    fail=$((fail+1)); printf '  FAIL  Finding (M3.1): git commit with good Swift: exit %s\n%s\n' "$rc" "$out"
+fi
 
 printf '\nlint tests: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

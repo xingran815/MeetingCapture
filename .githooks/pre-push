@@ -5,5 +5,19 @@ root="$(git rev-parse --show-toplevel)" || exit 1
 for s in sweep.sh check.sh; do
     [ -x "$root/scripts/$s" ] || { echo "pre-push: scripts/$s is missing; refusing to push." >&2; exit 1; }
 done
-"$root/scripts/sweep.sh" --pre-push || exit 1
+updates="$(cat)"
+printf '%s\n' "$updates" | "$root/scripts/sweep.sh" --pre-push || exit 1
+
+# Unit tests run on the working copy, so say when that isn't what's being pushed.
+# From the M3.1 review.
+head="$(git rev-parse HEAD)"
+differs=0
+[ -z "$(git status --porcelain)" ] || differs=1
+while read -r _ sha _; do
+    [ -n "${sha:-}" ] || continue
+    case "$sha" in *[!0]*) [ "$sha" = "$head" ] || differs=1 ;; esac
+done <<< "$updates"
+if [ "$differs" -eq 1 ]; then
+    echo "pre-push: note: the unit tests below run on the working copy, which isn't what's being pushed. CI tests the pushed commit."
+fi
 exec "$root/scripts/check.sh" --unit

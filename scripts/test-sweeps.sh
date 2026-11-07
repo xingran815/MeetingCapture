@@ -276,5 +276,68 @@ if printf '%s' "$out" | grep -qF "$SEEDED" || printf '%s' "$out" | grep -qF "$SE
 else ok "refusal output has neither the commit id nor its hash"; fi
 if out="$(git push --dry-run origin harmless-name:other-remote-name 2>&1)"; then bad "renamed copy went through under another remote name"; else ok "renamed copy refused under another remote name too"; fi
 
+# ─── Finding (M3.1): diff-tree printed nothing for a merge, so what a merge adds
+# on its own went unswept. Merges are made with hooks off, as a careless one would be.
+git switch -q main; git reset -q --hard main; git clean -qfd -e scripts -e .githooks
+# $1 name, $2 file the merge adds, $3 its content. Leaves the merge on branch $1.
+make_merge() {
+    git switch -q -c "$1-a" main
+    printf 'a\n' > "$1-a.md"; git add "$1-a.md"; git commit -qm "feat: a side"
+    git switch -q -c "$1-b" main
+    printf 'b\n' > "$1-b.md"; git add "$1-b.md"; git commit -qm "feat: b side"
+    git switch -q "$1-a"
+    git merge -q --no-ff --no-commit "$1-b" >/dev/null 2>&1
+    if [ -n "${2:-}" ]; then printf '%s\n' "$3" > "$2"; git add -f "$2"; fi
+    git -c core.hooksPath=/dev/null commit -qm "merge: $1"
+}
+make_merge mkey merge-note.md "key is $KEY"
+if [ "$(git rev-list --parents -n1 HEAD | wc -w | tr -d ' ')" = "3" ]; then ok "the seeded commit is a merge"; else bad "seeded commit isn't a merge"; fi
+if out="$(git push --dry-run origin mkey-a 2>&1)"; then bad "Finding (M3.1): key added only by a merge went through"
+elif printf '%s' "$out" | grep -qF '[secret-openai-style]'; then ok "Finding (M3.1): key added only by a merge refused by [secret-openai-style]"
+else bad "merge key: rule not named" "$out"; fi
+git switch -q main
+
+make_merge mwav merge-call.wav "RIFF"
+if out="$(git push --dry-run origin mwav-a 2>&1)"; then bad "Finding (M3.1): sensitive file added only by a merge went through"
+elif printf '%s' "$out" | grep -qF '[sensitive-file]'; then ok "Finding (M3.1): sensitive file added only by a merge refused by [sensitive-file]"
+else bad "merge wav: rule not named" "$out"; fi
+git switch -q main
+
+make_merge mclean "" ""
+if out="$(git push --dry-run origin mclean-a 2>&1)"; then ok "a clean merge still passes"; else bad "clean merge refused" "$out"; fi
+git switch -q main
+
+# ─── Finding (M3.1): pre-push says when the unit tests run on something other than
+# what's being pushed. Stubs, so no build runs.
+NOTE="isn't what's being pushed"
+git reset -q --hard main; git clean -qfd -e scripts -e .githooks
+git switch -q -c headpush
+printf 'h\n' > h.md; git add h.md; git commit -qm "feat: h"
+if [ -z "$(git status --porcelain)" ]; then ok "tree is clean before the note cases"; else bad "tree not clean" "$(git status --porcelain)"; fi
+out="$(git push --dry-run origin headpush 2>&1)"; rc=$?
+if [ "$rc" -ne 0 ]; then bad "push of HEAD with a clean tree refused" "$out"
+elif printf '%s' "$out" | grep -qF "$NOTE"; then bad "Finding (M3.1): note printed for HEAD with a clean tree" "$out"
+else ok "Finding (M3.1): no note when the pushed sha is HEAD and the tree is clean"; fi
+
+printf 'dirty\n' > dirty.txt
+out="$(git push --dry-run origin headpush 2>&1)"; rc=$?
+if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -qF "$NOTE"; then ok "Finding (M3.1): note printed for a dirty tree"; else bad "dirty tree: no note, or push refused" "$out"; fi
+rm -f dirty.txt
+printf 'changed\n' >> h.md
+out="$(git push --dry-run origin headpush 2>&1)"; rc=$?
+if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -qF "$NOTE"; then ok "Finding (M3.1): note printed for a modified tracked file"; else bad "modified file: no note, or push refused" "$out"; fi
+git checkout -q -- h.md
+
+git switch -q main
+out="$(git push --dry-run origin headpush 2>&1)"; rc=$?
+if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -qF "$NOTE"; then ok "Finding (M3.1): note printed when the pushed sha isn't HEAD"; else bad "other sha: no note, or push refused" "$out"; fi
+
+# A deletion alone is not a difference.
+git push -q origin headpush >/dev/null 2>&1
+out="$(git push --dry-run origin :headpush 2>&1)"; rc=$?
+if [ "$rc" -ne 0 ]; then bad "branch deletion refused" "$out"
+elif printf '%s' "$out" | grep -qF "$NOTE"; then bad "Finding (M3.1): note printed for a deletion alone" "$out"
+else ok "Finding (M3.1): a branch deletion alone isn't a difference"; fi
+
 printf '\nsweep tests: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

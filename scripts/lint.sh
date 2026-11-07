@@ -47,7 +47,7 @@ if [ "$MODE" = "--staged" ]; then
                 swift_files+=("$path") ;;
             .swift-format) all_swift=1 ;;
             scripts/*.sh|.githooks/*) shell_files+=("$path") ;;
-            .github/workflows/*.yml) workflows=1 ;;
+            .github/workflows/*) workflows=1 ;;
         esac
         [ "$path" = "scripts/check-workflows.sh" ] && workflows=1
     done < "$listing"
@@ -66,8 +66,9 @@ if [ "$MODE" = "--staged" ]; then
         if command -v actionlint > /dev/null; then
             (cd "$work" && actionlint .github/workflows/*.yml) || { echo "lint: FAILED, actionlint." >&2; failed=1; }
         fi
-        scripts/check-workflows.sh --self-test || failed=1
-        scripts/check-workflows.sh "$work/.github/workflows" || failed=1
+        # The staged script judges the staged workflows.
+        "$work/scripts/check-workflows.sh" --self-test || failed=1
+        "$work/scripts/check-workflows.sh" || failed=1
     fi
 
     [ "$failed" -eq 0 ] && echo "lint: ok (staged)"

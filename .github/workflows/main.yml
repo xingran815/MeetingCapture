@@ -7,8 +7,8 @@ on:
 permissions:
   contents: read
 
-# Every push is checked from the tip before it, so a cancelled run would leave its
-# commits unswept here.
+# A running check isn't cancelled. GitHub can still drop a queued one when a third
+# push arrives, so its commits then go unswept here; their PR has already swept them.
 concurrency:
   group: main-${{ github.ref }}
   cancel-in-progress: false

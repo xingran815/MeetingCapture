@@ -35,11 +35,13 @@ case "${1:-}" in
         timed "sweep isolation" scripts/test-sweeps-isolation.sh || die "seeded-leak tests left git's environment in place"
         timed "check-mode self-tests" scripts/test-check-modes.sh || die "check-mode tests"
         timed "tree sweep" scripts/sweep.sh --tree || die "tree sweep"
-        timed "commit sweep" scripts/sweep.sh --outgoing "$(range)" || die "sweep of these commits"
+        commits="$(range)" || exit 1
+        timed "commit sweep" scripts/sweep.sh --outgoing "$commits" || die "sweep of these commits"
         ;;
     identity)
         timed "identity self-test" scripts/test-identity.sh || die "identity check self-test"
-        timed "identity" scripts/identity.sh "$(range)" || die "commit identity"
+        commits="$(range)" || exit 1
+        timed "identity" scripts/identity.sh "$commits" || die "commit identity"
         ;;
     lint)
         if [ -n "${CI:-}" ]; then
@@ -71,16 +73,17 @@ case "${1:-}" in
         # The push to main: a clean build, unit tests, then the real sweeps. The PR
         # already ran their self-tests. The workflow then saves this build as the
         # cache for later PRs, so it must never start from a cache itself.
+        commits="$(range)" || exit 1
         build_and_test
         timed "tree sweep" scripts/sweep.sh --tree || die "tree sweep"
-        timed "commit sweep" scripts/sweep.sh --outgoing "$(range)" || die "sweep of these commits"
-        timed "identity" scripts/identity.sh "$(range)" || die "commit identity"
+        timed "commit sweep" scripts/sweep.sh --outgoing "$commits" || die "sweep of these commits"
+        timed "identity" scripts/identity.sh "$commits" || die "commit identity"
         ;;
     cache-id)
         # Goes in the build cache's key, so a new compiler or changed dependencies
         # start clean instead of mixing with old objects. Prints a GITHUB_OUTPUT line.
+        [ -f Package.resolved ] || die "Package.resolved is missing"
         id="$({ swift --version 2>&1; cat Package.resolved; } | shasum -a 256 | cut -c1-16)"
-        [ -n "$id" ] || die "couldn't work out the cache id"
         printf 'id=%s\n' "$id"
         ;;
     *)

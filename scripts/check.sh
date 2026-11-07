@@ -53,14 +53,21 @@ lint_self_tests() {
     scripts/test-sweeps-isolation.sh "$ROOT/scripts/test-check-modes.sh"
 }
 
-# The commit, whether the tree matched it, and the result. A dirty tree means the
-# result doesn't describe the commit, so the verifier has to treat it as no record.
+# The commit the run started on, whether the tree matched it, and the result. A
+# run takes minutes, so the tree counts as dirty if it was dirty at either end or
+# HEAD moved. Dirty means the result doesn't describe the commit, so the verifier
+# has to treat it as no record. From the M3.1 review.
+START_HEAD="$(git rev-parse HEAD)"
+START_STATUS="$(git status --porcelain)"
 save_full_record() {
     local rc=$? result=failed tree=clean
     [ "$rc" -eq 0 ] && result=passed
-    [ -z "$(git status --porcelain)" ] || tree=dirty
+    if [ -n "$START_STATUS" ] || [ -n "$(git status --porcelain)" ] \
+        || [ "$(git rev-parse HEAD)" != "$START_HEAD" ]; then
+        tree=dirty
+    fi
     {
-        printf 'commit %s\n' "$(git rev-parse HEAD)"
+        printf 'commit %s\n' "$START_HEAD"
         printf 'tree %s\n' "$tree"
         printf 'mode %s\n' "$MODE"
         printf 'result %s\n' "$result"
