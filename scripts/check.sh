@@ -165,6 +165,8 @@ fi
 if [ "$MODE" = "--live" ]; then
     step "live"
     timed "live" .build/debug/MeetingCaptureCLI --live-check || die "live check"
+    step "live report: meeting and therapy, for the user to read"
+    timed "live report" scripts/live-report.sh || die "live report"
 fi
 
 timing_log "check $MODE total" "$((SECONDS-START))"

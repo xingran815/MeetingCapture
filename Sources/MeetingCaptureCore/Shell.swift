@@ -168,7 +168,8 @@ final class Shell {
 
         if config.autoSummarize {
             if let text = transcript {
-                await runSummarize(transcript: text, sourcePath: base.appendingPathExtension("txt").path)
+                await runSummarize(
+                    transcript: text, sourcePath: base.appendingPathExtension("txt").path, showTranscript: false)
             } else {
                 print("ℹ  Skipping summary: auto-transcribe is off, no transcript available.")
             }
@@ -271,7 +272,7 @@ final class Shell {
         guard let yn = promptLine("Summarize the transcript now? [Y/n]: ") else { return }
         if yn.lowercased().hasPrefix("n") { return }
         guard let text = try? String(contentsOfFile: txtPath, encoding: .utf8) else { return }
-        await runSummarize(transcript: text, sourcePath: txtPath)
+        await runSummarize(transcript: text, sourcePath: txtPath, showTranscript: false)
     }
 
     // MARK: - Summarize
@@ -283,7 +284,7 @@ final class Shell {
             print("❌  Couldn't read file: \(path)")
             return
         }
-        await runSummarize(transcript: text, sourcePath: path)
+        await runSummarize(transcript: text, sourcePath: path, showTranscript: true)
     }
 
     // MARK: - Pipeline primitives
@@ -306,34 +307,18 @@ final class Shell {
         }
     }
 
-    private func runSummarize(transcript: String, sourcePath: String) async {
+    private func runSummarize(transcript: String, sourcePath: String, showTranscript: Bool) async {
         do {
             let backend = try await SummaryRoute.backend(config: config)
-            print("🧩  Summarizing via \(backend.label)…")
-            let outcome = try await SummaryPipeline(backend: backend, redaction: config.redactionEnabled)
-                .run(transcript: transcript)
-            print(
-                outcome.style == .therapy
-                    ? "🧭  Detected a therapy session — wrote Practice Notes."
-                    : "🧭  Detected a meeting — wrote a summary.")
-            if outcome.redactedValues > 0 {
-                print(
-                    "🔒  \(outcome.redactedValues) formatted values were kept out of the request. Spoken names aren't caught."
-                )
-            }
-
-            let totalWidth = 50
-            let labelPart = "──── summary "
-            let fill = String(repeating: "─", count: max(0, totalWidth - labelPart.count))
-            print("\n" + labelPart + fill)
-            print(renderMarkdown(outcome.report.trimmingCharacters(in: .whitespacesAndNewlines)))
-            print(String(repeating: "─", count: totalWidth))
-
-            let mdURL = URL(fileURLWithPath: sourcePath)
-                .deletingPathExtension()
-                .appendingPathExtension("md")
-            try (outcome.report + "\n").write(to: mdURL, atomically: true, encoding: .utf8)
-            print("   md:   \(mdURL.path)")
+            print("🧩  Writing the report via \(backend.label)…")
+            let scenarios = ScenarioCatalog.load()
+            for warning in scenarios.warnings { print("⚠  \(warning)") }
+            let outcome = try await SummaryPipeline(
+                backend: backend, redaction: config.redactionEnabled, catalog: scenarios.catalog
+            ).run(transcript: transcript)
+            ReportConsole.print(outcome.report, showTranscript: showTranscript)
+            let written = try ReportFiles.write(outcome.report, nextTo: URL(fileURLWithPath: sourcePath))
+            ReportConsole.printPaths(written)
         } catch {
             print("❌  Summarization failed: \(error.localizedDescription)\n   Transcript is still on disk.")
         }
@@ -1014,67 +999,5 @@ final class Shell {
         if path.hasPrefix("~/") { return NSHomeDirectory() + String(path.dropFirst(1)) }
         if path == "~" { return NSHomeDirectory() }
         return path
-    }
-
-    // MARK: - Markdown rendering
-
-    // Converts basic markdown to ANSI-styled terminal output for readability.
-    // The .md file on disk always receives the raw markdown string.
-    private func renderMarkdown(_ text: String) -> String {
-        let reset = "\u{001B}[0m"
-        let bold = "\u{001B}[1m"
-        let dim = "\u{001B}[2m"
-
-        var out: [String] = []
-        var inCode = false
-
-        for raw in text.components(separatedBy: "\n") {
-            if raw.hasPrefix("```") {
-                inCode.toggle()
-                if inCode {
-                    let lang = String(raw.dropFirst(3)).trimmingCharacters(in: .whitespaces)
-                    out.append(dim + (lang.isEmpty ? "▸ code" : "▸ \(lang)") + reset)
-                }
-                continue
-            }
-            if inCode {
-                out.append(dim + "  " + raw + reset)
-                continue
-            }
-
-            if raw.hasPrefix("### ") {
-                out.append("\n" + bold + String(raw.dropFirst(4)) + reset)
-            } else if raw.hasPrefix("## ") {
-                out.append("\n" + bold + String(raw.dropFirst(3)).uppercased() + reset)
-            } else if raw.hasPrefix("# ") {
-                let title = String(raw.dropFirst(2)).uppercased()
-                let bar = String(repeating: "─", count: min(title.count + 4, 60))
-                out.append("\n" + bold + bar + "\n  " + title + "\n" + bar + reset)
-            } else if raw.hasPrefix("- ") || raw.hasPrefix("* ") {
-                out.append("  •  " + inlineFmt(String(raw.dropFirst(2)), bold: bold, reset: reset))
-            } else if raw.range(of: #"^\d+\. "#, options: .regularExpression) != nil {
-                out.append("  " + inlineFmt(raw, bold: bold, reset: reset))
-            } else if raw == "---" || raw == "***" || raw == "___" {
-                out.append(String(repeating: "─", count: 60))
-            } else {
-                out.append(inlineFmt(raw, bold: bold, reset: reset))
-            }
-        }
-        return out.joined(separator: "\n")
-    }
-
-    private func inlineFmt(_ text: String, bold: String, reset: String) -> String {
-        let cyan = "\u{001B}[36m"
-        var s = text
-        s = s.replacingOccurrences(
-            of: #"\*\*(.+?)\*\*"#,
-            with: bold + "$1" + reset, options: .regularExpression)
-        s = s.replacingOccurrences(
-            of: #"__(.+?)__"#,
-            with: bold + "$1" + reset, options: .regularExpression)
-        s = s.replacingOccurrences(
-            of: #"`([^`]+)`"#,
-            with: cyan + "$1" + reset, options: .regularExpression)
-        return s
     }
 }

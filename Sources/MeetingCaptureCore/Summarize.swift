@@ -29,15 +29,6 @@ import Foundation
 //   .anthropic → `thinking: {type:"adaptive"}` + `output_config:{effort:…}` (off → omitted)
 // `.none` / `.off` send nothing.
 
-/// Which summary template to produce. The tool auto-detects this from the
-/// transcript just before summarizing (see `Summarizer.detectStyle`): either a
-/// normal meeting recap, or a warm, client-facing "Practice Notes" write-up for
-/// a therapy / counseling session.
-enum SummaryStyle: String {
-    case meeting
-    case therapy
-}
-
 final class Summarizer {
 
     let baseURL: URL
@@ -80,8 +71,8 @@ final class Summarizer {
         self.timeout = timeout
     }
 
-    func summarize(transcript: String, style: SummaryStyle = .meeting, systemSuffix: String = "") async throws -> String
-    {
+    /// One request with a system prompt and a user message, returning the model's text.
+    func complete(system: String, user: String) async throws -> String {
         guard let apiKey = apiKeyProvider(), !apiKey.isEmpty else {
             throw SummarizerError.badResponse(
                 "No LLM API key available at request time. Set it via Settings → LLM configurations, LLM_API_KEY, or --llm-api-key."
@@ -100,8 +91,8 @@ final class Summarizer {
             var b: [String: Any] = [
                 "model": model,
                 "max_tokens": anthropicReasoning ? Self.anthropicMaxTokensReasoning : Self.anthropicMaxTokens,
-                "system": Self.systemPrompt(for: style) + systemSuffix,
-                "messages": [["role": "user", "content": transcript]],
+                "system": system,
+                "messages": [["role": "user", "content": user]],
             ]
             if anthropicReasoning {
                 b["thinking"] = ["type": "adaptive"]
@@ -113,8 +104,8 @@ final class Summarizer {
                 "model": model,
                 "temperature": 0.3,
                 "messages": [
-                    ["role": "system", "content": Self.systemPrompt(for: style) + systemSuffix],
-                    ["role": "user", "content": transcript],
+                    ["role": "system", "content": system],
+                    ["role": "user", "content": user],
                 ],
             ]
             switch reasoningStyle {
@@ -134,7 +125,7 @@ final class Summarizer {
         let req = try buildRequest(apiKey: apiKey, body: body, timeout: timeout)
 
         let t0 = Date()
-        print("🧩  Summarizing via \(model) @ \(baseURL.host ?? baseURL.absoluteString)…")
+        print("🧩  Asking \(model) @ \(baseURL.host ?? baseURL.absoluteString)…")
         let (data, response) = try await URLSession.shared.data(for: req)
         let dt = Date().timeIntervalSince(t0)
 
@@ -191,54 +182,6 @@ final class Summarizer {
         }
         let raw = Self.scrubbed(data)
         throw SummarizerError.badResponse("Unexpected response shape:\n\(raw)")
-    }
-
-    /// Classify the transcript as a therapy session vs a general meeting with one
-    /// cheap completion, so the caller can pick the matching summary prompt. Only
-    /// the head of the transcript is sent (enough to classify, keeps the extra
-    /// call small), and it reuses the same wire protocol + auth as summarize().
-    /// Any unexpected/empty output resolves to `.meeting`; a thrown error is left
-    /// for the caller to swallow (which also falls back to `.meeting`).
-    func detectStyle(transcript: String) async throws -> SummaryStyle {
-        guard let apiKey = apiKeyProvider(), !apiKey.isEmpty else {
-            throw SummarizerError.badResponse("No LLM API key available at request time.")
-        }
-        let head = String(transcript.prefix(6000))
-        // Generous cap on purpose: a reasoning model (e.g. deepseek-v4-flash,
-        // o-series) spends tokens "thinking" before it emits the one-word answer,
-        // so a tiny cap leaves `content` empty (finish_reason "length"). A
-        // non-reasoning model still emits a single word and stops, so this costs
-        // nothing extra there.
-        let classifyMaxTokens = 2048
-        let body: [String: Any]
-        switch apiStyle {
-        case .anthropicMessages:
-            body = [
-                "model": model,
-                "max_tokens": classifyMaxTokens,
-                "system": Self.classifierPrompt,
-                "messages": [["role": "user", "content": head]],
-            ]
-        case .openAIChat:
-            body = [
-                "model": model,
-                "temperature": 0,
-                "max_tokens": classifyMaxTokens,
-                "messages": [
-                    ["role": "system", "content": Self.classifierPrompt],
-                    ["role": "user", "content": head],
-                ],
-            ]
-        }
-        let req = try buildRequest(apiKey: apiKey, body: body, timeout: 30)
-        let (data, response) = try await URLSession.shared.data(for: req)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            let code = (response as? HTTPURLResponse)?.statusCode ?? -1
-            let bodyText = Self.scrubbed(data)
-            throw SummarizerError.badResponse("HTTP \(code) from classifier:\n\(bodyText)")
-        }
-        let text = (try? parseContent(from: data))?.lowercased() ?? ""
-        return text.contains("therapy") ? .therapy : .meeting
     }
 
     /// Lightweight connectivity check: a minimal one-token completion that
@@ -500,70 +443,4 @@ final class Summarizer {
         /// The probe could not run (no key, endpoint unreachable, …).
         case failed(String)
     }
-
-    /// The system prompt for one summary style. Auto-detected per transcript.
-    static func systemPrompt(for style: SummaryStyle) -> String {
-        switch style {
-        case .meeting: return meetingPrompt
-        case .therapy: return therapyPrompt
-        }
-    }
-
-    /// One-word classifier prompt used by `detectStyle` to route between the two
-    /// summary styles. Constrained output ("therapy" / "meeting") so a single
-    /// token settles it.
-    static let classifierPrompt: String = """
-        You are a classifier. Decide whether the transcript is a one-on-one therapy or counseling session (a therapist or counselor and a client, focused on emotional or psychological support) or a general meeting. Reply with exactly one lowercase word: therapy or meeting.
-        """
-
-    static let meetingPrompt: String = """
-        You are an expert at summarizing meeting transcripts. The user will give you a transcript of a recorded meeting. Produce a concise, well-structured markdown summary with these sections:
-
-        # Summary
-        Two or three sentences describing what the meeting was about.
-
-        ## Key points
-        Bullet list of the most important points discussed.
-
-        ## Decisions
-        Bullet list of concrete decisions made, or "None" if none.
-
-        ## Action items
-        Bullet list in the form `- [ ] <action> (owner: <name or ?>)`. Only include real action items that were explicitly discussed.
-
-        ## Open questions
-        Bullet list of unresolved questions or follow-ups, or "None" if none.
-
-        Write the summary in the same language as the transcript. If the transcript is in Chinese, reply in Chinese; if English, reply in English; etc. Do not invent content that isn't in the transcript. If the transcript is too short or unclear to summarize meaningfully, say so explicitly in the Summary section and leave other sections as "None".
-        """
-
-    /// Therapy / counseling style — a warm, client-facing "Practice Notes"
-    /// write-up. Validated against a real session transcript before shipping.
-    static let therapyPrompt: String = """
-        You are a warm, perceptive psychotherapy assistant. The user will give you a transcript of a recorded therapy or counseling session. The transcript is auto-generated and may contain transcription errors, mislabeled or unlabeled speakers, and filler — infer meaning charitably and never quote verbatim where the text is garbled.
-
-        Read the entire transcript before writing anything. Output only the notes themselves — no preamble, sign-off, or meta-commentary about the summary.
-
-        Open with a short, specific title for the session and a single warm line that orients the reader. Then produce two clearly separated parts, formatted as markdown.
-
-        # Part 1 — Session summary (what happened)
-        - Identify the participants (client and therapist) and any name, background, or context that can be reasonably inferred.
-        - Summarize the situation the client brought, the main concerns raised, the key relationships or events discussed, and the emotional through-line of the session.
-        - Cover any relevant history (childhood, family, diagnoses, prior patterns) that surfaced.
-        - Write in clear, warm, non-judgmental prose. Use a few short subsections if it aids readability, but keep it readable, not a clinical form.
-
-        # Part 2 — Therapeutic insights (what the work was)
-        - Lay out the core ideas, frameworks, metaphors, or techniques the therapist introduced (reframes, named concepts, mnemonics, homework). Keep intact the exact words the therapist used for each, and explain each simply.
-        - Explain how each one connects to the specific situation of the client.
-        - Where the session pointed toward something to practice, gather these into a small, concrete checklist of things to try before next time (a `- [ ]` list), in plain and encouraging language — only what was actually suggested.
-        - End with the central thread: the underlying pattern and the direction of change the session pointed toward. A brief, warm closing line is welcome, and you may echo a meaningful phrase the client said.
-
-        Guidelines:
-        - Warmth, respect, and compassion throughout; this is sensitive, confidential personal material. You may address the client directly as you where it reads more warmly.
-        - Be faithful to the transcript. Distinguish what was actually said from your own synthesis. Invent nothing; if something is unclear, leave it out rather than guess.
-        - Keep the language the therapist used for named concepts and metaphors.
-        - Do not diagnose, do not give medical advice, and do not take sides in any interpersonal conflict described — the transcript is one account, from the client only.
-        - Adapt length to the session: thorough but not padded.
-        - Write in the same language as the transcript.
-        """
 }

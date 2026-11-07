@@ -55,15 +55,16 @@ struct CLIRequest {
         CLIRequest(tier: tier, system: system, input: input, schema: schema, webSearch: false)
     }
 
-    static func conceptSearch(tier: ModelTier, concepts: [String]) throws -> CLIRequest {
+    /// `schema`, when given, is a fixed JSON Schema from code, never free text.
+    static func conceptSearch(tier: ModelTier, concepts: [String], schema: String? = nil) throws -> CLIRequest {
         try validate(concepts: concepts)
         let list = concepts.map { "- \($0)" }.joined(separator: "\n")
         return CLIRequest(
             tier: tier,
             system:
-                "You look up general reference sources for concepts. Reply with one reliable source URL per concept. If you aren't sure of a source, say so.",
+                "You look up general reference sources for concepts. For each concept give a short general explanation and one to three reliable source URLs you found by searching. If you aren't sure of a source, say so, and don't give a URL you haven't seen.",
             input: "Find a reliable general reference for each concept:\n\(list)",
-            schema: nil,
+            schema: schema,
             webSearch: true)
     }
 

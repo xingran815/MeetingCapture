@@ -47,13 +47,17 @@ public enum MeetingCaptureApp {
             Task { exit(await LiveCheck.run(config: Config.load()) ? 0 : 1) }
             keepRunLoopAlive()
         }
-        if let fixtures = args.option("--quality-compare-redaction") {
+        for (flag, mode) in [
+            ("--quality-compare-redaction", QualityCompare.Mode.redaction), ("--quality-compare-full", .full),
+        ] {
+            guard let fixtures = args.option(flag) else { continue }
             let out = args.option("--out") ?? "dev/tmp/quality.md"
             let primary = args.option("--llm-cli").flatMap(CLIKind.init(rawValue:))
             Task {
                 exit(
                     await QualityCompare.run(
-                        fixturesDirectory: fixtures, outputPath: out, config: Config.load(), primary: primary) ? 0 : 1)
+                        mode: mode, fixturesDirectory: fixtures, outputPath: out, config: Config.load(),
+                        primary: primary) ? 0 : 1)
             }
             keepRunLoopAlive()
         }
@@ -178,8 +182,8 @@ public enum MeetingCaptureApp {
                 Summarization options (subscription CLIs by default; API flags pick an API profile):
                   --summarize           Generate an LLM summary after transcription
                   --summarize-only P    Skip everything; summarize existing .txt at path P
-                  --summary-style <s>   Force style: meeting | therapy      (default: auto-detected per transcript)
-                  --therapy             Alias for --summary-style therapy
+                  --scenario <name>     Force a scenario: meeting | therapy | interview | one_on_one | lecture | general
+                                        (default: classified per transcript; files in ~/.config/MeetingCapture/scenarios add more)
                   --llm-cli <name>      CLI to try first: claude | codex  (default: from Settings)
                   --no-redact           Send formatted values as they are (default: replaced with tokens)
                   --llm-profile <name>  Saved API configuration to use
@@ -249,19 +253,23 @@ public enum MeetingCaptureApp {
             model: args.option("--llm-model"),
             baseURL: args.option("--llm-base-url"),
             apiKeyFlag: args.option("--llm-api-key"))
-        // Summary style is auto-detected per transcript; these flags force it (scripting
-        // escape hatch). `--therapy` is shorthand for `--summary-style therapy`.
-        let summaryStyleFlag: SummaryStyle? = {
-            if args.flag("--therapy") { return .therapy }
-            guard let v = args.option("--summary-style") else { return nil }
-            switch v.lowercased() {
-            case "therapy": return .therapy
-            case "meeting": return .meeting
-            default:
-                fputs("⚠  Unknown --summary-style \"\(v)\" — auto-detecting instead.\n", stderr)
-                return nil
-            }
-        }()
+        // The scenario is classified per transcript; `--scenario` forces one. The old
+        // style flags are gone (spec 04), and say so rather than being ignored.
+        let scenarioFlag = args.option("--scenario")
+        if args.flag("--therapy") || args.option("--summary-style") != nil {
+            fputs(
+                "❌  --therapy and --summary-style were removed. Use --scenario <name>, such as --scenario therapy.\n",
+                stderr)
+            exit(2)
+        }
+        let scenarioLoad = ScenarioCatalog.load()
+        for warning in scenarioLoad.warnings { fputs("⚠  \(warning)\n", stderr) }
+        if let name = scenarioFlag, scenarioLoad.catalog.template(named: name) == nil {
+            fputs(
+                "❌  \(ReportError.unknownScenario(name, known: scenarioLoad.catalog.names).localizedDescription)\n",
+                stderr)
+            exit(2)
+        }
 
         if let name = llmProfileFlag,
             !persistedConfig.llmProfiles.contains(where: { $0.displayName.caseInsensitiveCompare(name) == .orderedSame }
@@ -282,33 +290,24 @@ public enum MeetingCaptureApp {
             """)
 
 
-        /// Summarize `transcript`, print it, and write it to a sibling `.md` next
-        /// to `sourcePath` (typically the .wav or .txt that produced the transcript).
-        func runSummarization(transcript: String, sourcePath: String) async throws {
+        /// Builds the report for `transcript`, prints it, and writes `.md`, `.report.json`
+        /// and the dated `.html` next to `sourcePath` (the .wav or .txt it came from).
+        func runSummarization(transcript: String, sourcePath: String, showTranscript: Bool) async throws {
             let backend = try await SummaryRoute.backend(
                 config: persistedConfig, primary: llmCLI, overrides: apiOverrides)
-            print("🧩  Summarizing via \(backend.label)…")
-            let outcome = try await SummaryPipeline(backend: backend, redaction: redaction)
-                .run(transcript: transcript, forcedStyle: summaryStyleFlag)
-            print(
-                outcome.style == .therapy
-                    ? "🧭  Therapy session — wrote Practice Notes."
-                    : "🧭  Meeting — wrote a summary.")
-            if outcome.redactedValues > 0 {
-                print(
-                    "🔒  \(outcome.redactedValues) formatted values were kept out of the request. Spoken names aren't caught."
-                )
+            print("🧩  Writing the report via \(backend.label)…")
+            let outcome: SummaryOutcome
+            do {
+                outcome = try await SummaryPipeline(
+                    backend: backend, redaction: redaction, catalog: scenarioLoad.catalog
+                ).run(transcript: transcript, forcedScenario: scenarioFlag)
+            } catch {
+                throw Summarizer.SummarizerError.badResponse(
+                    "\(error.localizedDescription) The transcript is kept at \(sourcePath).")
             }
-
-            print("\n──── summary ─────────────────────────────")
-            print(outcome.report.trimmingCharacters(in: .whitespacesAndNewlines))
-            print("──────────────────────────────────────────")
-
-            let mdURL = URL(fileURLWithPath: sourcePath)
-                .deletingPathExtension()
-                .appendingPathExtension("md")
-            try (outcome.report + "\n").write(to: mdURL, atomically: true, encoding: .utf8)
-            print("📝  Summary saved: \(mdURL.path)")
+            ReportConsole.print(outcome.report, showTranscript: showTranscript)
+            let written = try ReportFiles.write(outcome.report, nextTo: URL(fileURLWithPath: sourcePath))
+            ReportConsole.printPaths(written)
         }
 
         Task {
@@ -316,7 +315,7 @@ public enum MeetingCaptureApp {
                 // Summarize-only: no capture, no transcription, just summarize a .txt
                 if let path = summarizeOnly {
                     let text = try String(contentsOfFile: path, encoding: .utf8)
-                    try await runSummarization(transcript: text, sourcePath: path)
+                    try await runSummarization(transcript: text, sourcePath: path, showTranscript: true)
                     exit(0)
                 }
 
@@ -326,7 +325,7 @@ public enum MeetingCaptureApp {
                         wavPaths: RecordingFiles.allParts(of: path), model: whisperModel, modelFolder: whisperFolder,
                         language: whisperLang, removeEcho: !noAec && persistedConfig.aecEnabled)
                     if summarizeFlag {
-                        try await runSummarization(transcript: text, sourcePath: path)
+                        try await runSummarization(transcript: text, sourcePath: path, showTranscript: false)
                     }
                     exit(0)
                 }
@@ -374,7 +373,8 @@ public enum MeetingCaptureApp {
                     print("📄  Transcript saved: \(base.appendingPathExtension("txt").path)")
                     if summarizeFlag {
                         try await runSummarization(
-                            transcript: result.formatted, sourcePath: base.appendingPathExtension("txt").path)
+                            transcript: result.formatted, sourcePath: base.appendingPathExtension("txt").path,
+                            showTranscript: true)
                     }
                 }
             } catch {
