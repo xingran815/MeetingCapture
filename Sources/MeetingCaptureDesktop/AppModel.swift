@@ -171,8 +171,14 @@ final class AppModel {
 
     /// What the quit question should say, or nil when quitting loses nothing.
     var quitWarning: String? {
-        if phase != .idle { return "A recording is in progress." }
-        if isProcessing { return "The report is still being made." }
+        if phase != .idle {
+            return
+                "A recording is in progress. It stops now, the audio so far is kept, and the app offers to finish it next time."
+        }
+        if isProcessing {
+            return
+                "Work on a recording is still running. It stops now; what's saved stays, and you can run the step again from the library."
+        }
         return nil
     }
 

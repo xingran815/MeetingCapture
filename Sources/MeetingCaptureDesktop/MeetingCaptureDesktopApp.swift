@@ -66,12 +66,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let model, let warning = model.quitWarning else { return .terminateNow }
         let alert = NSAlert()
         alert.messageText = "Quit MeetingCapture?"
-        alert.informativeText =
-            warning + " The audio recorded so far is kept, and the app offers to finish it next time."
+        alert.informativeText = warning
         alert.addButton(withTitle: "Keep Working")
         alert.addButton(withTitle: "Quit")
         alert.alertStyle = .warning
         guard alert.runModal() == .alertSecondButtonReturn else { return .terminateCancel }
+        // Only a recording needs its files closed first; work after the call just stops.
+        // A reply must come after `.terminateLater` is returned, so it's never sent from
+        // here directly. From the M5 re-check.
+        guard model.phase != .idle else {
+            model.stopEverythingForQuit {}
+            return .terminateNow
+        }
         model.stopEverythingForQuit {
             NSApp.reply(toApplicationShouldTerminate: true)
         }

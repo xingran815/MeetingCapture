@@ -38,6 +38,9 @@ final class Shell {
             case .back:
                 break loop
             case .selected(let i):
+                // The desktop app may have changed a setting since the last action.
+                // From the M5 re-check.
+                config = Config.load()
                 switch i {
                 case 0: await recordFlow()
                 case 1: await transcribeFlow()
