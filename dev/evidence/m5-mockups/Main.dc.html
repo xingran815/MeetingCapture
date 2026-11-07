@@ -94,19 +94,9 @@ body{margin:0}
           <div style="position: absolute; inset: 52px 0 0 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; padding-bottom: 60px;">
             <div style="display: flex; align-items: center; gap: 10px;"><span class="dot {{dotCls}}"></span><span class="h3" style="color: var(--red);">{{recLabel}}</span></div>
             <div class="tabnum" style="font-size: 64px; font-weight: 300; letter-spacing: -.02em;">{{timer}}</div>
-            <div class="wave-card" style="width: 640px;">
-              <div class="wtrack">
-                <div class="who"><b>You</b><span>Built-in microphone</span></div>
-                <div class="wave you {{frozen}}" aria-label="Your microphone waveform"><sc-for list="{{waveYou}}" as="b" hint-placeholder-count="120"><i style="height: {{b.h}}px; opacity: {{b.o}};"></i></sc-for><span class="now"></span></div>
-                <div class="lvlpair" title="Level"><div class="lvl"><sc-for list="{{lvlYou}}" as="l" hint-placeholder-count="10"><i class="{{l}}"></i></sc-for></div><div class="lvl"><sc-for list="{{lvlYou}}" as="l" hint-placeholder-count="10"><i class="{{l}}"></i></sc-for></div></div>
-              </div>
-              <div class="hr"></div>
-              <div class="wtrack">
-                <div class="who"><b>Others</b><span>Zoom audio</span></div>
-                <div class="wave them {{frozen}}" aria-label="Call audio waveform"><sc-for list="{{waveThem}}" as="b" hint-placeholder-count="120"><i style="height: {{b.h}}px; opacity: {{b.o}};"></i></sc-for><span class="now"></span></div>
-                <div class="lvlpair" title="Level"><div class="lvl"><sc-for list="{{lvlThem}}" as="l" hint-placeholder-count="10"><i class="{{l}}"></i></sc-for></div><div class="lvl"><sc-for list="{{lvlThem}}" as="l" hint-placeholder-count="10"><i class="{{l}}"></i></sc-for></div></div>
-              </div>
-              <div class="wruler"><span></span><div><span>−30 s</span><span>−20 s</span><span>−10 s</span><span>now</span></div><span style="text-align: center;">level</span></div>
+            <div style="width: 480px; display: flex; flex-direction: column; gap: 12px;">
+              <div class="wave mix {{frozen}}" aria-label="Recording waveform"><sc-for list="{{waveMix}}" as="b" hint-placeholder-count="60"><i class="{{b.c}}" style="height: {{b.h}}px; opacity: {{b.o}};"></i></sc-for></div>
+              <div class="who-now"><span class="{{youOn}}"><i></i>You</span><span class="{{themOn}}"><i></i>Others on Zoom</span></div>
             </div>
             <div style="display: flex; gap: 10px;"><button class="btn big" onClick="{{togglePause}}">{{pauseLabel}}  <kbd>⇧⌘P</kbd></button><button class="btn big red" onClick="{{goProc}}">Stop  <kbd style="color: rgba(255,255,255,.85);">⌘.</kbd></button></div>
             <div class="muted small">Saved in 30-minute parts as it goes, so a crash keeps what was recorded.</div>
@@ -171,6 +161,15 @@ class Component extends DCLogic {
     }
     return out;
   }
+  /* One calm waveform for the whole call: 60 bars, the last few red to show it's live. */
+  mix(paused) {
+    const a = this.wave(true, true), b = this.wave(false, true), out = [];
+    for (let i = 0; i < 60; i++) {
+      const h = Math.max(a[i * 2].h, b[i * 2].h, a[i * 2 + 1].h, b[i * 2 + 1].h);
+      out.push({ h: Math.max(3, Math.round(h * 1.2)), c: i >= 54 ? 'live' : '', o: paused ? '1' : (0.45 + 0.55 * (i / 60)).toFixed(2) });
+    }
+    return out;
+  }
   level(k) { return Array.from({ length: 10 }, (_, i) => i >= k ? '' : (i < 6 ? 'g' : (i < 8 ? 'y' : 'r'))); }
   renderVals() {
     const s = this.state.screen, go = (x) => () => this.setState({ screen: x, paused: false });
@@ -193,6 +192,7 @@ class Component extends DCLogic {
       waveYou: this.wave(true, paused), waveThem: this.wave(false, paused),
       lvlYou: this.level(paused ? 0 : 3), lvlThem: this.level(paused ? 0 : 7),
       frozen: paused ? 'frozen' : '',
+      waveMix: this.mix(paused), youOn: '', themOn: paused ? '' : 'on',
       winTitle: s === 'report' ? 'Roadmap sync' : (s === 'rec' ? 'New recording' : (s === 'proc' ? 'Fri 10:02 recording' : 'Recordings')),
       winSub: s === 'report' ? 'Today 10:02 · 42 min · Company meeting' : (s === 'rec' ? 'Zoom + microphone' : (s === 'proc' ? '42 min · 2 tracks' : '5 recordings')),
       today: rows([{ title: 'Roadmap sync', meta: '10:02 · 42 min · Meeting' }], sel),
