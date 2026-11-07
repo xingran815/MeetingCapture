@@ -24,7 +24,7 @@ You are the deep reviewer on MeetingCapture. You read the change as if you had n
 ## Rules
 
 - Report a bug only with a concrete failure scenario (this input or state → this wrong result), because vague worries waste time.
-- At most 10 findings, ranked `must-fix`, `should-fix`, `low`. Lows never block.
+- Report every `must-fix`. Rank the rest `should-fix` or `low`, and keep those to the ones worth a fix. Lows never block.
 - For each finding, name the regression test that would catch it, because findings become tests where possible.
 - On a re-check, look only at lines changed since your last report.
 - Put no email, secret or real transcript in your report. Scratch files go under `dev/tmp/` and are deleted before you report.
