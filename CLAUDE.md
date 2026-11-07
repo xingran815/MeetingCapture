@@ -119,7 +119,7 @@ The Settings menu is grouped with dimmed `MenuItem.separator(...)` header rows (
 
 - **Plan:** dev/PLAN.md · **Now:** dev/NOW.md · **Decisions:** dev/DECISIONS.md · **Specs:** docs/specs/ · **Evidence:** dev/evidence/
 - **Mode:** 🏢 light production: quick and efficient, with real gates only where listed here. Start with `/next` or "continue"; end with `/next save`.
-- **Check command:** `scripts/check.sh`; CI runs `scripts/ci.sh <job>`. Done means it passes and each Done-when check was seen working.
+- **Check command:** `scripts/check.sh` (`--unit`, `--production` by default, `--full`, `--live`); CI runs `scripts/ci.sh <job>`. Done means `--full` passed on the last code change and each Done-when check was seen working.
 - **Talk:** short chunks, key point in bold, tables over paragraphs, one-line status updates, at most 4 numbered questions with a recommended answer, reply in the language the user wrote in.
 
 ### Rules, because a new session will pick this up cold
@@ -130,47 +130,26 @@ The Settings menu is grouped with dimmed `MenuItem.separator(...)` header rows (
 | **A fresh Sonnet subagent writes all tests, every time.** The one exception to building in the main session. It reports product bugs and doesn't fix them. | User's rule, D-49. |
 | **All E2E tests run locally; CI runs only the short one.** | User's rule, D-49; keeps CI quick. |
 | **One branch and one PR per milestone** (`m<n>-<slug>`), closing that milestone's issues. | One PR per milestone is easy to follow. |
-| **Run the tests, then commit.** The git hooks enforce `scripts/check.sh --fast` and the sweeps. Never use `--no-verify`. | A failed sweep means a leak was about to happen. |
-| **Sweep before every commit and before every push**: identity, secrets, security. | Repo is public. |
-| **Sonnet verifier (`verifier` agent) after every milestone**, before merge. | Independent proof that Done-when checks are true. |
-| **When CI needs more than 3 minutes to finish, run the verifier at the same time.** Reviewers and security checks too, when the spec calls for them. Details under "CI and the review agents together". | User's rule; no waiting on a slow run. |
-| **Opus deep review (`deep-reviewer` agent) only after M3, M4, M6**, before merge. | Deep review is expensive; these are the risky milestones. |
-| **Fix findings in the same PR. Never open a new PR for them.** Lows don't block; re-checks look at changed lines only. | Keeps one PR per milestone and stops review loops. |
+| **Hooks gate every commit and push.** Pre-commit: format, lint and secret sweep of the staged text. It doesn't build, so a commit may not compile. Pre-push: identity and leak sweeps of outgoing commits, then `check.sh --unit`, which tests the working copy. Never use `--no-verify`. | A failed sweep means a leak was about to happen. |
+| **Pick the test level by risk.** `check.sh --production` when capture, the pipeline or file deletion changes; `--full` before a milestone's final push. `--full` saves its commit and result in `dev/tmp/check-full.txt`. | Routine checks take seconds, and the slow ones still run where they count. |
+| **Sonnet verifier (`verifier` agent) after every milestone**, before merge. It reads the `--full` record instead of rerunning it, checks the commit matches the last code change with a clean tree, and checks each Done-when. | Independent proof that Done-when checks are true. |
+| **Deep review (`deep-reviewer`, Opus) at M3, M4 and M6 at minimum,** and at any milestone with code that can lose recordings, delete files, or has tricky concurrency. A **normal reviewer** (`reviewer`) at any milestone end without one. | Deep review is expensive, so it goes by risk. |
+| **Security review (`/security-review`) for changes to credentials, data leaving the machine, subprocesses, workflows or dependencies.** | These are where a mistake leaks or runs something. |
+| **Review agents run after CI,** unless a spec says otherwise. The M3 and M6 specs run the security and deep reviews in parallel with each other. | Agents then look at code that already builds. |
+| **Fix findings in the same PR. Never open a new PR for them.** Lows don't block. After a fix, re-check only the changed lines. There are two rounds to fix; if the same function fails twice, stop and ask. | Keeps one PR per milestone and stops review loops. |
 | **Turn each finding into a test where possible**, and name the finding in the test. | The same bug can't come back. |
-| **`gh pr checks` must be green before the local merge.** `main` requires CI, for the admin too. | A clean machine proves what hooks on this Mac can't. |
+| **To merge:** `gh pr checks` is green on the exact commit being merged, and required agents cover all code changes. `main` requires CI, for the admin too, and accepts the PR's 7 results on that same commit. The push to `main` then runs its own clean build, unit tests, and leak and identity checks, and saves the build as the cache. | A clean machine proves what hooks on this Mac can't. |
 | **Merge locally:** `git switch main && git merge --ff-only <branch> && git push origin main`. Never use GitHub's merge button or `gh pr merge`. | GitHub can stamp the account email on server-made commits. The push closes the PR as merged. |
 | **After a merge, comment on each issue** (what landed, evidence, PR link), close it, update dev/NOW.md. | State lives in files and issues. |
 | **Merging and pushing task branches and `main` is pre-approved** after the checks pass. | User: "feel free to commit and merge". |
 | **Force-push approval is used up.** The one approved rewrite ran on 2026-11-06; never force-push again without a new yes. Ruleset `protect-main` also blocks it, so an approved force-push needs the ruleset changed first. | User's explicit decision, D-05, D-33. |
-| **Never push or merge `feature/coding-interview`.** Push only named refs, never `--all` or `--mirror`. | User's rule; the pre-push hook also blocks it. |
+| **Never push or merge `feature/coding-interview`.** Push only named refs, never `--all` or `--mirror`. | User's rule; the pre-push hook also blocks it, including a renamed copy (D-62). |
 | **Commits use the repo-local noreply author.** No `Co-Authored-By` lines for Claude or any AI. | Email must not leak; user's rule. |
 | **Never put email, keys, tokens or real transcripts in code, fixtures, issues, PRs, logs or prompts.** Fixtures are invented; read secrets from the environment and mask output. | Public repo, sensitive sessions. |
 | **Tests never use a real model, network or 30-minute audio by default.** Fake CLIs on `PATH`, injected clocks and chunk lengths, and 5–30 second `say` fixtures. `--live` is opt-in. | Fast tests that don't spend subscription usage. |
 | **Say when unsure,** in code comments, reports and LLM prompts alike. | User's rule for the product and for us. |
 | **After each compaction, re-read the files before anything else:** this file, `dev/NOW.md`, `dev/PLAN.md`, the end of `dev/DECISIONS.md`, the current spec and latest report, `git status` and `git log`. Where a summary disagrees, the files and git win. | User's rule; a summary is a recollection, the files are the facts. |
 | **Close every milestone with a report and rules on disk, then start the next one without waiting.** Steps below. | User's rule; only what's in files survives a session. |
-
-### CI and the review agents together
-Review agents are the `verifier`, the reviewers (`reviewer`, `deep-reviewer`) and security checks (`/security-review` or a security agent). **Run only the ones the milestone's spec and the `dev/PLAN.md` table call for,** and each one checks what its spec says. This rule changes when they run, not which ones run.
-
-With over 3 minutes of CI left, start them now, together, on the pushed commit. Otherwise wait for CI, then start them. They're read-only, so they can't disturb each other or CI. A push cancels the running CI, so hold pushes while CI or an agent is running, except as below.
-
-| What happens | What to do | Because |
-|---|---|---|
-| Event names a head that's already replaced | Ignore it | It's about old code. |
-| CI fails, agents still running | **Keep them running.** Let the other CI jobs finish too. Fix locally and hold the push until every agent reports | Their findings go in the same fix, which saves a round. |
-| CI fails so badly an agent's result is worthless (the build is broken, or the fix will redo most of what it's checking) | Stop that agent, fix, then start it again | Its answer would describe code that's going away. |
-| An agent fails or finds something, while CI or other agents are running | Let them finish, then fix everything together | Same reason. |
-
-After a fix, re-run each agent by what changed:
-
-| The fix changed | Verifier | Reviewers and security checks | CI |
-|---|---|---|---|
-| Docs or comments only | No re-run | No re-run | Runs on the push |
-| Code, scripts or workflows, in a contained way | Re-check the changed lines and the Done-when items they touch | Re-check the changed lines, if that agent is required for this milestone | Runs on the push |
-| The design, or most of the milestone | Full re-run | Full re-run, if required | Runs on the push |
-
-**To merge:** CI is green on the exact commit being merged, and every required agent's PASS or re-check covers every non-doc change in it. The verifier's last check comes after the last fix round. Lows don't block. If the same check fails twice after a fix, stop and ask.
 
 ### Closing a milestone, then starting the next
 Order: M1 → M2 → M2.1 → M3 → M3.1 → M3.2 → M4 → M5 → M6.

@@ -5,6 +5,8 @@
 ## Package split
 Move everything testable out of `main.swift` into a `MeetingCaptureCore` library target. `MeetingCaptureCLI` stays a thin executable. Add `Tests/MeetingCaptureCoreTests`. An executable target can't be imported by tests, so this comes first.
 
+> M3.1 replaced the hook and `check.sh` tables below: see `docs/specs/03.1-faster-checks.md`. They stay here as what M1 built.
+
 ## `scripts/check.sh`
 | Mode | Runs | Used by | Budget |
 |---|---|---|---|

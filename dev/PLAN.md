@@ -29,11 +29,19 @@ Each milestone's Done-when list is in `docs/specs/0<n>-*.md`. M3.1's is `docs/sp
 
 ## How each milestone runs
 1. Branch from `main`. Build in the main session.
-2. Commit each logical change after `scripts/check.sh --fast` passes (hooks enforce it after M1).
+2. Commit each logical change; the hooks run format, lint and sweeps on commit, and sweeps and unit tests on push. Run `scripts/check.sh --production` by judgment, and `--full` before the final push.
 3. Push the branch; open one PR that says `Closes` for the milestone's issues.
-4. `verifier` agent checks every Done-when item. After M3, M4 and M6, `deep-reviewer` agent also reviews. M3 and M6 also run `/security-review`, in parallel with the deep review.
-5. Fix findings in the same PR, turning each into a test where possible. Lows don't block; re-checks cover changed lines only.
-6. Merge with `git merge --ff-only` and push `main`. Comment on and close the issues with evidence. Update `dev/NOW.md`.
+4. After CI, the review agents run by this table:
+
+| Agent | When |
+|---|---|
+| Verifier | Every milestone. It doesn't rerun the full test: it reads `dev/tmp/check-full.txt`, checks the commit matches the last code change, and checks each Done-when |
+| Deep review | M3, M4 and M6 at minimum, and any milestone with code that can lose recordings, delete files, or has tricky concurrency |
+| Security review | Changes to credentials, data leaving the machine, subprocesses, workflows or dependencies |
+| Normal reviewer | Any milestone end without a deep review |
+
+5. Fix findings in the same PR, turning each into a test where possible. Lows don't block; re-checks cover changed lines only. There are two rounds to fix; if the same function fails twice, stop and ask the user.
+6. Merge with `git merge --ff-only` once CI is green on that exact commit and required agents cover all code changes, then push `main`. Comment on and close the issues with evidence. Update `dev/NOW.md`.
 
 `next` keeps going until a milestone's merge, then saves; it stops at 👤 checks.
 
@@ -56,7 +64,7 @@ Never cut: sweeps and hooks, WAV-first conversion check, retention sparing old f
 | `lesson` | Save pitfalls | global devkit |
 
 ## Check command
-`scripts/check.sh`. Run it before saying anything is done.
+`scripts/check.sh`, by level: `--unit`, `--production` (the default), `--full`, `--live`. `--full` passes on the last code change before a milestone is done.
 
 ## Lessons applied
 - Keep state in files so a new session resumes in a minute — devkit `experience/lessons/2026-10-21-state-in-files.md`
