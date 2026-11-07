@@ -30,9 +30,43 @@ build() {
     return "${PIPESTATUS[0]}"
 }
 
+# Two groups at once, each serial: the slow echo remover class, and every other class.
+# No test shares state with another (temp folders are per test, and all 584 passed under
+# `--parallel`), but two jobs is the memory limit. The test bundle is run directly,
+# because a second `swift test` waits on SwiftPM's lock on .build. About 225 s instead
+# of 390 s. The counts must add up to the listed total, so no test can drop out unseen.
+SLOW_CLASS=MeetingCaptureCoreTests.EchoRemoverTests
 unit_tests() {
-    PATH="$ROOT/Tests/FakeBin:$PATH" swift test 2>&1 | grep -E 'error:|Executed [0-9]+ tests' | tail -5
-    return "${PIPESTATUS[0]}"
+    local bundle listed rest a b ea eb ran
+    export PATH="$ROOT/Tests/FakeBin:$PATH"
+    swift build --build-tests 2>&1 | grep -E 'error:' | tail -5
+    [ "${PIPESTATUS[0]}" -eq 0 ] || return 1
+    bundle="$(find "$ROOT/.build/debug" -maxdepth 1 -name '*PackageTests.xctest' | head -1)"
+    listed="$(swift test list --skip-build 2>/dev/null)"
+    rest="$(printf '%s\n' "$listed" | sed -n 's/^\([A-Za-z]*Tests\.[A-Za-z]*\)\/.*/\1/p' | sort -u \
+        | grep -vx "$SLOW_CLASS" | paste -sd, -)"
+    [ -n "$rest" ] && [ -d "$bundle" ] || { echo "unit: couldn't list the tests"; return 1; }
+    a="$ROOT/dev/tmp/unit-slow.log"
+    b="$ROOT/dev/tmp/unit-rest.log"
+    xcrun xctest -XCTest "$SLOW_CLASS" "$bundle" >"$a" 2>&1 &
+    local pa=$!
+    xcrun xctest -XCTest "$rest" "$bundle" >"$b" 2>&1 &
+    local pb=$!
+    wait "$pa"; ea=$?
+    wait "$pb"; eb=$?
+    grep -hE 'error: -\[' "$a" "$b" | head -10
+    ran=0
+    for f in "$a" "$b"; do
+        local n last
+        last="$(grep -E 'Executed [0-9]+ tests' "$f" | tail -1)"
+        echo "$(basename "$f" .log):$last"
+        n="$(printf '%s' "$last" | sed -E 's/.*Executed ([0-9]+) tests.*/\1/')"
+        ran=$((ran + ${n:-0}))
+    done
+    local want
+    want="$(printf '%s\n' "$listed" | grep -c '/')"
+    [ "$ran" -eq "$want" ] || { echo "unit: ran $ran tests of $want listed"; return 1; }
+    [ "$ea" -eq 0 ] && [ "$eb" -eq 0 ]
 }
 
 sweep_self_tests() {

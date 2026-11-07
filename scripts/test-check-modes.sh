@@ -69,11 +69,30 @@ make_stub scripts/identity.sh identity
 # These must never run from check.sh, so any call is traceable and fails.
 make_stub scripts/lint.sh LINT-RAN
 make_stub scripts/sweep.sh SWEEP-RAN
+# Invented tests: 2 in the slow class, 3 in the rest.
+export DEFAULT_LIST="MeetingCaptureCoreTests.EchoRemoverTests/testAlpha
+MeetingCaptureCoreTests.EchoRemoverTests/testBeta
+MeetingCaptureCoreTests.WavTests/testGamma
+MeetingCaptureCoreTests.ConfigTests/testDelta
+MeetingCaptureCoreTests.ConfigTests/testEpsilon"
+SLOWCLS="MeetingCaptureCoreTests.EchoRemoverTests"
+RESTCLS="MeetingCaptureCoreTests.ConfigTests,MeetingCaptureCoreTests.WavTests"
+BUNDLE="FakePackageTests.xctest"
+export XC_DIR="$WORK/xc"
+mkdir -p "$XC_DIR" .build/debug/$BUNDLE
+echo placeholder > .build/debug/$BUNDLE/Info.plist
 cat > "$WORK/bin/swift" <<'STUB'
 #!/usr/bin/env bash
 if [ "${1:-}" = "--version" ]; then echo "stub swift ${STUB_SWIFT_VERSION:-1}"; exit 0; fi
 line="swift $*"
 echo "$line" >> "$STUB_TRACE"
+# `swift test list` prints only the listed tests (the unit step counts lines with a slash).
+if [ "${1:-}" = "test" ] && [ "${2:-}" = "list" ]; then
+    if [ "${STUB_FAIL:-}" = "$line" ]; then echo "error: seeded failure" >&2; exit 1; fi
+    [ -n "${STUB_LIST_EMPTY:-}" ] && exit 0
+    printf '%s\n' "${STUB_LIST:-$DEFAULT_LIST}"
+    exit 0
+fi
 echo "Executed 3 tests, key $SEED_SECRET at $SEED_PATH"
 echo "noise $SEED_SECRET" >&2
 if [ "${STUB_FAIL:-}" = "$line" ]; then
@@ -83,13 +102,41 @@ fi
 exit 0
 STUB
 chmod +x "$WORK/bin/swift"
+# xcrun xctest -XCTest <classes> <bundle>: the first group is the slow class, the other the rest.
+# The "rest" run waits for the slow run's trace line, so the trace order is fixed.
+cat > "$WORK/bin/xcrun" <<'STUB'
+#!/usr/bin/env bash
+line="xcrun"
+for a in "$@"; do line="$line ${a##*/}"; done
+case "$3" in *EchoRemoverTests) g=slow; n="${XC_SLOW_N:-2}" ;; *) g=rest; n="${XC_REST_N:-3}" ;; esac
+if [ "$g" = rest ]; then
+    for _ in $(seq 100); do grep -qxF "xcrun xctest -XCTest MeetingCaptureCoreTests.EchoRemoverTests ${4##*/}" "$STUB_TRACE" && break; sleep 0.05; done
+fi
+echo "$line" >> "$STUB_TRACE"
+if [ -n "${XC_OVERLAP:-}" ]; then
+    other=rest; [ "$g" = rest ] && other=slow
+    touch "$XC_DIR/$g.started"
+    for _ in $(seq 100); do [ -e "$XC_DIR/$other.started" ] && { touch "$XC_DIR/$g.saw"; break; }; sleep 0.05; done
+fi
+echo "Test Suite 'X' passed. Executed 1 tests, with 0 failures (0 unexpected)"
+echo "noise $SEED_SECRET at $SEED_PATH" >&2
+if [ "${XC_FAIL:-}" = "$g" ] || [ "${STUB_FAIL:-}" = "$line" ]; then
+    echo "error: -[X testBad] : seeded failure" >&2
+    echo "Executed $n tests, with 1 failures (1 unexpected)"
+    exit 1
+fi
+echo "Executed $n tests, with 0 failures (0 unexpected) in 0.1 (0.1) seconds"
+exit 0
+STUB
+chmod +x "$WORK/bin/xcrun"
 chmod +x scripts/*.sh
 git add -A
 git commit -qm "chore: base" || { echo "base commit failed"; exit 2; }
 
 # Steps each mode must run, in order, as the stubs record them.
 expected() {  # mode
-    printf '%s\n' "swift build" "swift test"
+    printf '%s\n' "swift build" "swift build --build-tests" "swift test list --skip-build" \
+        "xcrun xctest -XCTest $SLOWCLS $BUNDLE" "xcrun xctest -XCTest $RESTCLS $BUNDLE"
     [ "$1" = "--unit" ] && return 0
     printf '%s\n' "test-guard" "e2e"
     [ "$1" = "--production" ] && return 0
@@ -162,6 +209,8 @@ for mode in --unit --production --full --live; do
     while IFS= read -r line; do
         i=$((i+1))
         head -n "$i" "$WORK/exp" > "$WORK/want"
+        # The two xctest runs go at once, so failing the first still lets the second run.
+        if [ "$line" = "xcrun xctest -XCTest $SLOWCLS $BUNDLE" ]; then head -n "$((i+1))" "$WORK/exp" > "$WORK/want"; fi
         FAIL="$line"; check_cmd "$mode"
         if [ "$RC" -eq 0 ]; then
             bad "$mode: failing '$line' still exited 0" "$OUT"
@@ -196,7 +245,7 @@ done
 
 # A failed step is timed too, and still logs only a name and seconds.
 rm -f dev/tmp/timing.log
-FAIL="swift test"; check_cmd --unit
+FAIL="xcrun xctest -XCTest $RESTCLS $BUNDLE"; check_cmd --unit
 if [ "$(sed 's/ [0-9][0-9]*$//' dev/tmp/timing.log)" = "$(printf '%s\n' "build" "unit tests")" ] \
     && ! grep -qvE '^[a-z][a-z0-9 -]* [0-9]+$' dev/tmp/timing.log; then
     ok "a failed run logs its steps as names and seconds"
@@ -286,10 +335,74 @@ record_has "an untouched clean run still records tree clean" "commit $HEAD_SHA" 
 for mode in --unit --production; do
     rm -f "$REC"; FAIL=""; check_cmd "$mode"
     if [ -e "$REC" ]; then bad "$mode wrote a record"; else ok "$mode writes no record"; fi
-    rm -f "$REC"; FAIL="swift test"; check_cmd "$mode"
+    rm -f "$REC"; FAIL="xcrun xctest -XCTest $RESTCLS $BUNDLE"; check_cmd "$mode"
     if [ -e "$REC" ]; then bad "failing $mode wrote a record"; else ok "failing $mode writes no record"; fi
 done
 FAIL=""
+
+# ─── The unit step: two xctest runs, every test counted (this change's requirements) ──
+unit_fails() {  # label wanted-message-or-empty
+    if [ "$RC" -eq 0 ]; then bad "$1: exited 0" "$OUT"
+    elif [ -n "${2:-}" ] && ! printf '%s' "$OUT" | grep -qF "$2"; then bad "$1: exit $RC but no '$2'" "$OUT"
+    elif printf '%s' "$OUT" | grep -q 'passed in'; then bad "$1: printed a pass" "$OUT"
+    else ok "$1"; fi
+}
+rm -rf "$XC_DIR"; mkdir -p "$XC_DIR"
+XC_OVERLAP=1 run_check scripts/check.sh --unit
+if [ "$RC" -ne 0 ]; then bad "the unit step passes with overlap stubs" "$OUT"
+elif [ -e "$XC_DIR/slow.saw" ] && [ -e "$XC_DIR/rest.saw" ]; then ok "unit step runs the slow class and the rest as two xctest runs at the same time"
+else bad "unit step: the two xctest runs didn't overlap" "$(ls "$XC_DIR")"; fi
+expected --unit > "$WORK/want"
+FAIL=""; check_cmd --unit
+if grep -qxF "xcrun xctest -XCTest $SLOWCLS $BUNDLE" "$STUB_TRACE" \
+    && grep -qxF "xcrun xctest -XCTest $RESTCLS $BUNDLE" "$STUB_TRACE" \
+    && ! grep -q "EchoRemoverTests.*ConfigTests\|ConfigTests.*EchoRemoverTests" "$STUB_TRACE"; then
+    ok "the slow class runs alone in one xctest; the rest (without it) in the other"
+else bad "xctest groups wrong" "$(cat "$STUB_TRACE")"; fi
+if [ -f dev/tmp/unit-slow.log ] && [ -f dev/tmp/unit-rest.log ]; then ok "the two groups log to dev/tmp/unit-slow.log and unit-rest.log"
+else bad "unit logs missing"; fi
+
+FAIL=""; XC_FAIL=slow run_check scripts/check.sh --unit
+unit_fails "a failure in the slow group fails check.sh --unit"
+if grep -qxF "xcrun xctest -XCTest $RESTCLS $BUNDLE" "$STUB_TRACE"; then ok "a slow-group failure still lets the rest group finish"; else bad "rest group didn't run after slow failed"; fi
+FAIL=""; XC_FAIL=rest run_check scripts/check.sh --unit
+unit_fails "a failure in the rest group fails check.sh --unit"
+FAIL=""; XC_FAIL=slow run_check scripts/check.sh --production
+unit_fails "a slow-group failure fails --production and stops before the guard"
+if grep -qxF test-guard "$STUB_TRACE"; then bad "guard ran after a unit failure"; else ok "nothing after the unit step runs when a group fails"; fi
+
+FAIL=""; XC_REST_N=2 run_check scripts/check.sh --unit
+unit_fails "a count mismatch (rest reports fewer tests than listed) fails" "ran 4 tests of 5 listed"
+FAIL=""; XC_SLOW_N=0 run_check scripts/check.sh --unit
+unit_fails "a count mismatch (slow group ran none) fails" "ran 3 tests of 5 listed"
+FAIL=""; XC_SLOW_N=3 run_check scripts/check.sh --unit
+unit_fails "a count mismatch (more run than listed) fails" "ran 6 tests of 5 listed"
+FAIL=""; STUB_LIST="MeetingCaptureCoreTests.EchoRemoverTests/testAlpha
+MeetingCaptureCoreTests.ConfigTests/testDelta" run_check scripts/check.sh --unit
+unit_fails "a listed total that differs from the two runs fails" "of 2 listed"
+
+FAIL=""; STUB_LIST_EMPTY=1 run_check scripts/check.sh --unit
+unit_fails "no tests listed fails" "couldn't list the tests"
+if grep -q '^xcrun' "$STUB_TRACE"; then bad "xctest ran with no tests listed"; else ok "no xctest run when nothing was listed"; fi
+FAIL=""; STUB_LIST="MeetingCaptureCoreTests.EchoRemoverTests/testAlpha" run_check scripts/check.sh --unit
+unit_fails "a list with only the slow class (empty rest group) fails" "couldn't list the tests"
+FAIL="swift test list --skip-build"; check_cmd --unit
+unit_fails "a failing test listing fails" "couldn't list the tests"
+FAIL=""
+mv ".build/debug/$BUNDLE" "$WORK/bundle.keep"
+check_cmd --unit
+unit_fails "a missing test bundle fails" "couldn't list the tests"
+mv "$WORK/bundle.keep" ".build/debug/$BUNDLE"
+
+FAIL="swift build --build-tests"; check_cmd --unit
+unit_fails "a build failure (swift build --build-tests) fails check.sh --unit"
+if grep -qE '^(swift test list|xcrun)' "$STUB_TRACE"; then bad "tests ran after a failed test build"; else ok "a failed test build runs no tests"; fi
+FAIL=""
+check_cmd --unit
+if [ "$RC" -eq 0 ]; then ok "the unit step passes again with healthy stubs"; else bad "unit step stuck failing" "$OUT"; fi
+if printf '%s\n' "$OUT" | grep -qx 'unit-slow:Executed 2 tests.*' && printf '%s\n' "$OUT" | grep -qx 'unit-rest:Executed 3 tests.*'; then
+    ok "the unit step shows each group's final 'Executed N tests' line"
+else bad "group totals missing from the output" "$OUT"; fi
 
 # ─── CI wiring: ci.sh cache-id ───────────────────────────────────────────────
 cache_id() { env -u CI PATH="$WORK/bin:$PATH" STUB_SWIFT_VERSION="${1:-1}" scripts/ci.sh cache-id 2>&1; }
