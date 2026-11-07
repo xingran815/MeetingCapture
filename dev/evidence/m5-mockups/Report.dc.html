@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Report content</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="mac.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div class="mc {{theme}}" style="width: 100%; font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif; color: var(--label); background: {{bg}}; padding: {{pad}};">
+<article class="rp {{modeCls}}">
+  <div class="kicker">Company meeting · Fri 7 Nov 2026, 10:02 · 42 min · English and 中文</div>
+  <h1>Roadmap sync</h1>
+  <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 6px 0 2px;">
+    <span class="chip">You</span><span class="chip">Speaker 1</span><span class="chip">Speaker 2</span>
+    <button class="btn plain" style="height: 22px; font-size: 12px;">Rename or merge…</button>
+  </div>
+
+  <section class="glance" aria-label="At a glance">
+    <b>At a glance</b>
+    <ul style="margin-top: 4px;">
+      <li><span class="key">Key</span>Export beta ships on <b>20 November</b>, not in December.</li>
+      <li><span class="key">Key</span>The pricing page waits for legal to review the terms.</li>
+    </ul>
+  </section>
+
+  <h2>Summary</h2>
+  <p>The team agreed to <mark>ship the export beta on 20 November</mark> and move the sync redesign to January. Most of the time went on the beta's scope. Pricing stays open until <mark>legal reviews the terms</mark>.</p>
+
+  <h2>Who said what</h2>
+  <ul>
+    <li><span class="who">Speaker 1:</span> The beta can ship on 20 November <mark>if the PDF option waits</mark> for the next release.</li>
+    <li><span class="who">You:</span> Move the sync redesign to January so the team isn't split across two launches.</li>
+    <li><span class="who">Speaker 2:</span> 产品文档需要<mark>中英双语</mark>，下周一前给出初稿。</li>
+  </ul>
+
+  <h2>Open questions</h2>
+  <ul>
+    <li>Do beta users get the paid tier for free?<div class="ans"><span class="ai">AI · </span>I don't know. It wasn't decided; Speaker 1 said it depends on the legal review.</div></li>
+  </ul>
+
+  <h2>Actions and to-dos</h2>
+  <ul>
+    <sc-for list="{{actions}}" as="a" hint-placeholder-count="3">
+      <li style="display: flex; gap: 10px; align-items: flex-start;">
+        <button onClick="{{a.toggle}}" aria-label="Mark done" style="border: 0; padding: 0; background: transparent; cursor: pointer; margin-top: 2px;"><span class="check {{a.cls}}"><svg width="10" height="8" viewBox="0 0 10 8" fill="none" stroke="#fff" stroke-width="1.8" aria-hidden="true"><path d="M1 4l3 3 5-6"></path></svg></span></button>
+        <div><div style="text-decoration: {{a.strike}};">{{a.text}}</div><div class="due">{{a.meta}}</div></div>
+      </li>
+    </sc-for>
+  </ul>
+
+  <h2>AI insights: what you can do</h2>
+  <div class="note">Suggestions from the AI, not things that were said.</div>
+  <ul>
+    <li>Ask legal for a date this week. Pricing blocks the launch page, and the beta date is fixed now.</li>
+    <li>Write the beta notes before the PDF decision, and list PDF as "coming next".</li>
+  </ul>
+
+  <div class="hr" style="margin: 28px 0 10px;"></div>
+  <div class="muted small" style="font-family: -apple-system, BlinkMacSystemFont, sans-serif;">Scenario found automatically: Company meeting · Reviewed · Redaction on · <a>Transcript</a> · <a>Audio</a> (raw, echo removed) · <a>Show in Finder</a></div>
+</article>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"light"},"mode":{"editor":"enum","options":["plain","reading"],"default":"plain"},"$preview":{"width":820,"height":1180}}'>
+class Component extends DCLogic {
+  constructor(p) { super(p); this.state = { done: {} }; }
+  renderVals() {
+    const items = [
+      { id: 'a', text: 'Draft the beta release notes', meta: 'You · due 14 Nov' },
+      { id: 'b', text: 'Send the terms to legal', meta: 'Speaker 1 · no date was said' },
+      { id: 'c', text: '准备双语文档初稿', meta: 'Speaker 2 · 下周一' }
+    ];
+    const done = this.state.done;
+    const reading = (this.props.mode ?? 'plain') === 'reading';
+    return {
+      theme: this.props.theme ?? 'light',
+      modeCls: reading ? 'reading' : '',
+      bg: 'var(--window)',
+      pad: this.props.embedded ? '0' : '28px 40px',
+      actions: items.map((it) => ({ ...it, cls: done[it.id] ? '' : 'off', strike: done[it.id] ? 'line-through' : 'none',
+        toggle: () => this.setState({ done: { ...done, [it.id]: !done[it.id] } }) }))
+    };
+  }
+}
+</script>
+</body>
+</html>

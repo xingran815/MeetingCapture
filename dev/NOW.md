@@ -1,7 +1,7 @@
 # Now
-Updated: 2026-11-07 · M4 done and merged (PR 20, issues 7 and 8 closed). M5 next, in a new session.
+Updated: 2026-11-07 · M5 started on branch `m5-desktop` (issue 9). Step 1 done: six mock-ups published; **waiting on the user's pick.**
 
-**Next step:** start M5 (issue 9, branch `m5-desktop`) **in a new session**, as the user asked. First read `docs/specs/05-desktop.md`, then `dev/evidence/2026-11-07-m4-report.md`'s "For M5". Step 1 is six clickable HTML mock-ups only, no app code: **👤 the user picks one, and the build waits for that.** Check Apple's current Human Interface Guidelines at the time, not from memory. M5 settles the macOS target (`Package.swift` says 14; the spec says 26, D-51).
+**Next step:** 👤 the user picks one of the six mock-ups (private canvas: https://claude.ai/artifact/MGkWWcLXwvs1q3WBqsg73A; sources and the HIG notes in `dev/evidence/m5-mockups/` and `dev/evidence/2026-11-07-m5-hig-and-mockups.md`). Then record the pick as a decision in `dev/DECISIONS.md`, settle the macOS target (`Package.swift` says 14, the spec says 26, D-51), and start step 2 of `docs/specs/05-desktop.md`. No app code before the pick.
 **How to check M4:** `dev/evidence/2026-11-07-m4-report.md`: each Done-when, every review finding with its test, and the assumptions with their reasons.
 
 Open loops:
@@ -17,4 +17,4 @@ Open loops:
 - `NetworkRefusal` only covers `URLSession.shared`.
 
 Needs you:
-- M5's design pick, once the six mock-ups are up.
+- M5's design pick: the six mock-ups are up (link above).

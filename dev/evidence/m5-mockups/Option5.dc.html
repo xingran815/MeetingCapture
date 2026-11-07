@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Option 5: reading first</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="mac.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+.shelf{display:flex;flex-direction:column;gap:4px;padding:18px 0;border-bottom:1px solid var(--sep);cursor:pointer}
+.shelf .t{font-family:var(--serif);font-size:22px;font-weight:600}
+.shelf .p{font-family:var(--serif);font-size:15px;color:var(--label2)}
+.toc a{display:block;padding:4px 0;color:var(--label2);font-size:12px;cursor:pointer}
+.toc a.on{color:var(--label);font-weight:600}
+</style>
+</helmet>
+<div class="mc {{theme}}" style="width: 1280px; height: 884px; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif;">
+
+  <div class="review">
+    <div class="opt"><b>5 · Reading first</b><span>The report is the app, like Reader or Books. Recording lives in the toolbar so you can keep reading.</span></div>
+    <div class="tabs"><sc-for list="{{tabs}}" as="t" hint-placeholder-count="6"><a class="{{t.cls}}" onClick="{{t.go}}">{{t.label}}</a></sc-for></div>
+    <div class="tabs themes"><sc-for list="{{themes}}" as="t" hint-placeholder-count="2"><a class="{{t.cls}}" onClick="{{t.go}}">{{t.label}}</a></sc-for></div>
+  </div>
+
+  <div class="screen">
+    <div class="menubar">
+      <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><rect x="2" y="2" width="10" height="10" rx="3" fill="currentColor"></rect></svg>
+      <span class="app">MeetingCapture</span><span>File</span><span>Edit</span><span>View</span><span>Recording</span><span>Window</span><span>Help</span>
+      <span class="spacer"></span>
+      <sc-if value="{{isRec}}" hint-placeholder-val="{{false}}"><span class="extra"><span class="dot" style="width: 7px; height: 7px; background: #ff9f0a;"></span></span></sc-if>
+      <span>Fri 7 Nov 10:{{clockMin}}</span>
+    </div>
+
+    <sc-if value="{{showMain}}" hint-placeholder-val="{{true}}">
+    <div class="win {{mainInactive}}" style="left: 60px; top: 40px; width: 1160px; height: 764px;">
+      <div class="toolbar" style="position: absolute; left: 0; right: 0; top: 0; z-index: 10;">
+        <div class="lights"><i></i><i></i><i></i></div>
+        <div class="tgroup glass" style="margin-left: 8px;">
+          <button class="tbtn" aria-label="Back to reports" onClick="{{goIdle}}"><svg width="9" height="14" viewBox="0 0 9 14" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M7.5 1.5L2 7l5.5 5.5"></path></svg></button>
+        </div>
+        <span class="flex1"></span>
+        <sc-if value="{{isReport}}" hint-placeholder-val="{{false}}">
+          <div class="tgroup glass"><button class="tbtn label" aria-label="Text size">Aa</button><button class="tbtn label">Speakers</button><button class="tbtn label">Re-run</button>
+            <button class="tbtn" aria-label="Share"><svg width="14" height="17" viewBox="0 0 14 17" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M7 1v10M3.5 4.5L7 1l3.5 3.5"></path><path d="M4 7.5H2v8h10v-8h-2"></path></svg></button></div>
+        </sc-if>
+        <sc-if value="{{idleOrReport}}" hint-placeholder-val="{{true}}">
+          <div class="tgroup glass" style="padding: 0 2px;"><button class="tbtn rec label" onClick="{{goRec}}"><span class="dot" style="background: #fff; width: 9px; height: 9px;"></span>Record</button></div>
+        </sc-if>
+        <sc-if value="{{isRec}}" hint-placeholder-val="{{false}}">
+          <div class="tgroup glass" style="padding: 0 4px 0 12px; gap: 8px; height: 36px; box-shadow: inset 0 0 0 1.5px var(--red-dot), 0 6px 18px rgba(0,0,0,.10);">
+            <span class="dot {{dotCls}}"></span><span style="color: var(--red); font-weight: 600;">{{recLabel}}</span><span class="tabnum" style="font-weight: 600; width: 44px;">{{timer}}</span>
+            <div class="meter live" style="height: 16px; gap: 2px;"><sc-for list="{{meterThem}}" as="m" hint-placeholder-count="14"><i style="height: {{m}}px; width: 3px;"></i></sc-for></div>
+            <button class="tbtn label" onClick="{{togglePause}}">{{pauseLabel}}</button>
+            <button class="tbtn rec label" onClick="{{goProc}}">Stop</button>
+          </div>
+        </sc-if>
+        <sc-if value="{{isProc}}" hint-placeholder-val="{{false}}">
+          <div class="tgroup glass" style="padding: 0 12px; gap: 10px; width: 300px;"><span style="white-space: nowrap;">Transcribing</span><div class="bar flex1"><i style="width: 63%;"></i></div><span class="muted small tabnum">63%</span></div>
+        </sc-if>
+      </div>
+
+      <div class="content scroll" style="padding-top: 52px;">
+        <sc-if value="{{showShelf}}" hint-placeholder-val="{{true}}">
+          <div style="max-width: 660px; margin: 0 auto; padding: 20px 0 40px;">
+            <sc-if value="{{isRec}}" hint-placeholder-val="{{false}}"><div class="chip red" style="margin-bottom: 10px;">Recording in the toolbar. Keep reading while it runs.</div></sc-if>
+            <div class="h-large" style="font-family: var(--serif); font-size: 34px;">Reports</div>
+            <div class="muted" style="margin: 4px 0 6px;">Newest first · 5 recordings</div>
+            <sc-if value="{{isProc}}" hint-placeholder-val="{{false}}">
+              <div class="shelf" style="cursor: default;"><span class="muted small">TODAY, 10:02 · BEING WRITTEN</span><span class="t" style="color: var(--label2);">Fri 10:02 recording</span>
+                <div class="card" style="margin-top: 6px;">
+                  <div class="step" style="padding: 4px 0;"><span class="si done"><svg width="10" height="8" viewBox="0 0 10 8" fill="none" stroke="#fff" stroke-width="1.8" aria-hidden="true"><path d="M1 4l3 3 5-6"></path></svg></span>Echo removed</div>
+                  <div class="step" style="padding: 4px 0;"><span class="si now"></span><span class="flex1">Transcribing · 26:30 of 42:10</span><button class="btn">Cancel</button></div>
+                  <div class="step" style="padding: 4px 0;"><span class="si wait"></span><span class="muted">Speakers, M4A, then the report with Claude</span></div>
+                </div>
+                <a onClick="{{goReport}}" style="cursor: pointer; margin-top: 4px;">Jump to the finished report (mock-up only)</a>
+              </div>
+            </sc-if>
+            <sc-for list="{{shelf}}" as="r" hint-placeholder-count="5">
+              <div class="shelf" onClick="{{r.pick}}"><span class="muted small">{{r.when}}</span><span class="t">{{r.title}}</span><span class="p">{{r.line}}</span></div>
+            </sc-for>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{isReport}}" hint-placeholder-val="{{false}}">
+          <div style="display: flex; gap: 40px; padding: 20px 40px 60px; justify-content: center;">
+            <nav class="toc" style="width: 150px; flex: none; padding-top: 70px;" aria-label="Contents">
+              <div class="small" style="font-weight: 600; margin-bottom: 4px;">Contents</div>
+              <a class="on">At a glance</a><a>Summary</a><a>Who said what</a><a>Open questions</a><a>Actions and to-dos</a><a>AI insights</a>
+            </nav>
+            <div style="width: 660px; flex: none;"><dc-import name="Report" theme="{{theme}}" mode="reading" hint-size="660px,1300px"></dc-import></div>
+            <div style="width: 150px; flex: none;"></div>
+          </div>
+        </sc-if>
+      </div>
+    </div>
+    </sc-if>
+
+    <sc-if value="{{isSettings}}" hint-placeholder-val="{{false}}">
+      <div style="position: absolute; left: 310px; top: 140px; width: 660px; height: 540px; border-radius: 18px; box-shadow: var(--shadow); overflow: hidden;"><dc-import name="Settings" theme="{{theme}}" menubar="{{no}}" hint-size="660px,540px"></dc-import></div>
+    </sc-if>
+    <sc-if value="{{isSetup}}" hint-placeholder-val="{{false}}">
+      <div style="position: absolute; left: 320px; top: 120px; width: 640px; height: 560px; border-radius: 18px; box-shadow: var(--shadow); overflow: hidden;"><dc-import name="Setup" theme="{{theme}}" hint-size="640px,560px"></dc-import></div>
+    </sc-if>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":884}}'>
+class Component extends DCLogic {
+  constructor(p) { super(p); this.state = { screen: 'idle', dark: false, paused: false }; }
+  renderVals() {
+    const st = this.state, s = st.screen, go = (x) => () => this.setState({ screen: x, paused: false });
+    const names = [['idle','Idle'],['rec','Recording'],['proc','Processing'],['report','Report'],['settings','Settings'],['setup','First run']];
+    const bars = (seed) => Array.from({ length: 14 }, (_, i) => 2 + Math.round(Math.abs(Math.sin(i * 1.7 + seed) * Math.cos(i * .6 + seed)) * 14));
+    const paused = st.paused;
+    const shelf = [
+      { when: 'TODAY, 10:02 · MEETING · 42 MIN', title: 'Roadmap sync', line: 'Export beta ships 20 November, not in December. Pricing waits for legal.' },
+      { when: 'YESTERDAY · MEETING · 58 MIN', title: '产品周会', line: '产品文档需要中英双语，下周一前给出初稿。' },
+      { when: 'WEDNESDAY · ONE-ON-ONE · 28 MIN', title: 'Weekly 1:1', line: 'Agreed to pair on the import bug next week.' },
+      { when: 'MONDAY · INTERVIEW · 35 MIN', title: 'Interview practice', line: 'A stronger answer for the scaling question.' },
+      { when: 'MONDAY · LECTURE · 1 H 12 MIN', title: 'Distributed systems, week 6', line: 'Consensus, leases and why clocks drift.' }
+    ];
+    return {
+      theme: st.dark ? 'dark' : 'light',
+      tabs: names.map(([k, l]) => ({ label: l, cls: k === s ? 'on' : '', go: go(k) })),
+      themes: [['Light', false], ['Dark', true]].map(([l, d]) => ({ label: l, cls: st.dark === d ? 'on' : '', go: () => this.setState({ dark: d }) })),
+      isRec: s === 'rec', isProc: s === 'proc', isReport: s === 'report', isSettings: s === 'settings', isSetup: s === 'setup',
+      idleOrReport: s === 'idle' || s === 'report' || s === 'settings', showShelf: s === 'idle' || s === 'rec' || s === 'proc' || s === 'settings',
+      showMain: s !== 'setup', mainInactive: s === 'settings' ? 'inactive' : '', no: false,
+      shelf: shelf.map((r) => ({ ...r, pick: go('report') })),
+      clockMin: s === 'rec' ? '15' : (s === 'proc' ? '45' : '02'),
+      timer: '12:48', recLabel: paused ? 'Paused' : 'Recording', dotCls: paused ? 'paused' : 'pulse', pauseLabel: paused ? 'Resume' : 'Pause',
+      meterThem: paused ? bars(3).map(() => 2) : bars(3),
+      goIdle: go('idle'), goRec: go('rec'), goProc: go('proc'), goReport: go('report'),
+      togglePause: () => this.setState({ paused: !paused })
+    };
+  }
+}
+</script>
+</body>
+</html>

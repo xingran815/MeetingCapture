@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>First run</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="mac.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div class="mc {{theme}}" style="width: 640px; height: 560px; background: var(--window); display: flex; flex-direction: column; font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif; color: var(--label);">
+  <div style="height: 38px; display: flex; align-items: center; padding: 0 14px; flex: none;"><div class="lights"><i></i><i></i><i></i></div></div>
+  <div style="flex: 1; padding: 6px 44px 0; display: flex; flex-direction: column; gap: 14px;">
+    <div style="display: flex; align-items: center; gap: 14px;">
+      <div class="appicon" style="width: 52px; height: 52px; border-radius: 13px;"><svg width="26" height="22" viewBox="0 0 26 22" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M3 8v6M8.5 3v16M14 6v10M19.5 9v4M24 7v8"></path></svg></div>
+      <div><div class="h1">{{heading}}</div><div class="muted">Step {{stepNo}} of 2 · Audio and transcripts stay on this Mac</div></div>
+    </div>
+
+    <sc-if value="{{isModels}}" hint-placeholder-val="{{true}}">
+      <div class="muted">MeetingCapture turns speech into text on this Mac. It needs two models first. They are downloaded once, not bundled with the app.</div>
+      <div class="card" style="display: flex; flex-direction: column; gap: 14px;">
+        <div>
+          <div style="display: flex; align-items: baseline; gap: 8px;"><b>Speech model</b><span class="muted">Whisper small · English and 中文</span><span class="flex1"></span><span class="muted tabnum">{{dlText}}</span></div>
+          <div class="bar" style="margin-top: 8px; height: 8px;"><i style="width: {{dlPct}}%;"></i></div>
+          <div class="muted small" style="margin-top: 5px;">{{dlState}}</div>
+        </div>
+        <div class="hr"></div>
+        <div>
+          <div style="display: flex; align-items: baseline; gap: 8px;"><b>Speaker model</b><span class="muted">tells voices apart on the call's side</span><span class="flex1"></span><span class="muted">Waiting</span></div>
+          <div class="bar" style="margin-top: 8px; height: 8px;"><i style="width: 0%;"></i></div>
+          <div class="muted small" style="margin-top: 5px;">Its size shows once it starts</div>
+        </div>
+      </div>
+      <div class="muted small">If you quit, the download picks up where it stopped next time.</div>
+      <div style="display: flex; gap: 8px; margin-top: auto; padding-bottom: 24px;">
+        <button class="btn" onClick="{{cancel}}">Cancel</button>
+        <span class="flex1"></span>
+        <button class="btn" onClick="{{togglePause}}">{{pauseLabel}}</button>
+        <button class="btn prom" onClick="{{next}}">Continue</button>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{isPerms}}" hint-placeholder-val="{{false}}">
+      <div class="muted">macOS asks you about two permissions. Here is why, before it asks.</div>
+      <div class="card" style="display: flex; flex-direction: column; gap: 12px;">
+        <div style="display: flex; gap: 12px; align-items: center;">
+          <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="color: var(--accent); flex: none;"><path d="M11 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3zM5 10a6 6 0 0 0 12 0M11 16v4"></path></svg>
+          <div class="flex1"><b>Microphone</b><div class="muted small">To record your side of the call</div></div>
+          <sc-if value="{{micOk}}" hint-placeholder-val="{{false}}"><span class="chip green">Allowed</span></sc-if>
+          <sc-if value="{{micAsk}}" hint-placeholder-val="{{true}}"><button class="btn prom" onClick="{{allowMic}}">Allow…</button></sc-if>
+        </div>
+        <div class="hr"></div>
+        <div style="display: flex; gap: 12px; align-items: center;">
+          <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="color: var(--accent); flex: none;"><rect x="2" y="4" width="18" height="12" rx="2"></rect><path d="M7 19h8"></path></svg>
+          <div class="flex1"><b>Screen &amp; System Audio Recording</b><div class="muted small">To hear the call's audio. Nothing on screen is recorded.</div></div>
+          <sc-if value="{{scrOk}}" hint-placeholder-val="{{false}}"><span class="chip green">Allowed</span></sc-if>
+          <sc-if value="{{scrAsk}}" hint-placeholder-val="{{true}}"><button class="btn" onClick="{{openSettings}}">{{scrLabel}}</button></sc-if>
+        </div>
+      </div>
+      <div class="muted small">{{scrHint}}</div>
+      <div style="display: flex; gap: 8px; margin-top: auto; padding-bottom: 24px;">
+        <button class="btn" onClick="{{back}}">Back</button>
+        <span class="flex1"></span>
+        <button class="btn">Later</button>
+        <button class="btn prom">Start using MeetingCapture</button>
+      </div>
+    </sc-if>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"light"},"$preview":{"width":640,"height":560}}'>
+class Component extends DCLogic {
+  constructor(p) { super(p); this.state = { step: 1, paused: false, cancelled: false, mic: false, scr: 0 }; }
+  renderVals() {
+    const st = this.state;
+    return {
+      theme: this.props.theme ?? 'light',
+      heading: st.step === 1 ? 'Get the speech models' : 'Let it hear the call',
+      stepNo: st.step,
+      isModels: st.step === 1, isPerms: st.step === 2,
+      dlPct: st.cancelled ? 0 : 45,
+      dlText: st.cancelled ? 'Cancelled' : '212 MB of about 470 MB',
+      dlState: st.cancelled ? 'Cancelled. The part already downloaded is kept, so starting again is quick.' : (st.paused ? 'Paused' : 'Downloading · about 2 minutes left'),
+      pauseLabel: st.cancelled ? 'Start again' : (st.paused ? 'Resume' : 'Pause'),
+      togglePause: () => this.setState(st.cancelled ? { cancelled: false, paused: false } : { paused: !st.paused }),
+      cancel: () => this.setState({ cancelled: true }),
+      next: () => this.setState({ step: 2 }), back: () => this.setState({ step: 1 }),
+      micOk: st.mic, micAsk: !st.mic, allowMic: () => this.setState({ mic: true }),
+      scrOk: st.scr === 2, scrAsk: st.scr < 2,
+      scrLabel: st.scr === 0 ? 'Open System Settings' : 'Check again',
+      scrHint: st.scr === 1 ? 'Turn on MeetingCapture in Privacy & Security › Screen & System Audio Recording, then press Check again.' : 'You can change both later in System Settings › Privacy & Security.',
+      openSettings: () => this.setState({ scr: st.scr + 1 })
+    };
+  }
+}
+</script>
+</body>
+</html>

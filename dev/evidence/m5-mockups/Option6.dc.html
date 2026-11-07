@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Option 6: timeline</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="mac.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+.lanes{display:grid;grid-template-columns:86px 1fr;gap:6px 10px;align-items:center}
+.pin{position:absolute;top:-2px;transform:translateX(-50%);border:0;padding:2px 7px;border-radius:9px;font-size:11px;white-space:nowrap;cursor:pointer;background:var(--fill2);color:var(--label)}
+.pin.on{background:var(--accent);color:#fff}
+.tline{display:grid;grid-template-columns:52px 84px 1fr;gap:8px;padding:6px 10px;border-radius:8px}
+.tline.on{background:var(--accent-soft)}
+.tline .ts{font-variant-numeric:tabular-nums;color:var(--accent);font-size:12px}
+.sitem{padding:8px 0;border-bottom:1px solid var(--sep);display:flex;gap:8px;cursor:pointer}
+.sitem .ts{font-variant-numeric:tabular-nums;color:var(--accent);font-size:12px;flex:none;width:40px}
+.mini{position:relative;height:14px;border-radius:4px;background:var(--fill)}
+.mini i{position:absolute;top:2px;bottom:2px;border-radius:2px;display:block}
+</style>
+</helmet>
+<div class="mc {{theme}}" style="width: 1280px; height: 884px; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif;">
+
+  <div class="review">
+    <div class="opt"><b>6 · Timeline</b><span>The call as a document in time: speaker lanes, report points pinned to the moment they were said.</span></div>
+    <div class="tabs"><sc-for list="{{tabs}}" as="t" hint-placeholder-count="6"><a class="{{t.cls}}" onClick="{{t.go}}">{{t.label}}</a></sc-for></div>
+    <div class="tabs themes"><sc-for list="{{themes}}" as="t" hint-placeholder-count="2"><a class="{{t.cls}}" onClick="{{t.go}}">{{t.label}}</a></sc-for></div>
+  </div>
+
+  <div class="screen">
+    <div class="menubar">
+      <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><rect x="2" y="2" width="10" height="10" rx="3" fill="currentColor"></rect></svg>
+      <span class="app">MeetingCapture</span><span>File</span><span>Edit</span><span>View</span><span>Recording</span><span>Window</span><span>Help</span>
+      <span class="spacer"></span>
+      <sc-if value="{{isRec}}" hint-placeholder-val="{{false}}"><span class="extra"><span class="dot" style="width: 7px; height: 7px; background: #ff9f0a;"></span></span><span class="extra rec" style="background: {{recBg}};"><span style="width: 7px; height: 7px; border-radius: 50%; background: #fff; display: block;"></span>{{timer}}</span></sc-if>
+      <sc-if value="{{notRec}}" hint-placeholder-val="{{true}}"><span class="extra"><svg width="18" height="14" viewBox="0 0 18 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 5v4M6 2v10M10 4v6M14 6v2"></path></svg></span></sc-if>
+      <span>Fri 7 Nov 10:{{clockMin}}</span>
+    </div>
+
+    <sc-if value="{{showMain}}" hint-placeholder-val="{{true}}">
+    <div class="win {{mainInactive}}" style="left: 40px; top: 44px; width: 1200px; height: 756px;">
+      <div class="toolbar">
+        <div class="lights"><i></i><i></i><i></i></div>
+        <div class="tgroup glass" style="margin-left: 8px;"><button class="tbtn label" onClick="{{goIdle}}"><svg width="16" height="14" viewBox="0 0 16 14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M1 2h14M1 7h14M1 12h14"></path></svg>Recordings</button></div>
+        <div style="display: flex; flex-direction: column; padding-left: 8px;"><span class="title">{{winTitle}}</span><span class="sub">{{winSub}}</span></div>
+        <span class="flex1"></span>
+        <sc-if value="{{isReport}}" hint-placeholder-val="{{false}}">
+          <div class="tgroup glass"><button class="tbtn label">Speakers</button><button class="tbtn label">Re-run</button>
+            <button class="tbtn" aria-label="Play from selection"><svg width="12" height="14" viewBox="0 0 12 14" aria-hidden="true"><path d="M1 1l10 6-10 6z" fill="currentColor"></path></svg></button>
+            <button class="tbtn" aria-label="Share"><svg width="14" height="17" viewBox="0 0 14 17" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M7 1v10M3.5 4.5L7 1l3.5 3.5"></path><path d="M4 7.5H2v8h10v-8h-2"></path></svg></button></div>
+        </sc-if>
+        <sc-if value="{{notRec}}" hint-placeholder-val="{{true}}">
+          <div class="tgroup glass" style="padding: 0 2px;"><button class="tbtn rec label" onClick="{{goRec}}"><span class="dot" style="background: #fff; width: 9px; height: 9px;"></span>Record</button></div>
+        </sc-if>
+        <sc-if value="{{isRec}}" hint-placeholder-val="{{false}}">
+          <div class="tgroup glass"><button class="tbtn label" onClick="{{togglePause}}">{{pauseLabel}}</button></div>
+          <div class="tgroup glass" style="padding: 0 2px;"><button class="tbtn rec label" onClick="{{goProc}}"><span style="width: 9px; height: 9px; background: #fff; border-radius: 2px; display: block;"></span>Stop</button></div>
+        </sc-if>
+      </div>
+
+      <sc-if value="{{isIdle}}" hint-placeholder-val="{{true}}">
+        <div style="flex: 1; overflow: hidden; padding: 6px 28px;">
+          <sc-for list="{{library}}" as="r" hint-placeholder-count="5">
+            <div style="display: grid; grid-template-columns: 220px 1fr 90px; gap: 18px; align-items: center; padding: 12px 6px; border-bottom: 1px solid var(--sep); cursor: pointer;" onClick="{{r.pick}}">
+              <div><b>{{r.title}}</b><div class="muted small">{{r.meta}}</div></div>
+              <div style="display: flex; flex-direction: column; gap: 3px;">
+                <div class="mini"><sc-for list="{{r.a}}" as="g" hint-placeholder-count="4"><i style="left: {{g.l}}%; width: {{g.w}}%; background: var(--green-dot);"></i></sc-for></div>
+                <div class="mini"><sc-for list="{{r.b}}" as="g" hint-placeholder-count="4"><i style="left: {{g.l}}%; width: {{g.w}}%; background: #5e9cff;"></i></sc-for></div>
+              </div>
+              <span class="muted small" style="text-align: right;">{{r.len}}</span>
+            </div>
+          </sc-for>
+          <div class="muted small" style="padding: 12px 6px;">Green is you, blue is the other side. Record <kbd>⌘R</kbd> from here or the menu bar.</div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{hasTimeline}}" hint-placeholder-val="{{false}}">
+        <div style="padding: 4px 24px 0; flex: none;">
+          <div class="card" style="padding: 12px 16px 14px;">
+            <div class="lanes">
+              <span></span>
+              <div style="position: relative; height: 22px;">
+                <sc-for list="{{ruler}}" as="m" hint-placeholder-count="8"><span class="muted small" style="position: absolute; left: {{m.l}}%; transform: translateX(-50%);">{{m.t}}</span></sc-for>
+                <sc-for list="{{pins}}" as="p" hint-placeholder-count="0"><button class="pin {{p.cls}}" style="left: {{p.l}}%; top: -2px;" onClick="{{p.pick}}">{{p.label}}</button></sc-for>
+              </div>
+              <sc-for list="{{lanes}}" as="ln" hint-placeholder-count="3">
+                <span class="small" style="font-weight: 600;">{{ln.name}}</span>
+                <div class="lane {{ln.cls}}" style="position: relative;">
+                  <sc-for list="{{ln.segs}}" as="g" hint-placeholder-count="6"><i style="left: {{g.l}}%; width: {{g.w}}%; opacity: {{g.o}};"></i></sc-for>
+                  <sc-if value="{{showHead}}" hint-placeholder-val="{{false}}"><span class="playhead" style="left: {{head}}%;"></span></sc-if>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{isRec}}" hint-placeholder-val="{{false}}">
+        <div style="padding: 18px 24px; display: flex; gap: 16px; align-items: center;">
+          <span class="dot {{dotCls}}"></span><span class="h2" style="color: var(--red);">{{recLabel}}</span><span class="h2 tabnum" style="font-weight: 400;">{{timer}}</span>
+          <span class="muted">The lanes grow as people talk. Words appear after you stop, because transcription runs on this Mac once the call ends.</span>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{isProc}}" hint-placeholder-val="{{false}}">
+        <div style="padding: 16px 24px; display: flex; gap: 24px;">
+          <div class="card" style="flex: 1;">
+            <div class="step" style="padding: 4px 0;"><span class="si done"><svg width="10" height="8" viewBox="0 0 10 8" fill="none" stroke="#fff" stroke-width="1.8" aria-hidden="true"><path d="M1 4l3 3 5-6"></path></svg></span>Echo removed</div>
+            <div class="step" style="padding: 4px 0;"><span class="si now"></span><span class="flex1">Transcribing · the lanes fill in as it goes · 63%</span><button class="btn">Cancel</button></div>
+            <div class="step" style="padding: 4px 0;"><span class="si wait"></span><span class="muted">Speakers, M4A, then the report with Claude; its points get pinned to the timeline</span></div>
+          </div>
+          <a onClick="{{goReport}}" style="cursor: pointer; align-self: center;">Jump to the finished report (mock-up only)</a>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{isReport}}" hint-placeholder-val="{{false}}">
+        <div style="flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 0; min-height: 0; margin-top: 10px; border-top: 1px solid var(--sep);">
+          <div style="overflow: hidden; padding: 10px 14px; border-right: 1px solid var(--sep);">
+            <div class="small" style="font-weight: 600; color: var(--label2); padding: 4px 10px 6px;">Transcript</div>
+            <sc-for list="{{lines}}" as="l" hint-placeholder-count="8">
+              <div class="tline {{l.cls}}"><span class="ts">{{l.t}}</span><b>{{l.who}}</b><span>{{l.text}}</span></div>
+            </sc-for>
+          </div>
+          <div style="overflow: hidden; padding: 10px 20px;" class="rp">
+            <div class="glance" style="margin-top: 4px;"><b>At a glance</b>
+              <div style="padding-top: 6px;"><span class="key">Key</span>Export beta ships on <b>20 November</b>.</div>
+              <div style="padding-top: 6px;"><span class="key">Key</span>Pricing waits for the legal review.</div>
+            </div>
+            <h2 style="margin-top: 18px;">Points, in time</h2>
+            <sc-for list="{{points}}" as="p" hint-placeholder-count="5">
+              <div class="sitem" onClick="{{p.pick}}" style="background: {{p.bg}};"><span class="ts">{{p.t}}</span><div><div class="muted small">{{p.sec}}</div>{{p.text}}</div></div>
+            </sc-for>
+            <div class="note" style="margin-top: 10px;">The full report, with AI insights, opens with ⌘⇧R.</div>
+          </div>
+        </div>
+      </sc-if>
+    </div>
+    </sc-if>
+
+    <sc-if value="{{isSettings}}" hint-placeholder-val="{{false}}">
+      <div style="position: absolute; left: 310px; top: 140px; width: 660px; height: 540px; border-radius: 18px; box-shadow: var(--shadow); overflow: hidden;"><dc-import name="Settings" theme="{{theme}}" menubar="{{yes}}" hint-size="660px,540px"></dc-import></div>
+    </sc-if>
+    <sc-if value="{{isSetup}}" hint-placeholder-val="{{false}}">
+      <div style="position: absolute; left: 320px; top: 120px; width: 640px; height: 560px; border-radius: 18px; box-shadow: var(--shadow); overflow: hidden;"><dc-import name="Setup" theme="{{theme}}" hint-size="640px,560px"></dc-import></div>
+    </sc-if>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":884}}'>
+class Component extends DCLogic {
+  constructor(p) { super(p); this.state = { screen: 'idle', dark: false, paused: false, pin: 'beta' }; }
+  renderVals() {
+    const st = this.state, s = st.screen, go = (x) => () => this.setState({ screen: x, paused: false });
+    const names = [['idle','Idle'],['rec','Recording'],['proc','Processing'],['report','Report'],['settings','Settings'],['setup','First run']];
+    const paused = st.paused;
+    const segsFor = (seed, n) => { const out = []; let x = seed % 5; for (let i = 0; i < n && x < 98; i++) { const w = 2 + ((i * 7 + seed * 3) % 9); out.push({ l: x, w: Math.min(w, 99 - x) }); x += w + 2 + ((i * 5 + seed) % 7); } return out; };
+    const cut = s === 'rec' ? 30 : (s === 'proc' ? 63 : 100);
+    const lane = (name, cls, seed) => ({ name, cls, segs: segsFor(seed, 20).filter((g) => s !== 'rec' || g.l < cut).map((g) => ({ l: g.l, w: s === 'rec' ? Math.min(g.w, cut - g.l) : g.w, o: (s === 'proc' && g.l > cut) ? '.25' : '1' })) });
+    const pinDefs = [['beta', 20.6, 'Beta date', '08:40'], ['pdf', 36, 'PDF waits', '15:10'], ['pricing', 50.2, 'Pricing open', '21:10'], ['docs', 64, '双语文档', '27:00'], ['notes', 78.4, 'Action: notes', '33:05']];
+    const pick = (id) => () => this.setState({ pin: id });
+    const lines = [
+      ['08:31', 'Speaker 1', 'So the question is whether we hold the beta for PDF.', ''],
+      ['08:40', 'Speaker 1', 'If PDF waits, we can ship on 20 November.', 'beta'],
+      ['08:52', 'You', 'Then let’s say 20 November and list PDF as next.', 'beta'],
+      ['09:05', 'Speaker 2', 'Works for me. Docs need to be ready by then.', ''],
+      ['15:10', 'Speaker 1', 'PDF goes in the release after, not this one.', 'pdf'],
+      ['21:10', 'Speaker 2', 'Pricing can’t go live before legal looks at the terms.', 'pricing'],
+      ['27:00', 'Speaker 2', '产品文档需要中英双语，下周一前给出初稿。', 'docs'],
+      ['33:05', 'You', 'I’ll draft the beta notes by the 14th.', 'notes']
+    ];
+    const points = [['beta', '08:40', 'Summary', 'Export beta ships on 20 November.'], ['pdf', '15:10', 'Who said what', 'Speaker 1: the PDF option waits for the next release.'], ['pricing', '21:10', 'Open questions', 'Do beta users get the paid tier free? Not decided.'], ['docs', '27:00', 'Actions', '准备双语文档初稿 · Speaker 2 · 下周一'], ['notes', '33:05', 'Actions', 'Draft the beta release notes · You · 14 Nov']];
+    const lib = [['Roadmap sync', 'Today 10:02 · Meeting', '42 min', 3], ['产品周会', 'Yesterday · Meeting', '58 min', 7], ['Weekly 1:1', 'Wed · One-on-one', '28 min', 11], ['Interview practice', 'Mon · Interview', '35 min', 4], ['Distributed systems, week 6', 'Mon · Lecture', '1 h 12 min', 9]];
+    return {
+      theme: st.dark ? 'dark' : 'light',
+      tabs: names.map(([k, l]) => ({ label: l, cls: k === s ? 'on' : '', go: go(k) })),
+      themes: [['Light', false], ['Dark', true]].map(([l, d]) => ({ label: l, cls: st.dark === d ? 'on' : '', go: () => this.setState({ dark: d }) })),
+      isIdle: s === 'idle' || s === 'settings', isRec: s === 'rec', notRec: s !== 'rec', isProc: s === 'proc', isReport: s === 'report', isSettings: s === 'settings', isSetup: s === 'setup',
+      showMain: s !== 'setup', mainInactive: s === 'settings' ? 'inactive' : '', yes: true,
+      hasTimeline: s === 'rec' || s === 'proc' || s === 'report',
+      winTitle: s === 'report' ? 'Roadmap sync' : (s === 'rec' ? 'New recording' : (s === 'proc' ? 'Fri 10:02 recording' : 'Recordings')),
+      winSub: s === 'report' ? 'Today 10:02 · 42 min · Company meeting' : (s === 'rec' ? 'Zoom + microphone' : (s === 'proc' ? '42 min · transcribing' : '5 recordings')),
+      ruler: s === 'rec' ? [0, 10, 20, 30, 40].map((m) => ({ l: m * 2.5, t: m === 0 ? '0:00' : m + ':00' })).concat([]) : [0, 5, 10, 15, 20, 25, 30, 35, 40].map((m) => ({ l: m / 42 * 100, t: m + ':00' })),
+      pins: s === 'report' ? pinDefs.map(([id, l, label]) => ({ l, label, cls: st.pin === id ? 'on' : '', pick: pick(id) })) : [],
+      lanes: [lane('You', 'you', 2), lane('Speaker 1', 's1', 5), lane('Speaker 2', 's2', 8)],
+      showHead: s === 'rec' || s === 'proc' || s === 'report',
+      head: s === 'rec' ? cut : (s === 'proc' ? cut : (pinDefs.find((p) => p[0] === st.pin) || pinDefs[0])[1]),
+      lines: lines.map(([t, who, text, id]) => ({ t, who, text, cls: id && id === st.pin ? 'on' : '' })),
+      points: points.map(([id, t, sec, text]) => ({ t, sec, text, bg: id === st.pin ? 'var(--accent-soft)' : 'transparent', pick: pick(id) })),
+      library: lib.map(([title, meta, len, seed]) => ({ title, meta, len, a: segsFor(seed, 10), b: segsFor(seed + 3, 10), pick: go('report') })),
+      recBg: paused ? '#c77700' : 'var(--red-dot)',
+      clockMin: s === 'rec' ? '15' : (s === 'proc' ? '45' : '02'),
+      timer: '12:48', recLabel: paused ? 'Paused' : 'Recording', dotCls: paused ? 'paused' : 'pulse', pauseLabel: paused ? 'Resume' : 'Pause',
+      goIdle: go('idle'), goRec: go('rec'), goProc: go('proc'), goReport: go('report'),
+      togglePause: () => this.setState({ paused: !paused })
+    };
+  }
+}
+</script>
+</body>
+</html>

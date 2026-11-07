@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Settings window</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="mac.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+.srow2{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--sep)}
+.srow2:last-child{border-bottom:0}
+.srow2 .lbl{flex:1;min-width:0}
+.ptab{display:flex;flex-direction:column;align-items:center;gap:3px;width:84px;padding:6px 0;border-radius:10px;border:0;background:transparent;cursor:pointer;font-size:11px;color:var(--label2)}
+.ptab.on{background:var(--fill2);color:var(--accent)}
+</style>
+</helmet>
+<div class="mc {{theme}}" style="width: 660px; height: 540px; background: var(--window); display: flex; flex-direction: column; font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif; color: var(--label);">
+  <div style="height: 38px; display: flex; align-items: center; padding: 0 14px; position: relative; flex: none;">
+    <div class="lights"><i></i><i></i><i></i></div>
+    <div style="position: absolute; left: 0; right: 0; text-align: center; font-weight: 650; pointer-events: none;">{{tabTitle}}</div>
+  </div>
+  <div style="display: flex; justify-content: center; gap: 4px; padding: 0 0 10px; flex: none; border-bottom: 1px solid var(--sep);">
+    <sc-for list="{{tabs}}" as="t" hint-placeholder-count="4">
+      <button class="ptab {{t.cls}}" onClick="{{t.go}}">
+        <svg width="22" height="20" viewBox="0 0 22 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="{{t.icon}}"></path></svg>{{t.label}}
+      </button>
+    </sc-for>
+  </div>
+
+  <div style="flex: 1; overflow: auto; padding: 18px 28px;">
+    <sc-if value="{{isGeneral}}" hint-placeholder-val="{{true}}">
+      <div class="card" style="padding: 4px 16px;">
+        <div class="srow2"><div class="lbl">Save recordings in<div class="muted small mono">~/Documents/MeetingCapture</div></div><button class="btn">Choose…</button></div>
+        <div class="srow2"><div class="lbl">Keep audio for<div class="muted small">Transcripts and reports are always kept</div></div><button class="popup">30 days <span class="muted">⌃</span></button></div>
+        <div class="srow2"><div class="lbl">Speech model<div class="muted small">Multilingual, for English and 中文. Larger is slower and more accurate</div></div><button class="popup">Whisper small <span class="muted">⌃</span></button></div>
+        <sc-if value="{{menubar}}" hint-placeholder-val="{{true}}">
+          <div class="srow2"><div class="lbl">Show recorder in the menu bar</div><button class="toggle {{mbCls}}" onClick="{{toggleMb}}" aria-label="Show recorder in the menu bar"></button></div>
+        </sc-if>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{isRecording}}" hint-placeholder-val="{{false}}">
+      <div class="card" style="padding: 4px 16px;">
+        <div class="srow2"><span class="radio {{autoCls}}"></span><div class="lbl" onClick="{{pickAuto}}" style="cursor: pointer;">Meeting apps, detected automatically<div class="muted small">Records only the app that is playing the call</div></div></div>
+        <div style="padding: 4px 0 8px 28px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 16px;">
+          <sc-for list="{{apps}}" as="a" hint-placeholder-count="5"><span style="display: flex; gap: 8px; align-items: center; opacity: {{a.op}};"><span class="check"><svg width="10" height="8" viewBox="0 0 10 8" fill="none" stroke="#fff" stroke-width="1.8" aria-hidden="true"><path d="M1 4l3 3 5-6"></path></svg></span>{{a.name}}</span></sc-for>
+        </div>
+        <div class="srow2"><span class="radio {{allCls}}"></span><div class="lbl" onClick="{{pickAll}}" style="cursor: pointer;">All system audio<div class="muted small">Everything the Mac plays, including alerts</div></div></div>
+        <div class="srow2"><div class="lbl">Record my microphone</div><button class="toggle on" aria-label="Record my microphone"></button></div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{isSummaries}}" hint-placeholder-val="{{false}}">
+      <div class="card" style="padding: 4px 16px;">
+        <div class="srow2"><div class="lbl">Write reports with<div class="muted small">Uses your Claude or ChatGPT subscription through its command-line tool</div></div><div class="seg"><a class="{{cl1}}" onClick="{{pickClaude}}">Claude</a><a class="{{cl2}}" onClick="{{pickCodex}}">Codex</a></div></div>
+        <div class="srow2"><div class="lbl">Used today<div class="bar" style="margin-top: 6px; width: 260px;"><i style="width: 6%;"></i></div></div><span class="muted tabnum">12 of 200 calls</span></div>
+        <div class="srow2"><div class="lbl">Connection<div class="small" style="color: {{testColor}};">{{testText}}</div></div><button class="btn" onClick="{{test}}">Test</button></div>
+        <div class="srow2"><div class="lbl">Hide names, emails and numbers before sending<div class="muted small">Replaced with tokens like &lt;EMAIL_1&gt;, put back on this Mac</div></div><button class="toggle on" aria-label="Redaction"></button></div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{isTerminal}}" hint-placeholder-val="{{false}}">
+      <div class="h3" style="margin-bottom: 6px;">More settings live in the terminal</div>
+      <div class="muted" style="margin-bottom: 14px;">The terminal can do everything this app does, plus finer control. Run this, then choose Settings:</div>
+      <div class="card mono" style="display: flex; align-items: center; gap: 12px;"><span class="flex1">meetingcapture</span><button class="btn">Copy</button></div>
+      <ul style="margin: 16px 0 0; padding-left: 18px; line-height: 1.8;" class="muted">
+        <li>Models per step, and reasoning depth</li>
+        <li>API profiles (DeepSeek, OpenAI, Anthropic, Ollama, custom)</li>
+        <li>Force a report type, pin the language</li>
+        <li>Echo removal tuning, recording part length</li>
+      </ul>
+    </sc-if>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"light"},"menubar":{"editor":"boolean","default":true},"$preview":{"width":660,"height":540}}'>
+class Component extends DCLogic {
+  constructor(p) { super(p); this.state = { tab: 'general', mb: true, all: false, cli: 'claude', tested: false }; }
+  renderVals() {
+    const st = this.state, t = st.tab;
+    const defs = [
+      ['general', 'General', 'M11 2.5a2 2 0 0 1 2 1.6l.3 1.3 1.3.5 1.1-.7a2 2 0 0 1 2.6 2.6l-.7 1.1.5 1.3 1.3.3a2 2 0 0 1 0 4l-1.3.3-.5 1.3.7 1.1a2 2 0 0 1-2.6 2.6M11 7.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z'],
+      ['recording', 'Recording', 'M11 1.5a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0v-5a3 3 0 0 1 3-3zM5 9.5a6 6 0 0 0 12 0M11 15.5v3'],
+      ['summaries', 'Summaries', 'M4 2.5h10l4 4v11H4zM7 9h8M7 12h8M7 15h5'],
+      ['terminal', 'Terminal', 'M2.5 3.5h17v13h-17zM6 8l3 2.5L6 13M11 13h5']
+    ];
+    return {
+      theme: this.props.theme ?? 'light',
+      menubar: this.props.menubar ?? true,
+      tabs: defs.map(([k, l, d]) => ({ label: l, icon: d, cls: k === t ? 'on' : '', go: () => this.setState({ tab: k }) })),
+      tabTitle: defs.find((d) => d[0] === t)[1],
+      isGeneral: t === 'general', isRecording: t === 'recording', isSummaries: t === 'summaries', isTerminal: t === 'terminal',
+      mbCls: st.mb ? 'on' : '', toggleMb: () => this.setState({ mb: !st.mb }),
+      autoCls: st.all ? '' : 'on', allCls: st.all ? 'on' : '',
+      pickAuto: () => this.setState({ all: false }), pickAll: () => this.setState({ all: true }),
+      apps: ['Zoom', 'Microsoft Teams', 'Webex', 'Google Chrome (Meet)', 'Safari (Meet)'].map((n) => ({ name: n, op: st.all ? '.4' : '1' })),
+      cl1: st.cli === 'claude' ? 'on' : '', cl2: st.cli === 'codex' ? 'on' : '',
+      pickClaude: () => this.setState({ cli: 'claude', tested: false }), pickCodex: () => this.setState({ cli: 'codex', tested: false }),
+      testText: st.tested ? (st.cli === 'claude' ? 'Claude CLI is ready, logged in with a subscription' : 'Codex CLI is ready, logged in with a subscription') : 'Not tested yet',
+      testColor: st.tested ? 'var(--green)' : 'var(--label2)',
+      test: () => this.setState({ tested: true })
+    };
+  }
+}
+</script>
+</body>
+</html>
