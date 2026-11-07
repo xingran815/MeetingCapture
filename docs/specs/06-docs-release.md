@@ -11,7 +11,7 @@
 
 ## Security pass
 Run `/security-review` and the `deep-reviewer` agent in parallel with each other on the whole milestone, after CI. Also check by hand:
-- Fresh clone: `scripts/setup.sh` installs the hooks, and `scripts/check.sh` passes.
+- Fresh clone: `scripts/setup.sh` installs the hooks, and `scripts/check.sh --full` passes.
 - Full-history sweep on `main` and every commit email on GitHub.
 - `feature/coding-interview` is absent from the remote.
 - No real audio, transcript or report in the repo or its history.
