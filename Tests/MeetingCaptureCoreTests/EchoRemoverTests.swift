@@ -56,12 +56,28 @@ final class EchoRemoverTests: AudioTestCase {
 
     /// The known risk from M3's review: with the echo ahead of the reference, a filter that
     /// only looks behind finds nothing. It may stop, but it must never make the mic worse.
+    /// From the M3.2 deep review, finding 10: the old version returned on nil and proved
+    /// nothing. Each outcome now asserts something real.
     func testAnEchoAheadOfTheReferenceIsLeftAloneOrImproved() throws {
         let far = EchoLab.speech(seconds: 24, seed: 13, rms: 0.1)
         let mic = EchoLab.sum(EchoLab.echo(of: far, delay: 0), EchoLab.noise(far.count, seed: 7, rms: 0.0003))
         let system = EchoLab.shifted(far, by: 960)  // the reference runs 20 ms late
-        guard let (_, out) = try clean(mic: mic, system: system) else { return }
+        guard let (result, out) = try clean(mic: mic, system: system) else {
+            // Nothing found: the lag search only looks 2 ms or more behind the reference, so
+            // it must not have invented a lag, and no file was left (checked by `clean`).
+            let micReader = try MonoReader(url("mic.wav"))
+            let systemReader = try MonoReader(url("system.wav"))
+            let track = try EchoRemover.lagTrack(mic: micReader, system: systemReader, frames: far.count)
+            print("EchoRemoverTests: echo ahead of the reference: nothing found")
+            XCTAssertEqual(track.count, 0, "no echo was reported, yet the lag search found \(track)")
+            return
+        }
+        // Found: it must be real (a lag the search allows), the length is kept, the mic
+        // never got louder, and no frame of the output is wilder than the mic's own peak.
+        XCTAssertGreaterThanOrEqual(result.lagSeconds, 0.002)
+        XCTAssertEqual(out.count, mic.count)
         XCTAssertGreaterThanOrEqual(EchoLab.reductionDB(input: mic, output: out, from: 6), -1, "the mic got louder")
+        XCTAssertLessThanOrEqual(out.map(abs).max() ?? 0, 1.5 * (mic.map(abs).max() ?? 0))
     }
 
     // MARK: 2. The voice stays
@@ -87,6 +103,13 @@ final class EchoRemoverTests: AudioTestCase {
         let change = EchoLab.levelChangeDB(input: voice, output: out, seconds: 12...23.5)
         print("EchoRemoverTests: voice in double talk changed by \(change) dB")
         XCTAssertEqual(change, 0, accuracy: 3)
+        // From the M3.2 deep review, finding 2: a level can be matched by leftover echo, so
+        // the output must also point the same way as the voice (projection on it).
+        let kept = Array(out[(12 * EchoLab.rate)..<Int(23.5 * rate)])
+        let wanted = Array(voice[(12 * EchoLab.rate)..<Int(23.5 * rate)])
+        let projection = correlation(kept, wanted)
+        print("EchoRemoverTests: voice in double talk, projection \(projection)")
+        XCTAssertGreaterThan(projection, 0.9)
         // And the echo before the voice came in still went.
         XCTAssertGreaterThanOrEqual(EchoLab.reductionDB(input: scene.micEchoOnly, output: out, from: 6, to: 10), 30)
     }
@@ -277,5 +300,190 @@ final class EchoRemoverTests: AudioTestCase {
         try wav("two.wav", seconds: 3, mic: true)
         try EchoLab.writeMono(EchoLab.speech(seconds: 3, seed: 1, rms: 0.1), to: url("system.wav"))
         XCTAssertThrowsError(try EchoRemover.clean(mic: url("two.wav"), system: url("system.wav"), to: url("o.wav")))
+    }
+
+    // MARK: From the M3.2 deep review
+
+    /// From the M3.2 deep review, finding 1. The warp pivots at the file's start, so the
+    /// reference has to be shifted by the lag there, not the median. 300 ppm over 220 s puts
+    /// the middle 1584 samples from the start, past the 1440 (30 ms lead) the old code
+    /// could absorb, so a shift from the median missed a fast mic clock's echo. (Above about
+    /// 300 ppm the lag search itself loses the peak in a 20 s window, so this is as large as
+    /// a measurable drift gets.) Both signs must clean, and the first seconds are where a
+    /// shift from the median fails: the echo is then ahead of the reference.
+    func testACleanedPartKeepsItsReductionWithAFastMicClock() throws {
+        for ppm in [300.0, -300.0] {
+            let (result, mic, out) = try autoreleasepool { () -> (EchoRemover.Result, [Double], [Double]) in
+                let far = EchoLab.speech(seconds: 220, seed: 51, rms: 0.1)
+                // Padded, because a slow clock reads past the end of the source.
+                let delayed = EchoLab.shifted(far, by: EchoLab.delay) + [Double](repeating: 0, count: 8_000)
+                let mic = EchoLab.sum(
+                    Array(EchoLab.warped(delayed, ppm: ppm).prefix(far.count)),
+                    EchoLab.noise(far.count, seed: 5, rms: 0.0003))
+                let (result, out) = try XCTUnwrap(try clean(mic: mic, system: far), "\(ppm) ppm")
+                return (result, mic, out)
+            }
+            print("EchoRemoverTests: \(ppm) ppm measured as \(result.driftPPM)")
+            XCTAssertEqual(result.driftPPM, ppm, accuracy: 25, "\(ppm) ppm")
+            for slice in [(2.0, 8.0), (40.0, 70.0), (110.0, 140.0), (170.0, 215.0)] {
+                let reduction = EchoLab.reductionDB(input: mic, output: out, from: slice.0, to: slice.1)
+                print("EchoRemoverTests: \(ppm) ppm, \(slice): \(reduction) dB")
+                XCTAssertGreaterThanOrEqual(reduction, 15, "\(ppm) ppm, \(slice)")
+            }
+            XCTAssertFalse(result.lagMoved, "a steady drift is not a moved lag")
+            try FileManager.default.removeItem(at: url("out.wav"))
+        }
+    }
+
+    func testLagAtFileStartFollowsTheLineBackToTheStart() {
+        // Lag 7000 at the start, growing 19.2 samples a second (400 ppm).
+        let points = (0..<8).map { i -> EchoRemover.LagPoint in
+            let t = 10.0 + 20 * Double(i)
+            return EchoRemover.LagPoint(seconds: t, lag: 7_000 + Int((19.2 * t).rounded()))
+        }
+        XCTAssertEqual(EchoRemover.lagAtFileStart(points, ppm: 400), 7_000, accuracy: 2)
+        // The median lag is what the old code used, and it is far from the start.
+        XCTAssertGreaterThan(try XCTUnwrap(EchoRemover.medianLag(points)) - 7_000, 1_000)
+        // One false peak doesn't move it.
+        var stray = points
+        stray[3] = EchoRemover.LagPoint(seconds: stray[3].seconds, lag: 15_000)
+        XCTAssertEqual(EchoRemover.lagAtFileStart(stray, ppm: 400), 7_000, accuracy: 2)
+        // A slow clock: the lag falls, so the start is above every point.
+        let slow = points.map { EchoRemover.LagPoint(seconds: $0.seconds, lag: 14_000 - $0.lag) }
+        XCTAssertEqual(EchoRemover.lagAtFileStart(slow, ppm: -400), 7_000, accuracy: 2)
+        // Without drift it's the lag itself, and nothing at all gives zero.
+        let flat = points.map { EchoRemover.LagPoint(seconds: $0.seconds, lag: 7_200) }
+        XCTAssertEqual(EchoRemover.lagAtFileStart(flat, ppm: 0), 7_200)
+        XCTAssertEqual(EchoRemover.lagAtFileStart([], ppm: 0), 0)
+    }
+
+    /// Finding 2. A short interjection by the far side lets a window through the old
+    /// power gate. A fit on 0.4 s of reference and a voice that fills the window can
+    /// reproduce the voice and subtract it. The filter fitted during the long talk must
+    /// be reused instead.
+    func testAShortFarSideInterjectionDoesNotTakeTheVoiceWithIt() throws {
+        let seconds = 80.0
+        let blips = [40.0, 50.0, 60.0, 70.0]
+        let farSpeech = EchoLab.speech(seconds: seconds, seed: 61, rms: 0.1)
+        var far = EchoLab.only(farSpeech, seconds: 0...30)
+        for t in blips { far = EchoLab.adding(far, Array(farSpeech[0..<Int(0.4 * rate)]), at: Int(t * rate)) }
+        // A voice with no gaps in it, so there is always something to steal.
+        let voice = EchoLab.scaled(EchoLab.lowpass(EchoLab.noise(far.count, seed: 77, rms: 1)), toRMS: 0.1)
+        let echo = EchoLab.echo(of: far)
+        let mic = EchoLab.sum(EchoLab.sum(echo, voice), EchoLab.noise(far.count, seed: 5, rms: 0.0003))
+        let (_, out) = try XCTUnwrap(try clean(mic: mic, system: far))
+
+        for t in blips {
+            // The echo of a blip arrives 150 ms late and lasts 0.4 s.
+            let a = Int((t + 0.2) * rate)
+            let b = Int((t + 0.55) * rate)
+            let projection = correlation(Array(out[a..<b]), Array(voice[a..<b]))
+            let rawProjection = correlation(Array(mic[a..<b]), Array(voice[a..<b]))
+            print("EchoRemoverTests: blip at \(t): projection \(projection), uncleaned \(rawProjection)")
+            XCTAssertGreaterThanOrEqual(projection, 0.8, "the voice was taken with the blip at \(t) s")
+            // The echo is reduced too: what is left beside the voice is under the echo. The
+            // blip is as loud as the voice here, and the measure also counts any bending of the
+            // voice, so it reads about 8 dB (the uncleaned mic would read 0).
+            let left = zip(out[a..<b], voice[a..<b]).map { $0 - $1 }
+            let before = EchoRemover.meanPower(Array(echo[a..<b]))
+            XCTAssertGreaterThanOrEqual(
+                EchoLab.db(before / max(EchoRemover.meanPower(left), 1e-30)), 6, "echo left at \(t) s")
+        }
+        // The long talk before was cleaned as usual, and the voice survived there too.
+        XCTAssertGreaterThanOrEqual(
+            correlation(
+                Array(out[(10 * EchoLab.rate)..<(30 * EchoLab.rate)]),
+                Array(voice[(10 * EchoLab.rate)..<(30 * EchoLab.rate)])),
+            0.9)
+    }
+
+    func testActiveSamplesCountsOnlyFramesWithTheFarSideTalking() {
+        let frame = EchoLab.rate / 100
+        XCTAssertEqual(EchoRemover.activeSamples([]), 0)
+        XCTAssertEqual(EchoRemover.activeSamples([Double](repeating: 0, count: 5 * EchoLab.rate)), 0)
+        XCTAssertEqual(EchoRemover.activeSamples([Double](repeating: 0.1, count: frame - 1)), 0, "under one frame")
+        // 0.4 s of loud, frame-aligned, inside 2 s of silence.
+        var x = [Double](repeating: 0, count: 2 * EchoLab.rate)
+        for i in (100 * frame)..<(140 * frame) { x[i] = 0.1 }
+        XCTAssertEqual(EchoRemover.activeSamples(x), 40 * frame)
+        XCTAssertLessThan(EchoRemover.activeSamples(x), Int(EchoRemover.minimumActiveSeconds * rate))
+        // Room-noise level (RMS 0.0003) isn't the far side talking: the gate is RMS 0.001.
+        XCTAssertEqual(EchoRemover.activeSamples([Double](repeating: 0.0003, count: EchoLab.rate)), 0)
+        XCTAssertEqual(EchoRemover.activeSamples([Double](repeating: 0.002, count: EchoLab.rate)), EchoLab.rate)
+        // Loud for 2 s clears the minimum.
+        XCTAssertGreaterThanOrEqual(
+            EchoRemover.activeSamples([Double](repeating: 0.1, count: 2 * EchoLab.rate)),
+            Int(EchoRemover.minimumActiveSeconds * rate))
+    }
+
+    /// Finding 3. Windows used to start every 30 s and had to fit whole, so a far side that
+    /// only talked from 21 s of a 49 s recording fell between the two. Windows now overlap
+    /// and the last ends at the file's end.
+    func testAFarSideOnlyBetweenScanWindowsIsStillCleaned() throws {
+        let far = EchoLab.only(EchoLab.speech(seconds: 49, seed: 71, rms: 0.1), seconds: 21...48)
+        let mic = EchoLab.sum(EchoLab.echo(of: far), EchoLab.noise(far.count, seed: 5, rms: 0.0003))
+        let (result, out) = try XCTUnwrap(try clean(mic: mic, system: far))
+        XCTAssertEqual(result.lagSeconds, 0.150, accuracy: 0.002)
+        XCTAssertGreaterThanOrEqual(EchoLab.reductionDB(input: mic, output: out, from: 26, to: 47.5), 25)
+        XCTAssertEqual(out.count, mic.count)
+    }
+
+    /// Finding 4, the unit side.
+    func testLagMovedOnInventedLagPoints() {
+        func point(_ t: Double, _ lag: Int) -> EchoRemover.LagPoint { .init(seconds: t, lag: lag) }
+        let times = (0..<8).map { 10.0 + 15 * Double($0) }
+        // A steady lag.
+        XCTAssertFalse(EchoRemover.lagMoved(times.map { point($0, 7_200) }, ppm: 0))
+        // A lag that drifts at the measured rate follows the line, so it didn't move.
+        XCTAssertFalse(EchoRemover.lagMoved(times.map { point($0, 7_000 + Int((19.2 * $0).rounded())) }, ppm: 400))
+        // One stray point can be a false peak.
+        var stray = times.map { point($0, 7_200) }
+        stray[4] = point(stray[4].seconds, 12_000)
+        XCTAssertFalse(EchoRemover.lagMoved(stray, ppm: 0))
+        // A step of 62 ms half way through is a move.
+        XCTAssertTrue(EchoRemover.lagMoved(times.map { point($0, $0 < 60 ? 7_200 : 10_200) }, ppm: 0))
+        // Two points off the line is already a move.
+        var two = times.map { point($0, 7_200) }
+        two[1] = point(two[1].seconds, 9_000)
+        two[6] = point(two[6].seconds, 5_000)
+        XCTAssertTrue(EchoRemover.lagMoved(two, ppm: 0))
+        // Under 20 ms of wander isn't one.
+        XCTAssertFalse(EchoRemover.lagMoved(times.map { point($0, 7_200 + ($0 < 60 ? 0 : 800)) }, ppm: 0))
+        XCTAssertFalse(EchoRemover.lagMoved([], ppm: 0))
+    }
+
+    /// Finding 4: a delay that jumps mid-part is reported, and a steady one isn't.
+    func testAStepInTheDelayMidPartMakesTheRemoverReportALagMove() throws {
+        let far = EchoLab.speech(seconds: 60, seed: 81, rms: 0.1)
+        let tail = EchoLab.convolve(far, EchoLab.tail(seed: 99))
+        let echo = EchoLab.sum(
+            EchoLab.only(EchoLab.shifted(tail, by: 7_200), seconds: 0...30),
+            EchoLab.only(EchoLab.shifted(tail, by: 10_200), seconds: 30...60))
+        let mic = EchoLab.sum(echo, EchoLab.noise(far.count, seed: 5, rms: 0.0003))
+        let (result, _) = try XCTUnwrap(try clean(mic: mic, system: far))
+        XCTAssertTrue(result.lagMoved, "a 62 ms jump went unreported")
+    }
+
+    // MARK: Echo evidence, finding 7
+
+    /// From the M3.2 deep review, finding 7. A line's level is the mean of power over its
+    /// loudest fifth, so 1.5 s of real words in a 30 s line, with the rest at the room, is
+    /// kept. The old mean of dB averaged it down into the room and left the words out.
+    func testAShortWordInALongSegmentIsNotLeftOut() {
+        let frames = 3_000  // 30 s
+        let room: Float = -60
+        let micDB = [Float](repeating: 0, count: frames)  // the echo took the mic up, then it was removed
+        var withWord = [Float](repeating: room, count: frames)
+        for i in 1_000..<1_150 { withWord[i] = room + 30 }  // 1.5 s, 30 dB over the room
+        let kept = EchoEvidence(micDB: micDB, cleanDB: withWord, roomDB: room)
+        XCTAssertFalse(kept.looksLikeEcho(start: 0, end: 29.9), "a short real word was dropped with its line")
+        // The same word with a drop under the minimum isn't judged either.
+        // A line that is really all low stays left out.
+        let allLow = EchoEvidence(micDB: micDB, cleanDB: [Float](repeating: room + 2, count: frames), roomDB: room)
+        XCTAssertTrue(allLow.looksLikeEcho(start: 0, end: 29.9))
+        // And a word only 10 dB over the room, 1.5 s long, still averages under the ceiling.
+        var faint = [Float](repeating: room, count: frames)
+        for i in 1_000..<1_150 { faint[i] = room + 10 }
+        XCTAssertTrue(EchoEvidence(micDB: micDB, cleanDB: faint, roomDB: room).looksLikeEcho(start: 0, end: 29.9))
     }
 }

@@ -150,7 +150,10 @@ final class EchoPipelineTests: AudioTestCase {
         XCTAssertTrue(transcriber.paths.contains { $0.hasSuffix("m.mic.wav") }, "\(transcriber.paths)")
         XCTAssertEqual(transcriber.paths.count, 2, "one call for the mic and one for the system")
         XCTAssertEqual(result.segments.filter { $0.speaker == SpeakerLabels.you }.count, 2, "no line is judged")
-        XCTAssertEqual(result.notes, [])
+        // From the M3.2 deep review, finding 3: no echo is said so, and nothing is said to have failed.
+        XCTAssertEqual(result.notes.count, 1, "\(result.notes)")
+        XCTAssertTrue(result.notes[0].contains("no echo showed up"), "\(result.notes)")
+        XCTAssertFalse(result.notes.joined().contains("failed"), "\(result.notes)")
         XCTAssertEqual(result.cleanedAudio, [])
         XCTAssertEqual(try names(), ["m.wav"])
     }
@@ -346,5 +349,88 @@ final class EchoPipelineTests: AudioTestCase {
         XCTAssertEqual(RecordingFiles.allParts(of: url("m.wav").path), parts.map(\.path))
         XCTAssertEqual(RecordingFiles.allParts(of: url("m_part2.wav").path), parts.map(\.path))
         XCTAssertEqual(RecordingFiles.allParts(of: url("m_clean.wav").path), [url("m_clean.wav").path])
+    }
+
+    // MARK: From the M3.2 deep review
+
+    /// Finding 4: the delay between the tracks jumped, so the note says some echo may remain.
+    func testAStepInTheDelayMidPartLeavesANoteAndNoWords() async throws {
+        let far = EchoLab.speech(seconds: 60, seed: 81, rms: 0.1)
+        let tail = EchoLab.convolve(far, EchoLab.tail(seed: 99))
+        let echo = EchoLab.sum(
+            EchoLab.only(EchoLab.shifted(tail, by: 7_200), seconds: 0...30),
+            EchoLab.only(EchoLab.shifted(tail, by: 10_200), seconds: 30...60))
+        let mic = EchoLab.sum(echo, EchoLab.noise(far.count, seed: 5, rms: 0.0003))
+        try EchoLab.writeTwoTrack(mic: mic, system: far, to: url("m.wav"))
+        let result = try await pipeline(scripted(mic: [ownWords])).transcribe(parts: [url("m.wav")])
+        let note = try XCTUnwrap(result.notes.first { $0.contains("moved") }, "\(result.notes)")
+        XCTAssertTrue(note.hasPrefix("m.wav:"), note)
+        XCTAssertFalse(result.notes.contains { $0.contains("no echo showed up") }, "\(result.notes)")
+    }
+
+    /// Finding 5: the start times of lines left out last past the terminal, in the sidecar,
+    /// offset by the parts before. Never their words.
+    func testLeftOutLineTimesSurviveInTheSidecar() async throws {
+        let first = call(seconds: 12, farSeed: 41, voiceSeed: 42)
+        let second = call(seconds: 12, farSeed: 43, voiceSeed: 44)
+        try EchoLab.writeTwoTrack(mic: first.mic, system: first.system, to: url("m.wav"))
+        try EchoLab.writeTwoTrack(mic: second.mic, system: second.system, to: url("m_part2.wav"))
+        let echoLine = Transcriber.Segment(start: 1.0, end: 5.0, text: "uniqueechoword from the room")
+        let mine = Transcriber.Segment(start: 8, end: 11, text: "uniquemineword")
+
+        let result = try await finish([url("m.wav"), url("m_part2.wav")], scripted(mic: [echoLine, mine]))
+        XCTAssertEqual(result?.leftOutLines, ["0:01", "0:13"], "\(result?.notes ?? [])")
+
+        let sidecar = try XCTUnwrap(loadSidecar("m"))
+        XCTAssertEqual(sidecar.leftOutLines, ["0:01", "0:13"])
+        let json = try String(contentsOf: RecordingSidecar.url(forBase: url("m")), encoding: .utf8)
+        XCTAssertTrue(json.contains("leftOutLines"))
+        for word in ["uniqueechoword", "uniquemineword", "from the room"] {
+            XCTAssertFalse(json.contains(word), "a line's words reached the sidecar: \(word)")
+        }
+    }
+
+    func testASidecarWithoutLeftOutLinesStillLoadsAndNothingIsWrittenForIt() throws {
+        let old = transcribed(ageDays: 3, files: ["m.m4a"])
+        try saveSidecar("m", old)
+        let text = try String(contentsOf: RecordingSidecar.url(forBase: url("m")), encoding: .utf8)
+        XCTAssertFalse(text.contains("leftOutLines"), "an unset list should not be written")
+        let loaded = try XCTUnwrap(loadSidecar("m"))
+        XCTAssertNil(loaded.leftOutLines)
+        XCTAssertEqual(loaded, old)
+        // And a list round-trips.
+        var withLines = old
+        withLines.leftOutLines = ["0:07", "12:30"]
+        try saveSidecar("n", withLines)
+        XCTAssertEqual(loadSidecar("n"), withLines)
+    }
+
+    /// Finding 6: a clean copy used to be moved beside part 1 as soon as part 1 was done. If
+    /// part 2 then threw, nothing listed it, and retention would never remove it.
+    func testATranscriptionFailureOnALaterPartLeavesNoUnlistedCleanFile() async throws {
+        let first = call(seconds: 12, farSeed: 41, voiceSeed: 42)
+        let second = call(seconds: 12, farSeed: 43, voiceSeed: 44)
+        try EchoLab.writeTwoTrack(mic: first.mic, system: first.system, to: url("m.wav"))
+        try EchoLab.writeTwoTrack(mic: second.mic, system: second.system, to: url("m_part2.wav"))
+        let parts = [url("m.wav"), url("m_part2.wav")]
+        struct Boom: Error {}
+        let failing = ScriptedTranscriber { path in
+            if path.contains("part2") { throw Boom() }
+            return [Transcriber.Segment(start: 8, end: 11, text: "me")]
+        }
+
+        do {
+            _ = try await pipeline(failing).transcribe(parts: parts, keepingCleanedAudio: true)
+            XCTFail("part 2 should have thrown")
+        } catch is Boom {}
+        XCTAssertEqual(try names(), ["m.wav", "m_part2.wav"], "a clean file was left beside the first part")
+
+        // A later, successful attempt lists both.
+        let result = try await finish(parts, scripted(mic: [Transcriber.Segment(start: 8, end: 11, text: "me")]))
+        XCTAssertEqual(result?.cleanedAudio.map(\.lastPathComponent), ["m_clean.wav", "m_part2_clean.wav"])
+        XCTAssertEqual(
+            loadSidecar("m")?.audioFiles?.sorted(), ["m.m4a", "m_clean.m4a", "m_part2.m4a", "m_part2_clean.m4a"])
+        XCTAssertEqual(
+            try names().filter { $0.contains("_clean") }.sorted(), ["m_clean.m4a", "m_part2_clean.m4a"])
     }
 }

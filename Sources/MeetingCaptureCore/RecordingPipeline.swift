@@ -58,6 +58,8 @@ struct RecordingPipeline {
         var hasDoubtfulTrack = false
         /// The cleaned mic of each part, if asked for, beside the raw part.
         var cleanedAudio: [URL] = []
+        /// Start times of mic lines left out as leftover echo, across the whole recording.
+        var leftOutLines: [String] = []
         var formatted: String { SpeakerLabels.format(segments) }
     }
 
@@ -90,6 +92,8 @@ struct RecordingPipeline {
         var detectedSpeakers = false
         var hasDoubtfulTrack = false
         var cleanedAudio: [URL] = []
+        var leftOutLines: [String] = []
+        var pendingClean: [(from: URL, to: URL)] = []
         for (index, part) in parts.enumerated() {
             // A crashed WAV reads as empty until its header is repaired. Nothing else
             // about the file changes, and a healthy one isn't touched.
@@ -118,6 +122,15 @@ struct RecordingPipeline {
                         if let result = try EchoRemover.clean(mic: url, system: system, to: cleaned) {
                             source = result.cleaned
                             evidence = result.evidence
+                            if result.lagMoved {
+                                notes.append(
+                                    "\(part.lastPathComponent): the delay between the tracks moved during this part, "
+                                        + "so some of the other side's voice may remain under You.")
+                            }
+                        } else {
+                            notes.append(
+                                "\(part.lastPathComponent): no echo showed up between the tracks, "
+                                    + "so the mic was used as recorded.")
                         }
                     } catch {
                         notes.append(
@@ -129,9 +142,10 @@ struct RecordingPipeline {
                 if let evidence {
                     let dropped = mic.filter { evidence.looksLikeEcho(start: $0.start, end: $0.end) }
                     let kept = mic.filter { !evidence.looksLikeEcho(start: $0.start, end: $0.end) }
+                    leftOutLines += dropped.map { Self.clock($0.start + offset) }
                     if !dropped.isEmpty {
                         // Times only: a note can reach a log, and a line's words must not.
-                        let times = dropped.map { String(format: "%d:%02d", Int($0.start) / 60, Int($0.start) % 60) }
+                        let times = dropped.map { Self.clock($0.start) }
                         notes.append(
                             "\(part.lastPathComponent): left out \(dropped.count) mic line(s) at "
                                 + "\(times.joined(separator: ", ")) that were only "
@@ -139,17 +153,7 @@ struct RecordingPipeline {
                     }
                     mic = kept
                 }
-                if keepingCleanedAudio, source != url {
-                    let beside = Self.cleanedURL(for: part)
-                    // Never over a file that may be something else of the user's.
-                    if !FileManager.default.fileExists(atPath: beside.path),
-                        !FileManager.default.fileExists(
-                            atPath: beside.deletingPathExtension().appendingPathExtension("m4a").path),
-                        (try? FileManager.default.moveItem(at: source, to: beside)) != nil
-                    {
-                        cleanedAudio.append(beside)
-                    }
-                }
+                if keepingCleanedAudio, source != url { pendingClean.append((source, Self.cleanedURL(for: part))) }
             }
             if let url = tracks.system {
                 let segments = try await transcriber.transcribeSegments(path: url.path)
@@ -175,13 +179,30 @@ struct RecordingPipeline {
             }
             offset += RecordingFiles.duration(ofAudioAt: part.path) ?? merged.map(\.end).max() ?? 0
         }
+        // Only now: if a later part throws, a moved file would be listed nowhere, and
+        // retention would never remove it. From the M3.2 deep review.
+        for clean in pendingClean {
+            // Never over a file that may be something else of the user's.
+            if !FileManager.default.fileExists(atPath: clean.to.path),
+                !FileManager.default.fileExists(
+                    atPath: clean.to.deletingPathExtension().appendingPathExtension("m4a").path),
+                (try? FileManager.default.moveItem(at: clean.from, to: clean.to)) != nil
+            {
+                cleanedAudio.append(clean.to)
+            }
+        }
         if parts.count > 1 && detectedSpeakers {
             notes.append(
                 "This recording has \(parts.count) parts, and speakers are detected separately in each. "
                     + "Speaker 1 (part 2) may be the same person as Speaker 1. Give them one name to join them.")
         }
         return Transcript(
-            segments: all, notes: notes, hasDoubtfulTrack: hasDoubtfulTrack, cleanedAudio: cleanedAudio)
+            segments: all, notes: notes, hasDoubtfulTrack: hasDoubtfulTrack, cleanedAudio: cleanedAudio,
+            leftOutLines: leftOutLines)
+    }
+
+    private static func clock(_ seconds: Double) -> String {
+        String(format: "%d:%02d", Int(seconds) / 60, Int(seconds) % 60)
     }
 
     /// `meeting.wav` gives `meeting_clean.wav`, and `meeting_part2.wav` gives
@@ -238,6 +259,9 @@ struct RecordingPipeline {
         // above. So a problem here can't cost the recording, or block retention's proof.
         let cleaned = archive(parts: transcript?.cleanedAudio ?? [], encoder: encoder)
         sidecar.audioFiles = (archived.files + cleaned.files).map(\.lastPathComponent)
+        // Lasts past the terminal. Retention isn't held for these, as it is for a doubtful
+        // track: most calls have some, so it would never run (D-73).
+        sidecar.leftOutLines = transcript?.leftOutLines
         // A WAV that couldn't be archived may hold audio the transcript never reached,
         // such as after a stale header, so it mustn't become eligible for deletion. The
         // same goes for a doubtful track, because only the audio can settle its lines.

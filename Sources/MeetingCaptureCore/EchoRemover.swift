@@ -17,7 +17,8 @@ import Foundation
 //      When the user talks over the far side, what's left isn't coherent with the
 //      estimate, so the gain stays near one.
 //
-// Nothing here looks at words. Memory is bounded by one window, whatever the length.
+// Nothing here looks at words. Audio in memory is bounded by one window; the line-check
+// levels grow with length, at about 262 MB at peak for 30 minutes.
 // The raw track is never touched, so a failure here can't lose the recording.
 enum EchoRemover {
 
@@ -30,12 +31,19 @@ enum EchoRemover {
     static let leadSeconds = 0.03
     static let overSuppression = 16.0
     static let gainFloorDB = -50.0
+    /// A fit needs far more reference than it has taps, or it can reproduce the user's voice
+    /// and subtract it. So a window with less reuses the last good filter, which holds
+    /// while the room stays the same. From the M3.2 deep review.
+    static let minimumActiveSeconds = 2.0
 
     struct Result {
         let cleaned: URL
         let lagSeconds: Double
         let driftPPM: Double
         let evidence: EchoEvidence
+        /// The tracks' delay jumped during the part, and one shift can't follow that, so
+        /// some of the part may keep its echo.
+        let lagMoved: Bool
     }
 
     /// Writes the cleaned mic to `output`, or returns nil if no echo shows in the mic at
@@ -49,8 +57,11 @@ enum EchoRemover {
         guard let lag = medianLag(track) else { return nil }
         let drift = driftPPM(track)
 
+        // The warp pivots at the file's start, so the shift has to be the lag there, not the
+        // median, or a fast mic clock moves the echo ahead of what the filter can reach.
+        let lagAtStart = lagAtFileStart(track, ppm: drift)
         let reference = try WarpedReference(
-            reader: systemReader, ppm: drift, shift: max(lag - Int(leadSeconds * Double(sampleRate)), 0))
+            reader: systemReader, ppm: drift, shift: max(lagAtStart - Int(leadSeconds * Double(sampleRate)), 0))
         let writer = try MonoWriter(output)
         let suppressor = ResidualSuppressor(writer: writer)
         var evidence = EvidenceBuilder()
@@ -64,7 +75,8 @@ enum EchoRemover {
         writer.close()
         return Result(
             cleaned: output, lagSeconds: Double(lag) / Double(sampleRate), driftPPM: drift,
-            evidence: evidence.build(cleanPower: suppressor.cleanPower))
+            evidence: evidence.build(cleanPower: suppressor.cleanPower),
+            lagMoved: lagMoved(track, ppm: drift))
     }
 
     // MARK: - Lag and drift
@@ -76,23 +88,24 @@ enum EchoRemover {
 
     static func lagTrack(mic: MonoReader, system: MonoReader, frames: Int) throws -> [LagPoint] {
         let window = 20 * sampleRate
-        let hop = 30 * sampleRate
+        // Windows overlap, and the last ends at the file's end, so no far side goes unseen.
+        let hop = 15 * sampleRate
         // A false peak at exactly zero shows in some windows, and no speaker and mic pair
         // has that little delay.
         let lowest = 2 * sampleRate / 1000
         let highest = 400 * sampleRate / 1000
         let fft = RealFFT(atLeast: 2 * min(window, frames))
         var points: [LagPoint] = []
-        var start = 0
-        repeat {
+        var starts = Array(stride(from: 0, to: max(frames - window, 1), by: hop))
+        if frames > window, let last = starts.last, last != frames - window { starts.append(frames - window) }
+        for start in starts {
             let m = try mic.read(from: start, count: min(window, frames - start))
             let r = try system.read(from: start, count: min(window, frames - start))
             if meanPower(r) >= 1e-7, let lag = peakLag(mic: m, reference: r, fft: fft, lowest: lowest, highest: highest)
             {
                 points.append(LagPoint(seconds: Double(start + m.count / 2) / Double(sampleRate), lag: lag))
             }
-            start += hop
-        } while start + window <= frames
+        }
         return points
     }
 
@@ -137,6 +150,32 @@ enum EchoRemover {
         return slopes.sorted()[slopes.count / 2] / Double(sampleRate) * 1e6
     }
 
+    /// Where the lag line starts, robustly, given its slope.
+    static func lagAtFileStart(_ track: [LagPoint], ppm: Double) -> Int {
+        let slope = ppm * 1e-6 * Double(sampleRate)
+        let starts = track.map { Double($0.lag) - slope * $0.seconds }.sorted()
+        return starts.isEmpty ? 0 : Int(starts[starts.count / 2])
+    }
+
+    /// More than one window off the lag line by over 20 ms. One can be a false peak.
+    static func lagMoved(_ track: [LagPoint], ppm: Double) -> Bool {
+        let slope = ppm * 1e-6 * Double(sampleRate)
+        let start = Double(lagAtFileStart(track, ppm: ppm))
+        return track.filter { abs(Double($0.lag) - start - slope * $0.seconds) > Double(sampleRate) / 50 }.count > 1
+    }
+
+    /// Samples of `x` in 10 ms frames loud enough to count as the far side talking.
+    static func activeSamples(_ x: [Double]) -> Int {
+        let frame = sampleRate / 100
+        return stride(from: 0, to: max(x.count - frame + 1, 0), by: frame).reduce(0) { total, start in
+            var power = 0.0
+            x.withUnsafeBufferPointer { p in
+                vDSP_measqvD(p.baseAddress! + start, 1, &power, vDSP_Length(frame))
+            }
+            return power >= 1e-6 ? total + frame : total
+        }
+    }
+
     // MARK: - Least squares
 
     private static func fitAndSubtract(
@@ -158,7 +197,7 @@ enum EchoRemover {
             let a = max(centre - window / 2, 0)
             let b = min(centre + window / 2, frames)
             let x = try reference.read(from: a, count: b - a)
-            if meanPower(x) >= 1e-6 {
+            if activeSamples(x) >= Int(minimumActiveSeconds * Double(sampleRate)) {
                 let y = try mic.read(from: a, count: b - a)
                 if let taps = solveFilter(x: x, y: y, taps: taps, fft: fft) {
                     filter = fft.forward(taps)
@@ -309,7 +348,9 @@ struct EchoEvidence {
         // track's loudest frames are the pauses, which lost nothing.
         let fifth = max((last - first) / 5, 1)
         let frames = first..<last
-        let level = mean(frames.sorted { cleanDB[$0] > cleanDB[$1] }.prefix(fifth)) { cleanDB[$0] }
+        // Level is a mean of power, so one real word in a long line still counts.
+        let loudest = frames.sorted { cleanDB[$0] > cleanDB[$1] }.prefix(fifth)
+        let level = 10 * log10(mean(loudest) { pow(10, cleanDB[$0] / 10) })
         let drop = mean(frames.sorted { micDB[$0] > micDB[$1] }.prefix(fifth)) { micDB[$0] - cleanDB[$0] }
         return drop >= Self.minimumDrop && level - roomDB < ceilingAboveRoom
     }

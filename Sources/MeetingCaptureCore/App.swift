@@ -77,6 +77,11 @@ public enum MeetingCaptureApp {
             exit(2)
         }
 
+        if args.flag("--diarize") ? args.option("--diarize") == nil : args.flag("--threshold") {
+            fputs("❌  --diarize needs a file, and --threshold only goes with it.\n", stderr)
+            exit(2)
+        }
+
         // Hidden, for scripts/e2e.sh: builds a two-track file, then runs the real pipeline on it.
         if AudioFixtures.scriptFlagsEnabled(), let mic = args.option("--two-track-mic"),
             let system = args.option("--two-track-system"), let out = args.option("--two-track-out")

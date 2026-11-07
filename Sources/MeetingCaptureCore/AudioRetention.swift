@@ -22,6 +22,8 @@ struct RecordingSidecar: Codable, Equatable {
     /// Exactly the audio files this recording ended with. Retention deletes these and
     /// nothing else, so a similar name can't bring another recording's files with it.
     var audioFiles: [String]?
+    /// Start times of mic lines left out as leftover echo. Never their words.
+    var leftOutLines: [String]?
 
     /// The sidecar for a recording this process is about to start.
     static func started(now: Date = Date()) -> RecordingSidecar {

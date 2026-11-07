@@ -113,6 +113,21 @@ final class EchoScriptFlagTests: AudioTestCase {
         }
     }
 
+    /// From the M3.2 deep review, finding 9. With the variable set, `--diarize` with no file
+    /// and a lone `--threshold` used to be ignored and fall through to a real capture.
+    func testBareDiarizeAndALoneThresholdExitWithTwoInsteadOfCapturing() throws {
+        let cases: [[String]] = [
+            ["--diarize"],
+            ["--threshold", "0.5"],
+            ["--threshold"],
+        ]
+        for args in cases {
+            let result = try run(args, e2e: "1")
+            XCTAssertEqual(result.status, 2, "\(args): \(result.stdout) \(result.stderr)")
+            XCTAssertTrue(result.stderr.contains("--diarize needs a file"), "\(args): \(result.stderr)")
+        }
+    }
+
     /// With the variable set, half a pair would otherwise be ignored and fall into a real capture.
     func testHalfAPairOfScriptFlagsExitsWithTwoInsteadOfCapturing() throws {
         let mic = ["--two-track-mic", url("a.wav").path]
