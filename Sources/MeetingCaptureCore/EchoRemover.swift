@@ -276,16 +276,27 @@ enum EchoRemover {
 /// the room, so that can't either.
 ///
 /// Measured on `main-3` and `main-2`: real speech stays 25 dB or more above the room, with
-/// almost no drop. A soft speaker, talking over the far side, could be read as echo, and
-/// that's unsure. Quiet noise on its own isn't touched, per D-56.
+/// almost no drop. Talking over the far side also shows a large drop, so only level protects
+/// a soft speaker. The ceiling therefore follows this recording's own voice, measured while
+/// the far side is silent: a line within 10 dB of that voice is kept, even if that leaves
+/// some echo in. A speaker who is much softer in one line than in the rest is still unsure,
+/// and so is one who never speaks alone. Quiet noise on its own isn't touched, per D-56.
 struct EchoEvidence {
     static let frameSeconds = 0.01
     static let minimumDrop: Float = 10
     static let echoCeilingAboveRoom: Float = 15
+    static let voiceMargin: Float = 10
 
     let micDB: [Float]
     let cleanDB: [Float]
     let roomDB: Float
+    /// The user's loudest fifth while the far side is silent, or nil if they hardly spoke alone.
+    var voiceDB: Float?
+
+    var ceilingAboveRoom: Float {
+        guard let voiceDB else { return Self.echoCeilingAboveRoom }
+        return min(Self.echoCeilingAboveRoom, voiceDB - roomDB - Self.voiceMargin)
+    }
 
     func looksLikeEcho(start: Double, end: Double) -> Bool {
         let count = min(micDB.count, cleanDB.count)
@@ -300,7 +311,7 @@ struct EchoEvidence {
         let frames = first..<last
         let level = mean(frames.sorted { cleanDB[$0] > cleanDB[$1] }.prefix(fifth)) { cleanDB[$0] }
         let drop = mean(frames.sorted { micDB[$0] > micDB[$1] }.prefix(fifth)) { micDB[$0] - cleanDB[$0] }
-        return drop >= Self.minimumDrop && level - roomDB < Self.echoCeilingAboveRoom
+        return drop >= Self.minimumDrop && level - roomDB < ceilingAboveRoom
     }
 
     private func mean(_ indices: ArraySlice<Int>, _ value: (Int) -> Float) -> Float {
@@ -340,7 +351,12 @@ struct EvidenceBuilder {
             let heard = micPower.filter { $0 > 0 }.sorted()
             room = heard.isEmpty ? 1e-12 : heard[heard.count / 20]
         }
-        return EchoEvidence(micDB: micPower.map(decibels), cleanDB: cleanPower.map(decibels), roomDB: decibels(room))
+        // At least a second of the mic clearly above the room with no far side to explain it.
+        let alone = zip(micPower, estimatePower).compactMap { $1 < 1e-7 && $0 > room * 10 ? $0 : nil }.sorted()
+        let voice = alone.count >= 100 ? alone.suffix(alone.count / 5).map(decibels) : []
+        return EchoEvidence(
+            micDB: micPower.map(decibels), cleanDB: cleanPower.map(decibels), roomDB: decibels(room),
+            voiceDB: voice.isEmpty ? nil : voice.reduce(0, +) / Float(voice.count))
     }
 
     private func decibels(_ power: Float) -> Float { 10 * log10(max(power, 1e-12)) }

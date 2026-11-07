@@ -2,7 +2,9 @@
 """Scores a cleaned mic through the product's own transcript. Usage: words.py <method> <take>.
 
 Puts the cleaned mic and the raw system track in one two-track WAV in the lab folder and
-runs the real binary on it, so labels come from the same code a user gets. Only the
+runs the real binary on it with `--no-aec`, because the mic is already cleaned. So this scores
+a method's audio without the product's line check; for the product itself, run the binary on
+the raw take and use `--txt`. Only the
 scripted, invented takes are allowed (lab.TAKES).
 
 You-words are matched first to the user's script, and only inside each line's time
@@ -21,7 +23,7 @@ import lab
 
 MODEL = "openai_whisper-small"
 FOLDER = Path.home() / "Documents/huggingface/models/argmaxinc/whisperkit-coreml" / MODEL
-BIN = lab.REPO / ".build/debug/MeetingCaptureCLI"
+BIN = lab.REPO / ".build/release/MeetingCaptureCLI"
 
 ONES = "zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen".split()
 TENS = "x x twenty thirty forty fifty sixty seventy eighty ninety".split()
@@ -112,6 +114,10 @@ def score(lines, offset, take):
             a = e["start"] - (9 if e.get("line") in EARLY else 0)
             you_truth += [(a, e["end"], w, e["line"]) for w in words]
         else:
+            # S5 is left out of `them`: the user repeats those words, so a You word matches
+            # the repeat first and S5's echo can never register (from the M3.2 review).
+            if e["section"].startswith("S5"):
+                continue
             # The section is in the id so a section's echo can be counted apart.
             them_truth += [(e["start"], e["end"], w, e["section"].split()[0]) for w in words]
     you = timed_words(lines, lambda s: s == "You")
@@ -181,7 +187,7 @@ def run(method, take):
     log = work / f"{take}.log"
     with log.open("w") as f:
         subprocess.run(
-            [str(BIN), "--transcribe-only", str(wav), "--model", MODEL, "--model-folder", str(FOLDER), "--language", "en"],
+            [str(BIN), "--transcribe-only", str(wav), "--model", MODEL, "--model-folder", str(FOLDER), "--language", "en", "--no-aec"],
             check=True, stdout=f, stderr=subprocess.STDOUT, timeout=900,
         )
     wav.unlink(missing_ok=True)

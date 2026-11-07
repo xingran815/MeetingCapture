@@ -127,10 +127,14 @@ struct RecordingPipeline {
                 }
                 mic = SpeakerLabels.labelMic(try await transcriber.transcribeSegments(path: source.path))
                 if let evidence {
+                    let dropped = mic.filter { evidence.looksLikeEcho(start: $0.start, end: $0.end) }
                     let kept = mic.filter { !evidence.looksLikeEcho(start: $0.start, end: $0.end) }
-                    if kept.count < mic.count {
+                    if !dropped.isEmpty {
+                        // Times only: a note can reach a log, and a line's words must not.
+                        let times = dropped.map { String(format: "%d:%02d", Int($0.start) / 60, Int($0.start) % 60) }
                         notes.append(
-                            "\(part.lastPathComponent): left out \(mic.count - kept.count) mic line(s) that were only "
+                            "\(part.lastPathComponent): left out \(dropped.count) mic line(s) at "
+                                + "\(times.joined(separator: ", ")) that were only "
                                 + "leftover echo, judged by timing and level, not by their words.")
                     }
                     mic = kept

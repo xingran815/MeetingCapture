@@ -261,6 +261,78 @@ final class EchoMathTests: XCTestCase {
         XCTAssertFalse(e.looksLikeEcho(start: 0.05, end: 0.5))
     }
 
+    // MARK: 11. The ceiling follows the user's own voice (From the M3.2 review, finding 2)
+
+    private func evidence(mic: Float, clean: Float, room: Float = -70, voice: Float?) -> EchoEvidence {
+        var e = evidence(mic: mic, clean: clean, room: room)
+        e.voiceDB = voice
+        return e
+    }
+
+    func testTheCeilingIs15dBWithNoVoiceOrALoudVoice() {
+        // From the M3.2 review, finding 2.
+        XCTAssertEqual(evidence(mic: -20, clean: -65, voice: nil).ceilingAboveRoom, 15)
+        XCTAssertEqual(evidence(mic: -20, clean: -65, voice: -10).ceilingAboveRoom, 15, "60 dB over the room")
+        XCTAssertEqual(evidence(mic: -20, clean: -65, voice: -45).ceilingAboveRoom, 15, "25 dB over: 15 exactly")
+    }
+
+    func testASoftVoiceLowersTheCeilingToVoiceMinus10() {
+        // From the M3.2 review, finding 2: voice 20 dB over the room, so the ceiling is 10.
+        XCTAssertEqual(evidence(mic: -20, clean: -65, voice: -50).ceilingAboveRoom, 10, accuracy: 0.001)
+        XCTAssertEqual(evidence(mic: -20, clean: -65, voice: -55).ceilingAboveRoom, 5, accuracy: 0.001)
+    }
+
+    func testALineNearASoftVoiceIsKeptButTheSameLineIsEchoNextToALoudVoice() {
+        // From the M3.2 review, finding 2: 13 dB over the room, 12 dB off.
+        let soft = evidence(mic: -45, clean: -57, voice: -50)  // voice 20 dB over the room
+        let loud = evidence(mic: -45, clean: -57, voice: -30)  // voice 40 dB over the room
+        XCTAssertFalse(soft.looksLikeEcho(start: 0.2, end: 1.8), "within 10 dB of the user's voice: kept")
+        XCTAssertTrue(loud.looksLikeEcho(start: 0.2, end: 1.8))
+        XCTAssertTrue(evidence(mic: -45, clean: -57, voice: nil).looksLikeEcho(start: 0.2, end: 1.8))
+    }
+
+    /// 60 quiet frames (amplitude 0.0003, the room), then these (frames, amplitude, estimate).
+    private func built(_ spans: [(Int, Double, Double)]) -> EchoEvidence {
+        var builder = EvidenceBuilder()
+        var count = 0
+        for (frames, amplitude, estimate) in [(60, 0.0003, 0.0)] + spans {
+            for _ in 0..<frames {
+                builder.add(
+                    mic: [Double](repeating: amplitude, count: 480),
+                    estimate: [Double](repeating: estimate, count: 480))
+            }
+            count += frames
+        }
+        return builder.build(cleanPower: [Float](repeating: 1e-8, count: count))
+    }
+
+    func testFewerThanAHundredLoudQuietFarSideFramesGiveNoVoice() {
+        // From the M3.2 review, finding 2: 99 frames is under a second.
+        XCTAssertNil(built([(99, 0.1, 0)]).voiceDB)
+        XCTAssertNotNil(built([(100, 0.1, 0)]).voiceDB)
+    }
+
+    func testFramesWithAnEstimateAreNotTheUsersVoice() throws {
+        // From the M3.2 review, finding 2: loud, but the far side was talking.
+        XCTAssertNil(built([(300, 0.1, 0.1)]).voiceDB)
+        // 80 alone plus plenty with the far side: still under 100 that count.
+        XCTAssertNil(built([(80, 0.1, 0), (300, 0.1, 0.1)]).voiceDB)
+        // The far side's frames don't dilute the others: 120 alone at -20 dB.
+        let e = built([(120, 0.1, 0), (300, 0.3, 0.1)])
+        XCTAssertEqual(try XCTUnwrap(e.voiceDB), -20, accuracy: 0.05)
+    }
+
+    func testVoiceIsTheMeanDBOfTheLoudestFifth() throws {
+        // From the M3.2 review, finding 2: 150 frames, so 30 count: 15 at -10 dB and 15 at -20 dB.
+        let e = built([(120, 0.001.squareRoot() * 1, 0), (15, 0.01.squareRoot(), 0), (15, 0.1.squareRoot(), 0)])
+        XCTAssertEqual(try XCTUnwrap(e.voiceDB), -15, accuracy: 0.05, "the mean of dB, not of power")
+    }
+
+    func testAQuietRoomAloneGivesNoVoice() {
+        // Nothing 10 dB over the room at all.
+        XCTAssertNil(built([(200, 0.0003, 0)]).voiceDB)
+    }
+
     func testMedianLagIsTheMiddleOne() {
         let lags = [7_200, 100, 7_210, 9_000, 7_205].enumerated().map {
             EchoRemover.LagPoint(seconds: Double($0.offset), lag: $0.element)

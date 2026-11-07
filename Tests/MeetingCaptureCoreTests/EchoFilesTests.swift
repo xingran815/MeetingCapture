@@ -103,4 +103,33 @@ final class EchoFilesTests: AudioTestCase {
         try touch("meeting_clean.wav")
         XCTAssertNotNil(RecordingFiles.conflict(forNewRecordingAt: url("meeting_clean")))
     }
+
+    /// From the M3.2 review, finding 10 (a nit): `x_clean` reads as the clean copy of `x`, so a
+    /// recording literally named `x_clean` must not cost `x` its files, nor the other way round.
+    /// Its own audio is left alone (never deleted, which is safe), and that is documented here.
+    func testARecordingNamedXCleanDoesNotLoseSomeoneElsesFiles() throws {
+        for name in ["x.m4a", "x_clean.m4a", "x_clean_clean.m4a", "x.txt", "x_clean.txt"] { try touch(name) }
+        try saveSidecar("x", transcribed(ageDays: 400, files: ["x.m4a"]))
+        try saveSidecar("x_clean", transcribed(ageDays: 400, files: ["x_clean.m4a", "x_clean_clean.m4a"]))
+        AudioRetention.clean(in: dir, days: 1, now: now)
+        XCTAssertFalse(exists("x.m4a"), "x's own audio goes")
+        // Documented, not wanted: x_clean's own audio is kept forever, because the file name
+        // reads as x's clean copy. Keeping is safe; deleting x_clean.m4a for x's sake would not be.
+        XCTAssertTrue(exists("x_clean.m4a"))
+        XCTAssertTrue(exists("x.txt"))
+        XCTAssertTrue(exists("x_clean.txt"))
+
+        // And the other way: x's sidecar naming x_clean.m4a can't take the other recording's file.
+        try touch("x.m4a")
+        try saveSidecar("x", transcribed(ageDays: 400, files: ["x.m4a", "x_clean.m4a"]))
+        AudioRetention.clean(in: dir, days: 1, now: now)
+        XCTAssertFalse(exists("x.m4a"))
+        XCTAssertTrue(exists("x_clean.m4a"), "x_clean has its own sidecar, so x can't delete its audio")
+    }
+
+    func testARecordingNamedXCleanIsNotMadePartOfX() throws {
+        for name in ["x.wav", "x_part2.wav", "x_clean.wav"] { try touch(name) }
+        XCTAssertEqual(RecordingFiles.allParts(of: url("x.wav").path), [url("x.wav").path, url("x_part2.wav").path])
+        XCTAssertEqual(RecordingFiles.allParts(of: url("x_clean.wav").path), [url("x_clean.wav").path])
+    }
 }

@@ -24,6 +24,8 @@ def main(method, take, sim=False):
     t0, t1 = lab.part1_range(take, mic, ref)
     res = {"method": method, "take": take, "x_realtime": round(len(mic) / lab.SR / took, 1)}
     res["part1"] = lab.echo_reduction(mic, out, ref, t0, t1)
+    n = min(len(mic), len(out))
+    res["part1_speech_band"] = lab.echo_reduction(lab.speech_band(mic[:n]), lab.speech_band(out[:n]), ref[:n], t0, t1)
     if take in ("main-3", "main-2"):
         res["part2"] = lab.alone_diff(mic, out, lab.playback_offset(ref, take))
     if sim and take in ("main-3", "main-2"):

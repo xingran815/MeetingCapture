@@ -62,9 +62,18 @@ public enum MeetingCaptureApp {
         // went on to a real capture of up to 8 hours, so they stop here instead.
         let scriptFlags = [
             "--two-track-mic", "--two-track-system", "--two-track-out", "--finish-recording", "--clean-echo",
+            "--clean-echo-out", "--diarize", "--threshold",
         ]
         if !AudioFixtures.scriptFlagsEnabled(), let used = scriptFlags.first(where: args.flag) {
             fputs("❌  \(used) is only for the test scripts, and needs MEETINGCAPTURE_E2E=1.\n", stderr)
+            exit(2)
+        }
+        // With the variable set, half a pair would also fall through to a real capture.
+        let scriptPairs = [
+            ["--clean-echo", "--clean-echo-out"], ["--two-track-mic", "--two-track-system", "--two-track-out"],
+        ]
+        for pair in scriptPairs where pair.contains(where: args.flag) && !pair.allSatisfy({ args.option($0) != nil }) {
+            fputs("❌  These go together, each with a value: \(pair.joined(separator: " ")).\n", stderr)
             exit(2)
         }
 
@@ -106,27 +115,7 @@ public enum MeetingCaptureApp {
         if AudioFixtures.scriptFlagsEnabled(), let path = args.option("--clean-echo"),
             let out = args.option("--clean-echo-out")
         {
-            do {
-                let work = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-                try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
-                defer { try? FileManager.default.removeItem(at: work) }
-                let tracks = try AudioTracks.split(URL(fileURLWithPath: path), into: work)
-                guard let mic = tracks.mic, let system = tracks.system else {
-                    fputs("❌  \(path) doesn't have both tracks.\n", stderr)
-                    exit(1)
-                }
-                guard
-                    let result = try EchoRemover.clean(mic: mic, system: system, to: URL(fileURLWithPath: out))
-                else {
-                    print("No echo found, so nothing was written.")
-                    exit(0)
-                }
-                print(String(format: "lag %.1f ms, drift %.2f ppm", result.lagSeconds * 1000, result.driftPPM))
-                exit(0)
-            } catch {
-                fputs("❌  \(error.localizedDescription)\n", stderr)
-                exit(1)
-            }
+            exit(cleanEchoForLab(path: path, out: out))
         }
         if AudioFixtures.scriptFlagsEnabled(), let path = args.option("--finish-recording") {
             let model = args.option("--model") ?? Config.load().whisperModel
@@ -397,6 +386,30 @@ public enum MeetingCaptureApp {
     /// Retention covers the configured output folder only. `--output` can point
     /// anywhere, and a file left in a shared folder shouldn't decide what's deleted
     /// there (D-45).
+    /// Returns the exit code rather than exiting, because `exit` would skip the `defer`
+    /// and leave both tracks of the recording in the temporary folder. From the M3.2 review.
+    static func cleanEchoForLab(path: String, out: String) -> Int32 {
+        let work = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: work) }
+        do {
+            try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
+            let tracks = try AudioTracks.split(URL(fileURLWithPath: path), into: work)
+            guard let mic = tracks.mic, let system = tracks.system else {
+                fputs("❌  \(path) doesn't have both tracks.\n", stderr)
+                return 1
+            }
+            guard let result = try EchoRemover.clean(mic: mic, system: system, to: URL(fileURLWithPath: out)) else {
+                print("No echo found, so nothing was written.")
+                return 0
+            }
+            print(String(format: "lag %.1f ms, drift %.2f ppm", result.lagSeconds * 1000, result.driftPPM))
+            return 0
+        } catch {
+            fputs("❌  \(error.localizedDescription)\n", stderr)
+            return 1
+        }
+    }
+
     private static func cleanOldAudio(_ config: Config) {
         guard let dir = try? config.resolvedOutputDirectory() else { return }
         for url in AudioRetention.clean(in: dir, days: config.audioRetentionDays, now: Date()) {

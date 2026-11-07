@@ -16,7 +16,9 @@ final class EchoScriptFlagTests: AudioTestCase {
         return exe
     }
 
-    private func run(_ arguments: [String], e2e: String?) throws -> (status: Int32, stdout: String, stderr: String) {
+    private func run(
+        _ arguments: [String], e2e: String?, tmp: URL? = nil
+    ) throws -> (status: Int32, stdout: String, stderr: String) {
         let process = Process()
         process.executableURL = try executable()
         process.arguments = arguments
@@ -24,6 +26,7 @@ final class EchoScriptFlagTests: AudioTestCase {
         environment["HOME"] = dir.path
         environment["MEETINGCAPTURE_E2E"] = e2e
         if e2e == nil { environment.removeValue(forKey: "MEETINGCAPTURE_E2E") }
+        if let tmp { environment["TMPDIR"] = tmp.path }
         process.environment = environment
         process.currentDirectoryURL = dir
         let out = Pipe()
@@ -32,7 +35,7 @@ final class EchoScriptFlagTests: AudioTestCase {
         process.standardError = err
         process.standardInput = FileHandle.nullDevice
         try process.run()
-        let deadline = Date().addingTimeInterval(30)
+        let deadline = Date().addingTimeInterval(20)  // a capture that started would still be running
         while process.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.02) }
         if process.isRunning {
             process.terminate()
@@ -86,5 +89,102 @@ final class EchoScriptFlagTests: AudioTestCase {
         XCTAssertEqual(result.status, 0, "\(result.stdout) \(result.stderr)")
         XCTAssertTrue(result.stdout.contains("lag 150.0 ms"), result.stdout)
         XCTAssertEqual(try EchoLab.read(url("out.wav")).count, mic.count)
+    }
+
+    // MARK: From the M3.2 review, finding 6
+
+    /// `--diarize`, `--threshold` and `--clean-echo-out` also take a path or run a lab step,
+    /// so they stop without the variable too, and no capture starts (it would run for 8 hours).
+    func testTheLabOnlyFlagsStopWithoutTheVariable() throws {
+        let cases: [[String]] = [
+            ["--diarize", url("in.wav").path],
+            ["--diarize"],
+            ["--threshold", "0.5"],
+            ["--clean-echo-out", url("out.wav").path],
+        ]
+        for args in cases {
+            for value in [nil, "0", "", "true"] as [String?] {
+                let result = try run(args, e2e: value)
+                XCTAssertEqual(result.status, 2, "\(args), E2E=\(value ?? "unset"): \(result.stdout) \(result.stderr)")
+                XCTAssertTrue(result.stderr.contains("only for the test scripts"), result.stderr)
+                XCTAssertTrue(result.stderr.contains(args[0]), result.stderr)
+                XCTAssertFalse(exists("out.wav"))
+            }
+        }
+    }
+
+    /// With the variable set, half a pair would otherwise be ignored and fall into a real capture.
+    func testHalfAPairOfScriptFlagsExitsWithTwoInsteadOfCapturing() throws {
+        let mic = ["--two-track-mic", url("a.wav").path]
+        let system = ["--two-track-system", url("b.wav").path]
+        let out = ["--two-track-out", url("c.wav").path]
+        let cases: [[String]] = [
+            ["--clean-echo", url("in.wav").path],
+            ["--clean-echo-out", url("out.wav").path],
+            mic, system, out, mic + system, mic + out, system + out,
+            ["--clean-echo"],  // no value at all
+            ["--clean-echo", url("in.wav").path, "--clean-echo-out"],
+        ]
+        for args in cases {
+            let result = try run(args, e2e: "1")
+            XCTAssertEqual(result.status, 2, "\(args): \(result.stdout) \(result.stderr)")
+            XCTAssertTrue(result.stderr.contains("go together"), "\(args): \(result.stderr)")
+            XCTAssertFalse(exists("out.wav"))
+            XCTAssertFalse(exists("c.wav"))
+        }
+    }
+
+    // MARK: From the M3.2 review, finding 7
+
+    /// Both tracks of the recording are copied into a folder in the temporary directory.
+    /// `exit` would skip the `defer` that removes it, so every way out must leave none.
+    /// The subprocess gets its own TMPDIR, so other tests running at once can't disturb this.
+    private func assertNoTempLeftBehind(
+        _ args: [String], expecting status: Int32, file: StaticString = #filePath, line: UInt = #line
+    ) throws {
+        let tmp = dir.appendingPathComponent("tmp-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        let result = try run(args, e2e: "1", tmp: tmp)
+        XCTAssertEqual(result.status, status, "\(result.stdout) \(result.stderr)", file: file, line: line)
+        let left = try FileManager.default.contentsOfDirectory(atPath: tmp.path)
+        XCTAssertEqual(left, [], "the temporary folder was left behind: \(args)", file: file, line: line)
+    }
+
+    func testCleaningLeavesNoTemporaryFolderOnSuccess() throws {
+        let far = EchoLab.speech(seconds: 24, seed: 11, rms: 0.1)
+        let mic = EchoLab.sum(EchoLab.echo(of: far), EchoLab.noise(far.count, seed: 5, rms: 0.0003))
+        try EchoLab.writeTwoTrack(mic: mic, system: far, to: url("call.wav"))
+        try assertNoTempLeftBehind(
+            ["--clean-echo", url("call.wav").path, "--clean-echo-out", url("out.wav").path], expecting: 0)
+        XCTAssertTrue(exists("out.wav"))
+    }
+
+    func testCleaningLeavesNoTemporaryFolderWhenNoEchoIsFound() throws {
+        let far = EchoLab.speech(seconds: 12, seed: 11, rms: 0.1)
+        let voice = EchoLab.speech(seconds: 12, seed: 77, rms: 0.1)  // headphones
+        try EchoLab.writeTwoTrack(mic: voice, system: far, to: url("call.wav"))
+        try assertNoTempLeftBehind(
+            ["--clean-echo", url("call.wav").path, "--clean-echo-out", url("out.wav").path], expecting: 0)
+        XCTAssertFalse(exists("out.wav"))
+    }
+
+    func testCleaningLeavesNoTemporaryFolderWhenATrackIsMissing() throws {
+        try wav("mono.wav", seconds: 3, mic: false, system: true)
+        try assertNoTempLeftBehind(
+            ["--clean-echo", url("mono.wav").path, "--clean-echo-out", url("out.wav").path], expecting: 1)
+    }
+
+    func testCleaningLeavesNoTemporaryFolderOnABadPath() throws {
+        try assertNoTempLeftBehind(
+            ["--clean-echo", url("missing.wav").path, "--clean-echo-out", url("out.wav").path], expecting: 1)
+        try touch("notaudio.wav", contents: Data("not audio".utf8))
+        try assertNoTempLeftBehind(
+            ["--clean-echo", url("notaudio.wav").path, "--clean-echo-out", url("out.wav").path], expecting: 1)
+        // An output path that can't be written.
+        let far = EchoLab.speech(seconds: 24, seed: 11, rms: 0.1)
+        let mic = EchoLab.sum(EchoLab.echo(of: far), EchoLab.noise(far.count, seed: 5, rms: 0.0003))
+        try EchoLab.writeTwoTrack(mic: mic, system: far, to: url("call.wav"))
+        try assertNoTempLeftBehind(
+            ["--clean-echo", url("call.wav").path, "--clean-echo-out", url("no/such/dir/out.wav").path], expecting: 1)
     }
 }

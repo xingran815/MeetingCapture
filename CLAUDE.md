@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **MeetingCapture** — a macOS meeting helper with a terminal UI and, from milestone 5, a desktop app (this replaces the earlier "no GUI" decision). It records a meeting, transcribes it locally with Whisper, and summarizes it with an LLM. Full pipeline is local-first: audio capture and transcription never leave the machine; only transcript text is sent to the chosen LLM.
 
-Current state (v0.6): capture + transcribe + summarize all work. Software AEC via vendored speexdsp. Indefinite-length recordings with 30-min chunking for fault tolerance. Interactive menu shell is the primary UX; flag-based invocation still works and is the scripting escape hatch.
+Current state (v0.6): capture + transcribe + summarize all work. Echo is removed after the call, from the raw mic (M3.2). Indefinite-length recordings with 30-min chunking for fault tolerance. Interactive menu shell is the primary UX; flag-based invocation still works and is the scripting escape hatch.
 
 ## Build & run
 
@@ -54,7 +54,8 @@ LLMProvider.swift    catalog of LLM provider presets (qianfan/openai/ollama/anth
 Config.swift         persisted settings (JSON) · llmProfiles tree + active-profile helpers · path/api-key helpers · legacy-path + legacy-schema migration
 AudioCapture.swift   SCShareableContent → SCContentFilter → SCStream; owns the WAV writer indirectly
 MicCapture.swift     AVAudioEngine input tap · format conversion to 48 kHz mono
-EchoCanceller.swift  Speex-based acoustic echo cancellation (software AEC)
+EchoRemover.swift    after-the-call echo removal: lag and clock drift → sliding least squares → residual suppressor · EchoEvidence, the delay-and-level check on each mic line
+MicStartGate.swift   holds the mic until system audio starts
 TrackWriter.swift    two tracks (ch1 mic, ch2 system), writes int16 WAV; 30-min chunk rotation; pause/resume
 CMSampleBuffer+PCM.swift  CMSampleBuffer → AVAudioPCMBuffer (handles non-interleaved ABL)
 Transcribe.swift     WhisperKit wrapper · language from the loudest 30 s · timestamped segments
@@ -63,7 +64,8 @@ AudioRetention.swift `<base>.mcmeta.json` sidecar · retention · unfinished rec
 Summarize.swift      POST to the provider's endpoint (OpenAI-compatible /chat/completions OR Anthropic /messages, branched on LLMAPIStyle) · per-provider reasoning serialization (Kimi thinking / OpenAI reasoning_effort / Anthropic adaptive thinking + output_config.effort, from ReasoningStyle + ReasoningEffort) · SummaryStyle (meeting vs therapy) + per-style system prompts (meetingPrompt/therapyPrompt, selected by systemPrompt(for:)) · detectStyle() one-word classifier that auto-routes each transcript · ping() connectivity check
 APIKeyStore.swift    file-based LLM API keys, one per profile (~/.config/MeetingCapture/llm_api_keys.json, mode 0600)
 Keychain.swift       LEGACY API-key read/delete only — new keys go to APIKeyStore; kept for migration
-Sources/Speexdsp/    Vendored xiph/speexdsp (BSD-3) — MDF echo canceller + preprocessor
+Sources/Speexdsp/    Not built. Kept only so the echo lab's Speex baseline can be rerun; M6 may delete it
+scripts/echo-lab/    M3.2's measuring tools: metrics, every candidate method, word scoring. Real calls only through real_counts.py, which prints counts
 install.sh           build (release) → install to ~/.local/bin → trigger TCC prompts
 ```
 
@@ -99,8 +101,14 @@ These are load-bearing and not obvious from reading a single file:
 - **Mid-recording stop/pause uses stdin readability, not readLine.** `Shell.recordFlow()` installs `FileHandle.standardInput.readabilityHandler` before awaiting `capture.run()`, and removes it after. The handler dispatches on input: bare `" "` (after stripping CR/LF) → `pauseToggle()`, anything else → `manualStop()`. A blocking `readLine()` in a detached Task would leak the thread because Swift can't cancel blocking syscalls. Handler approach is clean. **Caveat:** the handler only fires on a real TTY — when stdin is piped (testing), libc fully buffers stdin and the FileHandle dispatch source never sees subsequent bytes. Pause/stop are not reachable from piped tests; verify via interactive tty.
 - **`setbuf(stdout, nil)`** at the top of `main.swift` makes prompts and progress flush correctly and kept an early crash visible. Do not remove.
 - **Sendable warnings exist** on `AudioCapture`'s Task/DispatchQueue captures. They're left as warnings deliberately; making the class an actor is a bigger refactor than we've invested in.
-- **Echo needs the mic and system audio lined up (D-58).** They're paired by sample count, so a gap at the start stays for the whole recording, and Speex only removes an echo inside its tail. `MicStartGate` holds the mic until system audio starts, and the tail is 500 ms. To measure a real recording without reading it, compare the two tracks' 10 ms loudness envelopes. **Echo is still audible on real speakers, and M3.2 fixes it (`docs/specs/03.2-echo.md`):** on a Studio Display, raw echo is about as loud as its source, the lag is 150-180 ms, Speex takes off about 10-20 dB, and about a third of `You` words were the other side's. A deliberate repeat isn't an echo, so never remove lines by text alone.
-- **Do not enable Apple's Voice-Processing I/O on the mic input.** `AVAudioEngine.inputNode.setVoiceProcessingEnabled(true)` was tried (commit `a30025f`) to cancel the speaker→mic echo. It works as an AEC, but the API also switches the system audio HAL into "voice chat" mode — that ducks output (overriding user volume) and puts the mic into an exclusive voice-processing path. Any concurrent VoIP app (Zoom, Meet, Teams) that's also using VPIO is then unable to capture the mic, and its playback gets duck-attenuated. Recording becomes unusable in real meetings. **The fix is implemented:** software AEC via vendored `speexdsp` running in user-space against our own mic and SCStream buffers — that path doesn't claim the HAL session. Disable with `--no-aec` or Settings → AEC if needed.
+- **The mic is recorded raw, and the raw audio is the permanent record (D-65).** Echo comes off after the call in `EchoRemover`. `<base>.m4a` is always the raw recording; `<base>_clean.m4a` is an extra, listed in the sidecar so retention removes both. A failed clean falls back to raw and loses nothing. Never prove or archive audio from the cleaned file alone.
+- **The two clocks differ by about 8 ppm, so the lag moves during a call (D-66).** On `main-3` it climbs from 144 to 148 ms. A fixed or slowly adapting filter can't follow that: batch least squares got 8.7 dB without correcting the drift, 18.6 dB with it. `EchoRemover` measures the lag across the file, warps the reference, and fits again every 2 s.
+- **Echo maths needs doubles.** Float32 in the Toeplitz solve loses about 10 dB. The lag search also has a false peak at exactly 0 in some windows, so it ignores under 2 ms and takes a median.
+- **No echo peak means leave the mic alone.** With headphones `clean` returns nil, and the raw mic is transcribed. An echo that leads the reference is left alone too.
+- **A repeat isn't an echo, so labels go by delay and level, never by text (D-67).** A mic line is left out only if cleaning took at least 10 dB off the mic's loudest fifth and the cleaned loudest fifth is under a ceiling: 15 dB above the room, or 10 dB under this recording's own voice if that's lower. Talk-over also shows a big drop, so only level protects a soft speaker. The note gives the times of left-out lines, never their words.
+- **A broadband echo figure can flatter (D-68).** Room noise is mostly low, so the broadband ceiling on `main-3` is 28 dB, but in the speech band it's 38 dB and the result is 29 dB. Output also falls below the room on some frames, so part of a figure can be room noise removed. Read `part1_speech_band` and the voice figures with any reduction figure. DTLN's 42 dB came with 10 dB off a voice.
+- **`words.py`'s repeat score can't see a lost repeat.** With no user voice at all it still scores over 95%, because an echo has the same words as its repeat. `masked_repeats.py` is the real test.
+- **Do not enable Apple's Voice-Processing I/O on the mic input.** `AVAudioEngine.inputNode.setVoiceProcessingEnabled(true)` was tried (commit `a30025f`) to cancel the speaker→mic echo. It works as an AEC, but the API also switches the system audio HAL into "voice chat" mode — that ducks output (overriding user volume) and puts the mic into an exclusive voice-processing path. Any concurrent VoIP app (Zoom, Meet, Teams) that's also using VPIO is then unable to capture the mic, and its playback gets duck-attenuated. Recording becomes unusable in real meetings. **The fix is implemented:** `EchoRemover` works after the call on our own files, so it never claims the HAL session. Disable with `--no-aec` or Settings → Echo removal.
 
 ## Extending the tool
 

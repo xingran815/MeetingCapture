@@ -102,6 +102,34 @@ final class EchoPipelineTests: AudioTestCase {
             "an echo-only line was kept as the user's")
     }
 
+    /// The note can reach a log, so it gives a count and start times, never a line's words.
+    /// From the M3.2 review, finding 8.
+    func testTheNoteForLeftOutLinesHasTheCountAndStartTimesAndNoWords() async throws {
+        let c = call(seconds: 140)  // the echo runs to 70 s
+        try EchoLab.writeTwoTrack(mic: c.mic, system: c.system, to: url("m.wav"))
+        let late = Transcriber.Segment(start: 65.0, end: 69.0, text: "secretphrase from the far end")
+        let mine = Transcriber.Segment(start: 80.0, end: 85.0, text: "kept line")
+        let result = try await pipeline(scripted(mic: [farLine, farWords, late, mine]))
+            .transcribe(parts: [url("m.wav")])
+
+        let note = try XCTUnwrap(result.notes.first { $0.contains("left out") }, "\(result.notes)")
+        XCTAssertTrue(note.contains("left out 3 mic line(s) at 0:01, 0:06, 1:05"), note)
+        XCTAssertTrue(note.hasPrefix("m.wav:"), note)
+        for word in ["secretphrase", "other side", "far end", "long line", "kept line"] {
+            XCTAssertFalse(
+                result.notes.joined(separator: "\n").contains(word), "a line's words reached a note: \(word)")
+        }
+        XCTAssertEqual(
+            result.segments.filter { $0.speaker == SpeakerLabels.you }.map(\.text), ["kept line"])
+    }
+
+    func testNoLinesLeftOutMeansNoNote() async throws {
+        let c = call()
+        try EchoLab.writeTwoTrack(mic: c.mic, system: c.system, to: url("m.wav"))
+        let result = try await pipeline(scripted(mic: [ownWords])).transcribe(parts: [url("m.wav")])
+        XCTAssertFalse(result.notes.contains { $0.contains("left out") }, "\(result.notes)")
+    }
+
     func testTheCleanCopyIsOnlyKeptWhenAsked() async throws {
         let c = call()
         try EchoLab.writeTwoTrack(mic: c.mic, system: c.system, to: url("m.wav"))

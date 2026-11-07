@@ -146,6 +146,13 @@ def noise_floor_power(mic, system):
     return float(np.percentile(quiet, 25))
 
 
+def speech_band(x):
+    """300-4000 Hz. Room noise is mostly low, so a broadband ceiling can hide what's left."""
+    from scipy.signal import butter, sosfiltfilt
+
+    return sosfiltfilt(butter(4, [300, 4000], "band", fs=SR, output="sos"), x).astype(np.float32)
+
+
 def echo_reduction(raw, out, system, t0, t1, noise_power=None, frame=2400, convergence_s=10.0, lag_samples=7200):
     """Reduction on the loud echo frames of a user-silent stretch.
 
@@ -201,7 +208,7 @@ def sdr(s, y):
     return float(db(np.array([np.dot(s, s)]))[0] - db(np.array([np.dot(e, e)]))[0])
 
 
-def build_sim(name, echo_gain_db=0.0):
+def build_sim(name, echo_gain_db=0.0, near_gain_db=0.0):
     """Real echo-only mic from part 1 + the user's real solo speech from part 2, at
     real levels. Truth tracks are kept. Layout, in the file's time:
 
@@ -237,7 +244,7 @@ def build_sim(name, echo_gain_db=0.0):
         echo_scaled = np.concatenate([echo_scaled, rep])
         ref_out = np.concatenate([ref_out, np.zeros(tail, dtype=np.float32)])
     truth = np.zeros(n_total, dtype=np.float32)
-    truth[t_st : t_st + len(near)] = near
+    truth[t_st : t_st + len(near)] = near * 10 ** (near_gain_db / 20)
     sim_mic = echo_scaled + truth
     return {
         "mic": sim_mic,

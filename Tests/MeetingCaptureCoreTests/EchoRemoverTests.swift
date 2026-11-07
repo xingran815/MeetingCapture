@@ -120,6 +120,32 @@ final class EchoRemoverTests: AudioTestCase {
         XCTAssertTrue(result.evidence.looksLikeEcho(start: 1.2, end: 6.2), "the echo itself wasn't recognised")
     }
 
+    /// From the M3.2 review, finding 2. A soft speaker, talking over the far side, has a big
+    /// drop and a level near the room, so level alone would call the line echo. The ceiling
+    /// follows the same speaker's voice while the far side is silent.
+    func testSoftSpeechOverAnEchoIsNotReportedAsEchoWhenTheSameVoiceIsHeardAlone() throws {
+        let scene = EchoScene.standard
+        let system = EchoLab.only(scene.far, seconds: 0...12)
+        let soft = EchoLab.speech(seconds: 24, seed: 77, rms: 0.0007)  // barely over the room
+        let voice = EchoLab.sum(EchoLab.only(soft, seconds: 3...10), EchoLab.only(soft, seconds: 13...23))
+        let mic = EchoLab.sum(EchoLab.sum(EchoLab.echo(of: system), voice), scene.noise)
+        let (result, _) = try XCTUnwrap(try clean(mic: mic, system: system))
+
+        let e = result.evidence
+        print("EchoRemoverTests: soft voice \(e.voiceDB ?? .nan) dB, room \(e.roomDB) dB")
+        let voiceDB = try XCTUnwrap(e.voiceDB, "the soft voice alone wasn't measured")
+        XCTAssertLessThan(voiceDB - e.roomDB, 25, "the test voice isn't soft")
+        XCTAssertLessThan(e.ceilingAboveRoom, EchoEvidence.echoCeilingAboveRoom)
+        XCTAssertFalse(e.looksLikeEcho(start: 3.2, end: 9.8), "soft speech over an echo was called echo")
+        XCTAssertFalse(e.looksLikeEcho(start: 13.2, end: 22.8), "the same soft speech, alone")
+        // The control: without the voice, the old 15 dB ceiling would have dropped the line.
+        var withoutVoice = e
+        withoutVoice.voiceDB = nil
+        XCTAssertTrue(withoutVoice.looksLikeEcho(start: 3.2, end: 9.8), "the test doesn't show the problem")
+        // The echo with no one speaking is still found.
+        XCTAssertTrue(e.looksLikeEcho(start: 0.5, end: 2.5) || e.looksLikeEcho(start: 10.2, end: 11.8))
+    }
+
     private func correlation(_ a: [Double], _ b: [Double]) -> Double {
         var dot = 0.0
         var aa = 0.0
