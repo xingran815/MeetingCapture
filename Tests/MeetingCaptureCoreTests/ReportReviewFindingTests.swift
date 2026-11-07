@@ -124,6 +124,16 @@ final class ReportReviewFindingTests: GuardedTestCase {
         XCTAssertEqual(written.json.lastPathComponent, "t.report.json")
     }
 
+    func testDeepReviewM4Recheck_6_AnUppercaseMDTranscriptIsNotOverwritten() throws {
+        let source = dir.appendingPathComponent("T.MD")
+        let original = "[00:00:01] You: the only copy, upper-case extension\n"
+        try original.write(to: source, atomically: true, encoding: .utf8)
+        let written = try ReportFiles.write(report(), nextTo: source, date: ReportFixtures.now)
+        XCTAssertEqual(try String(contentsOf: source, encoding: .utf8), original, "bytes unchanged")
+        XCTAssertNotEqual(written.markdown.path.lowercased(), source.path.lowercased())
+        XCTAssertTrue(try String(contentsOf: written.markdown, encoding: .utf8).hasPrefix("# A topic"))
+    }
+
     func testDeepReviewM4_4_ATextTranscriptStillGetsPlainMd() throws {
         let source = dir.appendingPathComponent("t.txt")
         try "x".write(to: source, atomically: true, encoding: .utf8)
@@ -233,7 +243,12 @@ final class ReportReviewFindingTests: GuardedTestCase {
                 case .normal: return Replies.sections(["concepts": names])
                 case .frontier: return Replies.review(["concepts": names])
                 }
-            }, onSearch: { _ in Replies.concepts([]) })
+            },
+            onSearch: { _ in
+                Replies.concepts([
+                    (name: "cognitive defusion", explanation: "e", sources: [("Src", "https://a.example/s")])
+                ])
+            })
         let outcome = try await run(b)
         XCTAssertEqual(b.searches.count, 1)
         XCTAssertEqual(b.searches[0], Array(names.prefix(8)))
@@ -242,6 +257,148 @@ final class ReportReviewFindingTests: GuardedTestCase {
             "\(outcome.report.notices)")
         XCTAssertEqual(items(outcome.report, "concepts").count, 10, "all ten stay in the report")
     }
+
+    // MARK: Re-check of the M4 fixes
+
+    private func routeConfig(llmRoute: LLMRoute) -> Config {
+        var config = Config()
+        config.llmRoute = llmRoute
+        config.llmProfiles = [
+            LLMProfile(id: "rc1", name: "Mine", providerID: "custom", model: "m", baseURL: "https://llm.example.com/v1")
+        ]
+        config.selectedLLMProfileID = "rc1"
+        return config
+    }
+
+    /// PATH holds one fake claude that reports logged out, so no CLI is ready.
+    private func withLoggedOutClaude<T>(_ body: () async throws -> T) async throws -> T {
+        let world = try FakeCLIWorld()
+        defer { world.cleanUp() }
+        try world.install(
+            .claude, answers: [.init(stdout: FakeCLIWorld.claudeOK())], authStatus: #"{"loggedIn":false}"#)
+        let key = "sk-" + String(repeating: "q", count: 12)
+        return try await withEnvironment("LLM_API_KEY", key) {
+            try await withEnvironment("PATH", world.bin.path + ":/usr/bin:/bin") { try await body() }
+        }
+    }
+
+    func testDeepReviewM4Recheck_1_CLIOnlyRefusesTheAPIRoute() async throws {
+        let config = routeConfig(llmRoute: .apiProfile)
+        try await withLoggedOutClaude {
+            try await withEnvironment("MEETINGCAPTURE_CLI_ONLY", "1") {
+                do {
+                    _ = try await SummaryRoute.backend(config: config)
+                    XCTFail("an API backend was returned")
+                } catch {
+                    XCTAssertTrue(
+                        error.localizedDescription.contains(SummaryRoute.cliOnlyRefusal), error.localizedDescription)
+                }
+            }
+        }
+    }
+
+    func testDeepReviewM4Recheck_1_CLIOnlyRefusesTheNoCLIFallback() async throws {
+        let config = routeConfig(llmRoute: .subscription)
+        try await withLoggedOutClaude {
+            try await withEnvironment("MEETINGCAPTURE_CLI_ONLY", "1") {
+                do {
+                    _ = try await SummaryRoute.backend(config: config)
+                    XCTFail("the fallback returned an API backend")
+                } catch {
+                    XCTAssertTrue(
+                        error.localizedDescription.contains(SummaryRoute.cliOnlyRefusal), error.localizedDescription)
+                }
+            }
+        }
+    }
+
+    func testDeepReviewM4Recheck_1_WithoutCLIOnlyTheFallbackStillWorks() async throws {
+        let config = routeConfig(llmRoute: .subscription)
+        try await withLoggedOutClaude {
+            try await withEnvironment("MEETINGCAPTURE_CLI_ONLY", nil) {
+                let backend = try await SummaryRoute.backend(config: config)
+                XCTAssertTrue(backend is APISummaryBackend, "type only; nothing is called")
+                XCTAssertEqual(backend.label, "Mine")
+            }
+        }
+    }
+
+    func testDeepReviewM4Recheck_1_LiveReportPassesCLIOnlyToTheBinary() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let text = try String(contentsOf: root.appendingPathComponent("scripts/live-report.sh"), encoding: .utf8)
+        let line = try XCTUnwrap(text.split(separator: "\n").first { $0.contains(".build/debug/MeetingCaptureCLI") })
+        XCTAssertTrue(line.contains("MEETINGCAPTURE_CLI_ONLY=1"), String(line))
+    }
+
+    // 2. The "first 8" notice needs a search that gave usable results.
+
+    private let tenConcepts = [
+        "cognitive defusion", "behavioral activation", "exposure therapy", "mindfulness practice",
+        "values clarification", "thought record", "grounding technique", "progressive relaxation",
+        "sleep hygiene", "social skills",
+    ]
+
+    private func tenConceptBackend(onSearch: @escaping ([String]) throws -> String?) -> ScriptedBackend {
+        let names = tenConcepts
+        return ScriptedBackend(
+            onComplete: { call in
+                switch call.tier {
+                case .cheap: return Replies.classify("therapy")
+                case .normal: return Replies.sections(["concepts": names])
+                case .frontier: return Replies.review(["concepts": names])
+                }
+            }, onSearch: onSearch)
+    }
+
+    func testDeepReviewM4Recheck_2_NoFirstEightNoticeWhenTheSearchReturnsNothing() async throws {
+        let outcome = try await run(tenConceptBackend(onSearch: { _ in nil }))
+        XCTAssertFalse(outcome.report.notices.contains { $0.contains("first 8") }, "\(outcome.report.notices)")
+    }
+
+    func testDeepReviewM4Recheck_2_NoFirstEightNoticeWhenTheSearchThrows() async throws {
+        struct Boom: Error {}
+        let outcome = try await run(tenConceptBackend(onSearch: { _ in throw Boom() }))
+        XCTAssertFalse(outcome.report.notices.contains { $0.contains("first 8") }, "\(outcome.report.notices)")
+    }
+
+    // 3. Tokens with underscores never reach a file name.
+
+    func testDeepReviewM4Recheck_3_UnderscoreTokensAreGoneFromTheFileTopic() async throws {
+        for token in ["<API_KEY_1>", "<URL_TOKEN_2>", "<CN_MOBILE_1>"] {
+            let b = ScriptedBackend(onComplete: { call in
+                switch call.tier {
+                case .cheap: return Replies.classify("meeting", topic: "\(token) rotation")
+                case .normal: return Replies.sections(["summary": ["s"]])
+                case .frontier: return Replies.review(["summary": ["s"]])
+                }
+            })
+            let outcome = try await run(b)
+            let fileTopic = try XCTUnwrap(outcome.fileTopic)
+            XCTAssertTrue(fileTopic.contains("rotation"), fileTopic)
+            let source = dir.appendingPathComponent("m.txt")
+            try shortTranscript.write(to: source, atomically: true, encoding: .utf8)
+            let written = try ReportFiles.write(
+                outcome.report, nextTo: source, fileTopic: outcome.fileTopic, date: ReportFixtures.now)
+            let name = written.html.lastPathComponent.uppercased()
+            for bad in ["API-KEY", "API_KEY", "URL-TOKEN", "URL_TOKEN", "CN-MOBILE", "CN_MOBILE"] {
+                XCTAssertFalse(name.contains(bad), "\(token): \(name)")
+            }
+        }
+    }
+
+    // 4. Markdown escapes the scenario title and the models line.
+
+    func testDeepReviewM4Recheck_4_MarkdownEscapesTheModelsLineAndScenarioTitle() {
+        var r = report()
+        r.models = .init(cheap: "c", normal: "n", frontier: "[x](javascript:alert(1))")
+        r.scenarioTitle = "[t](javascript:alert(2))"
+        let md = ReportRenderer.markdown(r)
+        XCTAssertNil(md.range(of: #"(?<!\\)\]\(javascript:"#, options: .regularExpression), md)
+    }
+
+    // 5. App's "transcript is kept at" lives in a closure inside MeetingCaptureApp.main
+    //    and needs a real run through Whisper, so there is no test for it here.
 
     // MARK: 10. The cap check and the router use the same ledger
 

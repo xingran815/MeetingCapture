@@ -153,6 +153,12 @@ enum Redactor {
 
     private static let typeNames = rules.map(\.type).sorted { $0.count > $1.count }.joined(separator: "|")
     private static let exactToken = rx("<(?:\(typeNames))_\\d+>")
+
+    /// The text with every token taken out, such as a topic that names a file.
+    static func withoutTokens(_ text: String) -> String {
+        exactToken.stringByReplacingMatches(
+            in: text, range: NSRange(text.startIndex..., in: text), withTemplate: " ")
+    }
     private static let mangledToken = rx(
         "<[^<>\\n]{0,3}(?i:\(typeNames))[ _-]?\\d+[^<>\\n]{0,3}>|(?<![A-Za-z<])(?:\(typeNames))_\\d+")
 

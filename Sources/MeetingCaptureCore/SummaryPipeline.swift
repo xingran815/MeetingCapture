@@ -174,9 +174,6 @@ struct SummaryPipeline {
                 notices.append(
                     "\(skipped) concept name(s) weren't looked up, because they looked like more than a generic term.")
             }
-            if names.count > 8 {
-                notices.append("Only the first 8 concepts were looked up; \(names.count - 8) more have no sources.")
-            }
             if !names.isEmpty {
                 do {
                     if let reply = try await backend.searchConcepts(Array(names.prefix(8)), schema: Self.conceptSchema)
@@ -195,6 +192,9 @@ struct SummaryPipeline {
                         }
                         if found.isEmpty {
                             notices.append("The concept search gave nothing usable, so concepts have no sources.")
+                        } else if names.count > 8 {
+                            notices.append(
+                                "Only the first 8 concepts were looked up; \(names.count - 8) more have no sources.")
                         }
                     } else {
                         notices.append("Concept sources need a subscription CLI, so none were looked up.")
@@ -268,8 +268,7 @@ struct SummaryPipeline {
                 return entry
             })
 
-        let fileTopic = report.topic.replacingOccurrences(
-            of: #"<[A-Z]+_[0-9]+>"#, with: " ", options: .regularExpression)
+        let fileTopic = Redactor.withoutTokens(report.topic)
         // Restore tokens everywhere a model wrote. The transcript is the original text.
         var flagged: [String] = []
         if redaction {
@@ -806,11 +805,16 @@ enum SummaryRoute {
     static func backend(
         config: Config, primary: CLIKind? = nil, overrides: APIOverrides = APIOverrides()
     ) async throws -> SummaryBackend {
+        // Set by scripts that may only spend subscription usage, such as live-report.sh:
+        // never an API profile, not even as the fallback.
+        let cliOnly = ProcessInfo.processInfo.environment["MEETINGCAPTURE_CLI_ONLY"] == "1"
         if config.llmRoute == .apiProfile || !overrides.isEmpty {
+            if cliOnly { throw Summarizer.SummarizerError.badResponse(cliOnlyRefusal) }
             return try apiBackend(config: config, overrides: overrides)
         }
         let router = makeRouter(config: config, primary: primary)
         if await router.hasReadyCLI() { return CLISummaryBackend(router: router) }
+        if cliOnly { throw Summarizer.SummarizerError.badResponse(cliOnlyRefusal) }
         // Row 4 of the provider order: no CLI, so use the chosen profile if it can run.
         if !config.llmProfiles.isEmpty {
             return try apiBackend(config: config, overrides: overrides)
@@ -819,6 +823,9 @@ enum SummaryRoute {
         _ = try await router.call(.text(tier: .cheap, system: "", input: ""))
         throw LLMRouter.RouterError.noCLI([])
     }
+
+    static let cliOnlyRefusal =
+        "MEETINGCAPTURE_CLI_ONLY is set and no subscription CLI is ready, so no API profile was used."
 
     private static func apiBackend(config: Config, overrides: APIOverrides) throws -> SummaryBackend {
         let profile = overrides.profile ?? config.activeLLMProfile

@@ -386,7 +386,7 @@ enum ReportRenderer {
     // MARK: - Markdown, for tools that read `.md`
 
     static func markdown(_ report: Report) -> String {
-        var md = "# \(mdLine(report.topic))\n\n_\(report.scenarioTitle) · \(metaLine(report))_\n"
+        var md = "# \(mdLine(report.topic))\n\n_\(mdLine(report.scenarioTitle)) · \(mdLine(metaLine(report)))_\n"
         if !report.reviewed {
             md += "\n> **Not reviewed.** The frontier review didn't run, so this is the first draft.\n"
         }
@@ -417,7 +417,7 @@ enum ReportRenderer {
         if !report.notices.isEmpty {
             md += "\n---\n" + report.notices.map { "> Note: \(mdLine($0))" }.joined(separator: "\n") + "\n"
         }
-        md += "\n" + modelsLine(report) + "\n"
+        md += "\n" + mdLine(modelsLine(report)) + "\n"
         return md
     }
 

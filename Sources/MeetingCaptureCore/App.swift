@@ -304,9 +304,13 @@ public enum MeetingCaptureApp {
             } catch {
                 // From --transcribe-only the source is the audio; the transcript is the .txt beside it.
                 let source = URL(fileURLWithPath: sourcePath)
+                // runTranscription names it after the first part's base, without `_partN`.
                 let kept =
                     ["txt", "md"].contains(source.pathExtension.lowercased())
-                    ? source.path : source.deletingPathExtension().appendingPathExtension("txt").path
+                    ? source.path
+                    : source.deletingLastPathComponent().appendingPathComponent(
+                        RecordingFiles.baseName(of: source.deletingPathExtension().lastPathComponent)
+                    ).appendingPathExtension("txt").path
                 throw Summarizer.SummarizerError.badResponse(
                     "\(error.localizedDescription) The transcript is kept at \(kept).")
             }
