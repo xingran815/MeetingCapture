@@ -794,9 +794,11 @@ enum SummaryRoute {
     }
 
     static func makeRouter(config: Config, primary: CLIKind? = nil, ledger: UsageLedger = UsageLedger()) -> LLMRouter {
+        // CLI-only runs spend subscription usage alone, so a CLI logged in with an API
+        // key is refused even when the settings allow CLI API billing.
         let runner = CLIRunner(
             models: [.claude: config.claudeModels, .codex: config.codexModels],
-            allowAPIBilling: config.allowCLIAPIBilling)
+            allowAPIBilling: config.allowCLIAPIBilling && !cliOnly)
         return LLMRouter(
             runner: runner, ledger: ledger,
             primary: primary ?? config.primaryCLI, cap: config.dailyCLICallCap)
@@ -805,24 +807,26 @@ enum SummaryRoute {
     static func backend(
         config: Config, primary: CLIKind? = nil, overrides: APIOverrides = APIOverrides()
     ) async throws -> SummaryBackend {
-        // Set by scripts that may only spend subscription usage, such as live-report.sh:
-        // never an API profile, not even as the fallback.
-        let cliOnly = ProcessInfo.processInfo.environment["MEETINGCAPTURE_CLI_ONLY"] == "1"
         if config.llmRoute == .apiProfile || !overrides.isEmpty {
             if cliOnly { throw Summarizer.SummarizerError.badResponse(cliOnlyRefusal) }
             return try apiBackend(config: config, overrides: overrides)
         }
         let router = makeRouter(config: config, primary: primary)
         if await router.hasReadyCLI() { return CLISummaryBackend(router: router) }
-        if cliOnly { throw Summarizer.SummarizerError.badResponse(cliOnlyRefusal) }
         // Row 4 of the provider order: no CLI, so use the chosen profile if it can run.
+        // With no profile, the router's own reasons below say why no CLI is ready.
         if !config.llmProfiles.isEmpty {
+            if cliOnly { throw Summarizer.SummarizerError.badResponse(cliOnlyRefusal) }
             return try apiBackend(config: config, overrides: overrides)
         }
         // Asks the router, for its reasons.
         _ = try await router.call(.text(tier: .cheap, system: "", input: ""))
         throw LLMRouter.RouterError.noCLI([])
     }
+
+    /// Set by scripts that may only spend subscription usage, such as live-report.sh:
+    /// never an API profile, not even as the fallback, and never CLI API billing.
+    static var cliOnly: Bool { ProcessInfo.processInfo.environment["MEETINGCAPTURE_CLI_ONLY"] == "1" }
 
     static let cliOnlyRefusal =
         "MEETINGCAPTURE_CLI_ONLY is set and no subscription CLI is ready, so no API profile was used."

@@ -323,6 +323,55 @@ final class ReportReviewFindingTests: GuardedTestCase {
         }
     }
 
+    /// PATH holds one fake claude, logged in with an API key (not claude.ai), and no codex.
+    private func withAPIKeyClaude<T>(_ body: () async throws -> T) async throws -> T {
+        let world = try FakeCLIWorld()
+        defer { world.cleanUp() }
+        try world.install(
+            .claude, answers: [.init(stdout: FakeCLIWorld.claudeOK())],
+            authStatus: #"{"loggedIn":true,"authMethod":"api_key"}"#)
+        return try await withEnvironment("PATH", world.bin.path + ":/usr/bin:/bin") { try await body() }
+    }
+
+    func testDeepReviewM4Recheck2_CLIOnlyNeverBillsAnAPIKeyThroughTheCLI() async throws {
+        var config = routeConfig(llmRoute: .subscription)
+        config.allowCLIAPIBilling = true
+        try await withAPIKeyClaude {
+            try await withEnvironment("MEETINGCAPTURE_CLI_ONLY", "1") {
+                do {
+                    let backend = try await SummaryRoute.backend(config: config)
+                    XCTFail("a backend was returned: \(type(of: backend))")
+                } catch {
+                    XCTAssertTrue(
+                        error.localizedDescription.contains(SummaryRoute.cliOnlyRefusal), error.localizedDescription)
+                }
+            }
+            // Contrast: the same setup without the variable uses the CLI (type only, no call).
+            try await withEnvironment("MEETINGCAPTURE_CLI_ONLY", nil) {
+                let backend = try await SummaryRoute.backend(config: config)
+                XCTAssertTrue(backend is CLISummaryBackend, "\(type(of: backend))")
+            }
+        }
+    }
+
+    func testDeepReviewM4Recheck2_CLIOnlyWithNoProfileStillGivesTheRoutersReasons() async throws {
+        var config = Config()
+        config.llmRoute = .subscription
+        config.llmProfiles = []
+        try await withLoggedOutClaude {
+            try await withEnvironment("MEETINGCAPTURE_CLI_ONLY", "1") {
+                do {
+                    _ = try await SummaryRoute.backend(config: config)
+                    XCTFail("a backend was returned")
+                } catch {
+                    XCTAssertTrue(error is LLMRouter.RouterError, "\(type(of: error)): \(error)")
+                    XCTAssertFalse(
+                        error.localizedDescription.contains(SummaryRoute.cliOnlyRefusal), error.localizedDescription)
+                }
+            }
+        }
+    }
+
     func testDeepReviewM4Recheck_1_LiveReportPassesCLIOnlyToTheBinary() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent()
