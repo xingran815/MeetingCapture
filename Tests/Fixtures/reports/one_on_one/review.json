@@ -1,0 +1,168 @@
+{
+ "topic": "Quarterly one-on-one",
+ "sections": {
+  "summary": [
+   {
+    "text": "A manager and report reviewed the quarter. The manager gave feedback on late design docs, the report asked for written priorities, and they discussed a path to tech lead.",
+    "speaker": "",
+    "owner": "",
+    "due": "",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   }
+  ],
+  "feedback": [
+   {
+    "text": "The search launch was well run and the incident write-up was excellent.",
+    "speaker": "Speaker 1",
+    "owner": "",
+    "due": "",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   },
+   {
+    "text": "Design docs often arrive the night before the review, leaving no time to comment.",
+    "speaker": "Speaker 1",
+    "owner": "",
+    "due": "",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   },
+   {
+    "text": "Priorities should be written down; three asks came in last week with no order.",
+    "speaker": "You",
+    "owner": "",
+    "due": "",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   }
+  ],
+  "commitments": [
+   {
+    "text": "Send design doc drafts two days ahead",
+    "speaker": "",
+    "owner": "You",
+    "due": "from now on",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   },
+   {
+    "text": "Post a ranked priority list in the team channel",
+    "speaker": "",
+    "owner": "Speaker 1",
+    "due": "Wednesday",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   },
+   {
+    "text": "Ask platform whether the build-cache work can be shared as a cross-team project",
+    "speaker": "",
+    "owner": "Speaker 1",
+    "due": "",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   },
+   {
+    "text": "Start mentoring the new hire",
+    "speaker": "",
+    "owner": "You",
+    "due": "",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   }
+  ],
+  "growth": [
+   {
+    "text": "Wants to move toward a tech lead role next year; the gap is scope and influence across teams.",
+    "speaker": "",
+    "owner": "",
+    "due": "",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   },
+   {
+    "text": "Worried that on-call load is eating focus time.",
+    "speaker": "",
+    "owner": "",
+    "due": "",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "unsure",
+    "reason": "Raised once; no follow-up discussion in the transcript.",
+    "source": "transcript"
+   }
+  ],
+  "follow_ups": [
+   {
+    "text": "Check in on all three things in two weeks",
+    "speaker": "",
+    "owner": "",
+    "due": "in two weeks",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   }
+  ],
+  "insights": [
+   {
+    "text": "Sending drafts early also helps the tech lead goal, since it shows influence across teams.",
+    "speaker": "",
+    "owner": "",
+    "due": "",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "ai"
+   }
+  ]
+ },
+ "changes": [
+  {
+   "what": "Moved the on-call worry from a commitment to the growth topics.",
+   "why": "It was a concern, not something either side agreed to do."
+  }
+ ],
+ "transcriptSuggestions": []
+}

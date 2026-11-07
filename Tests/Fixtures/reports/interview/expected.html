@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<title>Backend engineer interview</title>
+<style>:root{--bg:#fbfaf8;--fg:#1d1d1f;--muted:#6b6b70;--line:#e3e1dc;--card:#fff;--ai:#5b4bb7;--ai-bg:#f3f0ff;--warn:#9a5b00;--warn-bg:#fff4e0;--link:#0a58ca}
+@media (prefers-color-scheme:dark){:root{--bg:#161618;--fg:#ececee;--muted:#a0a0a8;--line:#2e2e33;--card:#1f1f23;--ai:#b9adff;--ai-bg:#26223a;--warn:#ffc46b;--warn-bg:#33270f;--link:#8ab4ff}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB",sans-serif;padding:24px 16px 64px}
+header,nav,main,footer,.banner,.notices{max-width:820px;margin-left:auto;margin-right:auto}
+h1{font-size:1.8rem;line-height:1.25;margin:.2rem 0}
+h2{font-size:1.2rem;margin:2rem 0 .6rem;padding-bottom:.3rem;border-bottom:1px solid var(--line)}
+h3{font-size:1.05rem;margin:0 0 .4rem}
+.kind{text-transform:uppercase;letter-spacing:.08em;font-size:.75rem;color:var(--muted);margin:0}
+.meta,.note,.empty,.count,footer,.why{color:var(--muted);font-size:.9rem}
+.banner{background:var(--warn-bg);color:var(--warn);border-radius:8px;padding:10px 14px;margin-top:16px}
+.notices{color:var(--muted);font-size:.9rem;padding-left:1.2rem}
+nav ul{list-style:none;padding:0;display:flex;flex-wrap:wrap;gap:6px 14px;font-size:.9rem}
+a{color:var(--link)}
+ul,ol{padding-left:1.3rem}
+li{margin:.3rem 0}
+.speaker{font-weight:600}
+.speaker::after{content:":"}
+.lines .speaker::after{content:""}
+q{font-style:italic;margin-left:.3em}
+.tag{display:inline-block;font-size:.78rem;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:0 8px;margin-left:4px}
+.todo{list-style:none;padding-left:0}
+.box{display:inline-block;width:.9em;height:.9em;border:1.5px solid var(--muted);border-radius:3px;vertical-align:-1px}
+.ai{background:var(--ai-bg);border-left:3px solid var(--ai);padding:4px 10px;border-radius:0 6px 6px 0}
+li.ai{list-style:none;margin-left:-1.3rem}
+.badge{display:inline-block;font-size:.7rem;font-weight:700;letter-spacing:.05em;color:var(--ai);border:1px solid var(--ai);border-radius:4px;padding:0 4px;margin-right:4px;vertical-align:1px}
+.doubt{margin:.25rem 0 0;font-size:.88rem;color:var(--warn)}
+.mark{display:inline-block;font-weight:700;font-size:.72rem;background:var(--warn-bg);color:var(--warn);border:1px dashed var(--warn);border-radius:4px;padding:0 5px;margin-right:4px}
+.unsure{outline:1px dashed var(--warn);outline-offset:3px;border-radius:4px}
+.qa,.concept{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:10px 0}
+.q{font-weight:600;margin:0 0 .4rem}
+.a{margin:0}
+dt{font-size:.8rem;color:var(--muted);margin-top:.5rem}
+dd{margin:0}
+details.changes{margin-top:2rem}
+summary{cursor:pointer;font-weight:600}
+#q{width:100%;padding:8px 10px;font:inherit;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--fg)}
+.lines{list-style:none;padding:0;font-size:.95rem}
+.lines li{padding:4px 0;border-bottom:1px solid var(--line)}
+.time{font-variant-numeric:tabular-nums;color:var(--muted);font-size:.85rem}
+.suggestion{margin-top:4px;font-size:.9rem}
+.hidden{display:none}
+@media print{body{background:#fff;color:#000;padding:0}nav,#q,.count{display:none}a{color:#000}a[href]::after{content:" (" attr(href) ")";font-size:.8em}.ai{background:none}details{display:block}details>summary{list-style:none}h2{break-after:avoid}.qa,.concept,li{break-inside:avoid}}</style>
+</head>
+<body>
+<header><p class="kind">Interview</p><h1>Backend engineer interview</h1><p class="meta">2027-01-15 08:00 · about 00:03:40 · reviewed</p></header>
+<ul class="notices"><li>2 formatted value(s) were kept out of every request. Spoken names aren&#39;t caught.</li></ul>
+<nav><ul><li><a href="#s-summary">Summary</a></li><li><a href="#s-questions">Questions asked</a></li><li><a href="#s-answers">How you answered</a></li><li><a href="#s-gaps">Gaps and stronger answers</a></li><li><a href="#s-follow_ups">Follow-ups</a></li><li><a href="#s-insights">AI insights</a></li><li><a href="#transcript">Transcript</a></li></ul></nav>
+<main>
+<section id="s-summary" class="kind-prose"><h2>Summary</h2><div><p>A backend engineering interview covering a past migration project, teamwork, a weakness, and a rate limiter design question. The interviewer will send the details of a take-home exercise.</p></div></section>
+<section id="s-questions" class="kind-bullets"><h2>Questions asked</h2><ul><li><span class="speaker">Speaker 1</span> Tell me about a project you&#39;re proud of.</li><li><span class="speaker">Speaker 1</span> How did you handle disagreement on the team?</li><li><span class="speaker">Speaker 1</span> What&#39;s a weakness you&#39;re working on?</li><li><span class="speaker">Speaker 1</span> How would you design a rate limiter for a public API?</li></ul></section>
+<section id="s-answers" class="kind-bullets"><h2>How you answered</h2><ul><li>Led the migration of the reporting service to three smaller services, cutting the nightly job from six hours to forty minutes.</li><li>Said they mostly kept going; one engineer disagreed about the database and the user&#39;s choice won.</li><li>Takes on too much and is trying to delegate, with no good example yet.</li><li>Token bucket per API key in Redis with a local cache; had not run the distributed version in production.</li></ul></section>
+<section id="s-gaps" class="kind-qa"><h2>Gaps and stronger answers</h2><div class="qa"><p class="q">The disagreement answer did not show how the other engineer&#39;s view was heard.</p><p class="a ai"><span class="badge">AI</span> Describe asking for the engineer&#39;s concerns, testing both database options on a small benchmark, and agreeing the result with the team.</p></div><div class="qa unsure"><p class="q">No concrete example of delegating.</p><p class="a ai"><span class="badge">AI</span> Prepare one example with the task, who took it, and the outcome.</p><p class="doubt"><span class="mark">Unsure</span> Only the user can know whether such an example exists.</p></div></section>
+<section id="s-follow_ups" class="kind-actions"><h2>Follow-ups</h2><ul class="todo"><li><span class="box" aria-hidden="true"></span> Expect the take-home exercise details by email on Monday <span class="tag">Due: Monday</span></li><li><span class="box" aria-hidden="true"></span> Send references to the recruiting contact tonight <span class="tag">Due: tonight</span></li></ul></section>
+<section id="s-insights" class="kind-insights"><h2>AI insights</h2><p class="note">Suggestions from the AI, not things that were said.</p><ul><li class="ai">Raising the clock-skew uncertainty was received well; do it again, and add what you would read to close the gap.</li></ul></section>
+<details class="changes"><summary>What the review changed (1)</summary><ul><li>Changed the references follow-up to say tonight. <span class="why">— The user said they would send them tonight.</span></li></ul></details>
+<section id="transcript"><h2>Transcript</h2><input type="search" id="q" placeholder="Search the transcript" aria-label="Search the transcript"><p class="count" id="count"></p><ol class="lines"><li><span class="time">00:00:08</span> <span class="speaker">Speaker 1</span> <span class="text">Thanks for coming in. Let&#39;s start with you. Tell me about a project you&#39;re proud of.</span></li><li><span class="time">00:00:20</span> <span class="speaker">You</span> <span class="text">Last year I led the migration of our reporting service from a monolith to three smaller services. We cut the nightly job from six hours to forty minutes.</span></li><li><span class="time">00:00:48</span> <span class="speaker">Speaker 1</span> <span class="text">Nice. How did you handle disagreement on the team during that?</span></li><li><span class="time">00:01:00</span> <span class="speaker">You</span> <span class="text">Um, mostly I just kept going. There was one engineer who disagreed about the database choice, and I think we eventually just went with mine.</span></li><li><span class="time">00:01:25</span> <span class="speaker">Speaker 1</span> <span class="text">Okay. What&#39;s a weakness you&#39;re working on?</span></li><li><span class="time">00:01:33</span> <span class="speaker">You</span> <span class="text">I take on too much. I&#39;m trying to delegate more, but I don&#39;t have a good example yet.</span></li><li><span class="time">00:01:55</span> <span class="speaker">Speaker 1</span> <span class="text">How would you design a rate limiter for a public API?</span></li><li><span class="time">00:02:08</span> <span class="speaker">You</span> <span class="text">I&#39;d use a token bucket per API key, stored in Redis, with a small local cache. I haven&#39;t done the distributed version in production, so I&#39;m not sure about the clock-skew issues.</span></li><li><span class="time">00:02:40</span> <span class="speaker">Speaker 1</span> <span class="text">Good that you flagged that. Do you have questions for us?</span></li><li><span class="time">00:02:48</span> <span class="speaker">You</span> <span class="text">Yes, what does the on-call load look like for this team, and how is success measured in the first six months?</span></li><li><span class="time">00:03:10</span> <span class="speaker">Speaker 1</span> <span class="text">On-call is one week in six. For success, we&#39;d agree three goals with you in the first month. I&#39;ll send the details and the take-home exercise to recruiting@example.com on Monday, you should hear from us within a week.</span></li><li><span class="time">00:03:40</span> <span class="speaker">You</span> <span class="text">Great, I&#39;ll send my references to hr.team@example.com tonight. Thanks for your time.</span></li></ol></section>
+</main>
+<footer>Written by AI from an automatic transcript. Models — classify: Claude haiku, sections: Claude sonnet, review: Claude opus.</footer>
+<script>(function(){var q=document.getElementById('q'),c=document.getElementById('count');if(!q)return;var rows=Array.prototype.slice.call(document.querySelectorAll('.lines li'));q.addEventListener('input',function(){var t=q.value.trim().toLowerCase(),n=0;rows.forEach(function(r){var hit=!t||r.textContent.toLowerCase().indexOf(t)>=0;r.classList.toggle('hidden',!hit);if(hit)n++;});c.textContent=t?n+' of '+rows.length+' lines':'';});document.querySelectorAll('details').forEach(function(d){window.addEventListener('beforeprint',function(){d.open=true;});});})();</script>
+</body>
+</html>

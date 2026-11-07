@@ -84,25 +84,50 @@ final class SummaryRouteTests: GuardedTestCase {
 
     // MARK: The spec's rule: nothing formatted in any request
 
+    private func apiReply(_ content: String) -> (Int, String) {
+        let body = try! JSONSerialization.data(withJSONObject: ["choices": [["message": ["content": content]]]])
+        return (200, String(decoding: body, as: UTF8.self))
+    }
+
     func testRedactedValuesStayOutOfEveryAPIRequestAndComeBackInTheAnswer() async throws {
-        StubLLMServer.reset(replies: [(200, #"{"choices":[{"message":{"content":"meeting"}}]}"#), (200, openAIReply)])
+        StubLLMServer.reset(replies: [
+            apiReply(Replies.classify("meeting")),
+            apiReply(Replies.sections(["summary": ["Send it to <EMAIL_1>."]])),
+            apiReply(Replies.review(["summary": ["Send it to <EMAIL_1>."]])),
+        ])
         let pipeline = SummaryPipeline(
             backend: APISummaryBackend(summarizer: summarizer(), label: "x"), redaction: true)
         let outcome = try await pipeline.run(transcript: "[00:00:01] You: Send the contract to \(email), please.")
 
-        XCTAssertEqual(StubLLMServer.seen.count, 2, "the classifier and the summary")
+        XCTAssertEqual(
+            StubLLMServer.seen.count, 3, "classify, sections and review (no concept search on the API route)")
         for seen in StubLLMServer.seen {
             XCTAssertFalse(seen.body.contains(email), seen.body)
             XCTAssertFalse(seen.request.url?.absoluteString.contains(fakeKey) ?? true, "a key doesn't belong in a URL")
         }
-        XCTAssertEqual(outcome.markdown, "Send it to \(email).")
+        XCTAssertEqual(items(outcome.report, "summary").first?.text, "Send it to \(email).")
+    }
+
+    /// The API profile has one model and no tools, so a scenario with a concepts section
+    /// still makes a report and says why it has no sources.
+    func testTheAPIRouteHasNoConceptSearchAndSaysSo() async throws {
+        StubLLMServer.reset(replies: [
+            apiReply(Replies.sections(["summary": ["s"], "concepts": ["cognitive defusion"]])),
+            apiReply(Replies.review(["summary": ["s"], "concepts": ["cognitive defusion"]])),
+        ])
+        let outcome = try await SummaryPipeline(
+            backend: APISummaryBackend(summarizer: summarizer(), label: "x"), redaction: true
+        ).run(transcript: "[00:00:01] You: hello", forcedScenario: "therapy")
+        XCTAssertEqual(StubLLMServer.seen.count, 2)
+        XCTAssertTrue(outcome.report.notices.joined().contains("need a subscription CLI"), "\(outcome.report.notices)")
+        XCTAssertNil(items(outcome.report, "concepts").first?.sources)
     }
 
     // MARK: Wire shapes
 
     func testOpenAIRequestUsesBearerAuthAndAChatBody() async throws {
         StubLLMServer.reset(replies: [(200, openAIReply)])
-        _ = try await summarizer().summarize(transcript: "words")
+        _ = try await summarizer().complete(system: "the system prompt", user: "words")
         let seen = try XCTUnwrap(StubLLMServer.seen.first)
         XCTAssertEqual(seen.request.url?.absoluteString, "https://llm.example.com/v1/chat/completions")
         XCTAssertEqual(seen.request.value(forHTTPHeaderField: "Authorization"), "Bearer \(fakeKey)")
@@ -110,13 +135,14 @@ final class SummaryRouteTests: GuardedTestCase {
         let body = try json(seen.body)
         let messages = try XCTUnwrap(body["messages"] as? [[String: Any]])
         XCTAssertEqual(messages.map { $0["role"] as? String }, ["system", "user"])
+        XCTAssertEqual(messages[0]["content"] as? String, "the system prompt")
         XCTAssertEqual(messages[1]["content"] as? String, "words")
     }
 
     func testAnthropicRequestUsesItsOwnHeaderAndHasNoTemperature() async throws {
         StubLLMServer.reset(replies: [(200, #"{"content":[{"type":"text","text":"ok"}]}"#)])
         let answer = try await summarizer(base: "https://api.anthropic.example/v1", style: .anthropicMessages)
-            .summarize(transcript: "words")
+            .complete(system: "the system prompt", user: "words")
         XCTAssertEqual(answer, "ok")
         let seen = try XCTUnwrap(StubLLMServer.seen.first)
         XCTAssertEqual(seen.request.url?.lastPathComponent, "messages")
@@ -125,15 +151,16 @@ final class SummaryRouteTests: GuardedTestCase {
         let body = try json(seen.body)
         XCTAssertNil(body["temperature"])
         XCTAssertNotNil(body["max_tokens"])
-        XCTAssertNotNil(body["system"])
+        XCTAssertEqual(
+            body["system"] as? String, "the system prompt", "Anthropic takes the system prompt at the top level")
     }
 
     func testReasoningIsSentInTheShapeEachProviderReads() async throws {
         StubLLMServer.reset(replies: [(200, openAIReply)])
-        _ = try await summarizer(reasoning: .thinking, effort: .medium).summarize(transcript: "x")
-        _ = try await summarizer(reasoning: .thinking, effort: .off).summarize(transcript: "x")
-        _ = try await summarizer(reasoning: .openai, effort: .high).summarize(transcript: "x")
-        _ = try await summarizer(reasoning: .openai, effort: .off).summarize(transcript: "x")
+        _ = try await summarizer(reasoning: .thinking, effort: .medium).complete(system: "s", user: "x")
+        _ = try await summarizer(reasoning: .thinking, effort: .off).complete(system: "s", user: "x")
+        _ = try await summarizer(reasoning: .openai, effort: .high).complete(system: "s", user: "x")
+        _ = try await summarizer(reasoning: .openai, effort: .off).complete(system: "s", user: "x")
         let bodies = try StubLLMServer.seen.map { try json($0.body) }
         let thinkingOn = try XCTUnwrap(bodies[0]["thinking"] as? [String: Any])
         XCTAssertEqual(thinkingOn["type"] as? String, "enabled")
@@ -150,7 +177,7 @@ final class SummaryRouteTests: GuardedTestCase {
         let keyless = Summarizer(
             baseURL: URL(string: "https://llm.example.com")!, apiKeyProvider: { nil }, model: "m")
         do {
-            _ = try await keyless.summarize(transcript: "x")
+            _ = try await keyless.complete(system: "s", user: "x")
             XCTFail("expected a refusal")
         } catch {}
         XCTAssertEqual(StubLLMServer.seen.count, 0)
@@ -159,7 +186,7 @@ final class SummaryRouteTests: GuardedTestCase {
     func testAnHTTPErrorSurfacesWithTheStatusAndNeverTheKey() async throws {
         StubLLMServer.reset(replies: [(429, "slow down")])
         do {
-            _ = try await summarizer().summarize(transcript: "x")
+            _ = try await summarizer().complete(system: "s", user: "x")
             XCTFail("expected a failure")
         } catch {
             XCTAssertTrue(error.localizedDescription.contains("429"), error.localizedDescription)
@@ -173,7 +200,7 @@ final class SummaryRouteTests: GuardedTestCase {
         StubLLMServer.reset(replies: [(400, #"{"error":"bad input near \#(email)"}"#)])
         var message = ""
         do {
-            _ = try await summarizer().summarize(transcript: "x")
+            _ = try await summarizer().complete(system: "s", user: "x")
             XCTFail("expected a failure")
         } catch {
             message = error.localizedDescription
@@ -184,26 +211,31 @@ final class SummaryRouteTests: GuardedTestCase {
     /// Summarize.swift's own comment says a reasoning model can leave `content` empty.
     func testAnEmptyAPIAnswerIsAFailureNotAnEmptySummary() async throws {
         StubLLMServer.reset(replies: [(200, #"{"choices":[{"message":{"content":""},"finish_reason":"length"}]}"#)])
-        let answer = try? await summarizer().summarize(transcript: "x")
+        let answer = try? await summarizer().complete(system: "s", user: "x")
         XCTAssertNil(answer, "an empty summary would be saved")
     }
 
     func testARefusalWithNoTextIsAFailure() async throws {
         StubLLMServer.reset(replies: [(200, #"{"content":[],"stop_reason":"refusal"}"#)])
         do {
-            _ = try await summarizer(style: .anthropicMessages).summarize(transcript: "x")
+            _ = try await summarizer(style: .anthropicMessages).complete(system: "s", user: "x")
             XCTFail("expected a failure")
         } catch {
             XCTAssertTrue(error.localizedDescription.contains("refusal"), error.localizedDescription)
         }
     }
 
-    func testAClassifierThatFailsFallsBackToMeeting() async throws {
-        StubLLMServer.reset(replies: [(500, "down"), (200, openAIReply)])
+    func testAClassifierThatFailsFallsBackToGeneralAndSaysSo() async throws {
+        StubLLMServer.reset(replies: [
+            (500, "down"),
+            apiReply(Replies.sections(["summary": ["s"]])),
+            apiReply(Replies.review(["summary": ["s"]])),
+        ])
         let outcome = try await SummaryPipeline(
             backend: APISummaryBackend(summarizer: summarizer(), label: "x"), redaction: true
         ).run(transcript: "words")
-        XCTAssertEqual(outcome.style, .meeting)
+        XCTAssertEqual(outcome.report.scenario, "general")
+        XCTAssertTrue(outcome.report.notices.joined().contains("couldn't be classified"), "\(outcome.report.notices)")
     }
 
     // MARK: Choosing a backend
@@ -309,7 +341,7 @@ final class SummaryRouteTests: GuardedTestCase {
     }
 }
 
-/// The transcript-to-summary path, on fake CLIs.
+/// The transcript-to-report path, on fake CLIs.
 final class SummaryPipelineAttackTests: GuardedTestCase {
 
     private var world: FakeCLIWorld!
@@ -333,86 +365,124 @@ final class SummaryPipelineAttackTests: GuardedTestCase {
         call.args.joined(separator: "\n")
     }
 
+    private func script(_ json: String, cli: CLIKind = .claude) -> FakeCLIWorld.Script {
+        FakeCLIWorld.jsonScript(json, cli: cli)
+    }
+
+    private var sectionsReply: String { Replies.sections(["summary": ["notes"]]) }
+    private var reviewReply: String { Replies.review(["summary": ["notes"]]) }
+
     /// The deep review's finding was about invented speech; this is invented meetings.
     /// A silent recording leaves an empty transcript, and nothing may summarize it.
     func testAnEmptyTranscriptIsNeverSentToAModel() async throws {
-        try world.install(
-            .claude, answers: [.init(stdout: FakeCLIWorld.claudeOK("A productive meeting about nothing."))])
+        try world.install(.claude, answers: [script(sectionsReply)])
         for transcript in ["", "\n", "   \n  "] {
-            _ = try? await pipeline().run(transcript: transcript)
+            do {
+                _ = try await pipeline().run(transcript: transcript)
+                XCTFail("an empty transcript must stop")
+            } catch let error as ReportError {
+                XCTAssertEqual(error, .emptyTranscript)
+            }
         }
-        XCTAssertEqual(world.calls(.claude).count, 0, "this spends usage, and the model will invent a summary")
+        XCTAssertEqual(world.calls(.claude).count, 0, "this spends usage, and the model will invent a report")
     }
 
-    func testAClassifierHittingAFullLimitMovesTheSummaryToo() async throws {
+    func testAClassifierHittingAFullLimitMovesTheLaterStepsToo() async throws {
         try world.install(.claude, answers: [.init(stdout: "", exit: 1, stderr: "usage limit")])
         try world.install(
             .codex,
-            answers: [.init(stdout: FakeCLIWorld.codexOK("meeting")), .init(stdout: FakeCLIWorld.codexOK("notes"))])
+            answers: [
+                script(Replies.classify("meeting"), cli: .codex), script(sectionsReply, cli: .codex),
+                script(reviewReply, cli: .codex),
+            ])
         let outcome = try await pipeline().run(transcript: "words")
-        XCTAssertEqual(outcome.markdown, "notes\n\n---\n> Note: \(outcome.notes[0])".isEmpty ? "" : "notes")
+        XCTAssertEqual(items(outcome.report, "summary").first?.text, "notes")
+        XCTAssertEqual(outcome.report.scenario, "meeting")
         XCTAssertEqual(world.calls(.claude).count, 1, "Claude isn't tried again")
-        XCTAssertEqual(outcome.notes.count, 1)
-        XCTAssertTrue(outcome.report.contains("Codex"))
+        XCTAssertEqual(world.calls(.codex).count, 3, "classify, sections and review all ran on Codex")
+        XCTAssertTrue(outcome.report.notices.joined().contains("Codex"))
+        XCTAssertTrue(outcome.report.models.normal.contains("Codex"))
     }
 
-    func testAClassifierFailureFallsBackToAMeetingSummary() async throws {
+    func testAClassifierFailureFallsBackToGeneralWithANotice() async throws {
         try world.install(
             .claude,
             answers: [
-                .init(stdout: "", exit: 1, stderr: "model not found"), .init(stdout: FakeCLIWorld.claudeOK("notes")),
+                .init(stdout: "", exit: 1, stderr: "model not found"), script(sectionsReply), script(reviewReply),
             ])
         let outcome = try await pipeline().run(transcript: "words")
-        XCTAssertEqual(outcome.style, .meeting)
-        XCTAssertEqual(outcome.markdown, "notes")
+        XCTAssertEqual(outcome.report.scenario, "general")
+        XCTAssertEqual(items(outcome.report, "summary").first?.text, "notes")
+        XCTAssertTrue(outcome.report.notices.joined().contains("couldn't be classified"), "\(outcome.report.notices)")
     }
 
-    func testTheClassifierPicksThePromptTheSummaryUses() async throws {
-        try world.install(
-            .claude,
-            answers: [.init(stdout: FakeCLIWorld.claudeOK("Therapy.")), .init(stdout: FakeCLIWorld.claudeOK("notes"))])
-        let outcome = try await pipeline().run(transcript: "words")
-        XCTAssertEqual(outcome.style, .therapy)
-        XCTAssertTrue(allArguments(of: world.calls(.claude)[1]).contains(Summarizer.systemPrompt(for: .therapy)))
-    }
-
-    /// The classifier is asked for one word, but a model can say more.
-    func testAnAnswerSayingItIsNotTherapyIsNotTherapy() async throws {
+    func testTheClassifiersScenarioPicksTheTemplateTheSectionsUse() async throws {
         try world.install(
             .claude,
             answers: [
-                .init(stdout: FakeCLIWorld.claudeOK("meeting, not therapy")),
-                .init(stdout: FakeCLIWorld.claudeOK("notes")),
+                script(Replies.classify("therapy")), script(Replies.sections(["summary": ["s"]])),
+                script(Replies.concepts([])), script(Replies.review(["summary": ["s"]])),
             ])
         let outcome = try await pipeline().run(transcript: "words")
-        XCTExpectFailure(
-            "BUG: unsure, low. The classifier checks contains(\"therapy\"), so \"meeting, not therapy\" picks the therapy prompt."
-        )
-        XCTAssertEqual(outcome.style, .meeting)
+        XCTAssertEqual(outcome.report.scenario, "therapy")
+        let sectionsCall = world.calls(.claude)[1]
+        XCTAssertTrue(allArguments(of: sectionsCall).contains("Therapy session"))
+        XCTAssertTrue(allArguments(of: sectionsCall).contains("Do not diagnose"))
     }
 
-    func testTheClassifierSeesAtMostTheStartOfTheTranscript() async throws {
+    /// The old classifier read the word "therapy" anywhere in a free-text answer, so "not therapy"
+    /// picked therapy. The scenario is now a field from a JSON schema with an enum, and anything
+    /// that isn't exactly a known name falls back. (The therapy-word parsing tests were dropped.)
+    func testAScenarioFieldThatIsNotAKnownNameIsNotTrusted() async throws {
         try world.install(
             .claude,
-            answers: [.init(stdout: FakeCLIWorld.claudeOK("meeting")), .init(stdout: FakeCLIWorld.claudeOK("notes"))])
-        let long = String(repeating: "x", count: 7000)
+            answers: [
+                script(Replies.classify("meeting, not therapy")), script(sectionsReply), script(reviewReply),
+            ])
+        let outcome = try await pipeline().run(transcript: "words")
+        XCTAssertEqual(outcome.report.scenario, "general")
+        XCTAssertFalse(outcome.report.notices.isEmpty)
+    }
+
+    func testTheClassifierSeesAtMostTheHeadAndASampleOfALongTranscript() async throws {
+        try world.install(
+            .claude, answers: [script(Replies.classify("meeting")), script(sectionsReply), script(reviewReply)])
+        let lines = (0..<100).map {
+            String(format: "[00:%02d:00] You: LINE-%03d-MARK ", $0 / 60 + 0, $0) + String(repeating: "word ", count: 18)
+        }
+        let long = lines.joined(separator: "\n")
+        XCTAssertGreaterThan(long.count, 6000)
         _ = try await pipeline().run(transcript: long)
-        XCTAssertEqual(world.calls(.claude)[0].stdin.count, 6000)
-        XCTAssertEqual(world.calls(.claude)[1].stdin.count, 7000, "the summary gets it all")
+
+        let classify = world.calls(.claude)[0].stdin
+        XCTAssertLessThan(classify.count, long.count * 3 / 5, "the classifier gets a sample, not everything")
+        XCTAssertTrue(classify.contains("LINE-000-MARK"), "the head is there")
+        XCTAssertTrue(classify.contains("LINE-099-MARK"), "the end is there")
+        XCTAssertFalse(classify.contains("LINE-045-MARK"), "a line outside the head, middle and end is not")
+        let sections = world.calls(.claude)[1].stdin
+        XCTAssertTrue(sections.contains("LINE-045-MARK"), "the sections step gets it all")
+        XCTAssertTrue(sections.contains("LINE-099-MARK"))
     }
 
     func testATranscriptWithNoValuesGetsNoTokenInstruction() async throws {
-        try world.install(.claude, answers: [.init(stdout: FakeCLIWorld.claudeOK("notes"))])
-        let outcome = try await pipeline().run(transcript: "nothing private", forcedStyle: .meeting)
+        try world.install(.claude, answers: [script(sectionsReply), script(reviewReply)])
+        let outcome = try await pipeline().run(transcript: "nothing private", forcedScenario: "meeting")
         XCTAssertEqual(outcome.redactedValues, 0)
-        XCTAssertEqual(outcome.report, "notes", "nothing to add when nothing happened")
-        XCTAssertFalse(allArguments(of: world.calls(.claude)[0]).contains("placeholder tokens"))
+        XCTAssertFalse(
+            outcome.report.notices.joined().contains("kept out of every request"),
+            "nothing to add when nothing happened")
+        for call in world.calls(.claude) {
+            XCTAssertFalse(allArguments(of: call).contains("placeholder tokens"))
+        }
     }
 
     func testRedactionOffLeavesTokenLookalikesInTheAnswerAlone() async throws {
-        try world.install(.claude, answers: [.init(stdout: FakeCLIWorld.claudeOK("See <EMAIL_1> in the doc"))])
-        let outcome = try await pipeline(redaction: false).run(transcript: "words", forcedStyle: .meeting)
-        XCTAssertEqual(outcome.markdown, "See <EMAIL_1> in the doc")
+        let reply = Replies.sections(["summary": ["See <EMAIL_1> in the doc"]])
+        try world.install(
+            .claude, answers: [script(reply), script(Replies.review(["summary": ["See <EMAIL_1> in the doc"]]))])
+        let outcome = try await pipeline(redaction: false).run(transcript: "words", forcedScenario: "meeting")
+        XCTAssertEqual(items(outcome.report, "summary").first?.text, "See <EMAIL_1> in the doc")
         XCTAssertEqual(outcome.flaggedTokens, [])
+        XCTAssertFalse(outcome.report.notices.joined().contains("Couldn't restore"))
     }
 }

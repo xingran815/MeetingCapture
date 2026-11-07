@@ -1,0 +1,36 @@
+[
+ {
+  "id": "scenario-meeting",
+  "kind": "meeting",
+  "text": "[00:00:05] You: Okay, thanks everyone for joining the weekly platform sync. We have three things today: the billing migration, the on-call rota, and the Q3 budget.\n[00:00:21] Speaker 1: Billing migration is at ninety percent. The last blocker is the invoice export, which still times out for accounts with more than ten thousand invoices.\n[00:00:44] Speaker 2: I can take the export. I will have a fix in review by Thursday. Send the failing account list to nadia.okafor@example.com so I can reproduce it.\n[00:01:10] You: Good. Decision, then: we do not cut over until the export is fixed, so the cutover moves from the 14th to the 21st.\n[00:01:31] Speaker 1: Agreed. Does the new date clash with the audit window? I do not know, someone should check with finance.\n[00:01:52] Speaker 3: I will ask finance. My direct line is +1 415 555 0187 if anyone needs me before Friday.\n[00:02:15] You: On-call. We are short one person for the weekend rota. Who can cover the 25th?\n[00:02:34] Speaker 2: I can cover the 25th if someone swaps me on the 2nd.\n[00:02:50] Speaker 1: I'll swap. Put it in the rota sheet.\n[00:03:08] You: Budget. The cloud spend is 18,500 dollars over plan this quarter, mostly from the staging cluster that never got turned off.\n[00:03:33] Speaker 3: I'll shut the staging cluster down tonight and send a cost report next Monday. The dashboard is at https://dash.example.com/costs?token=abc123def456ghi789jkl012 for reference.\n[00:04:02] You: Thanks. Open question: do we renew the monitoring contract in October or switch vendor? Nobody has the numbers yet.\n[00:04:25] Speaker 1: We should compare quotes before deciding. I'll collect two.\n[00:04:41] You: Great, that's all. Thanks.\n",
+  "formatted": [
+   "nadia.okafor@example.com",
+   "+1 415 555 0187",
+   "abc123def456ghi789jkl012"
+  ],
+  "facts": [
+   [
+    "21st"
+   ],
+   [
+    "thursday"
+   ],
+   [
+    "finance"
+   ],
+   [
+    "18,500",
+    "18500"
+   ],
+   [
+    "staging"
+   ],
+   [
+    "monitoring"
+   ],
+   [
+    "25th"
+   ]
+  ]
+ }
+]

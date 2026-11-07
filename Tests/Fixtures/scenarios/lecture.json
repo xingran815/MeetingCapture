@@ -1,0 +1,35 @@
+[
+ {
+  "id": "scenario-lecture",
+  "kind": "lecture",
+  "text": "[00:00:05] Speaker 1: Today we'll cover gradient descent, which is the basic method behind training most neural networks.\n[00:00:20] Speaker 1: Imagine a ball rolling down a hilly landscape. The height at each point is the loss, how wrong the model is. Gradient descent moves the parameters a small step downhill each time.\n[00:00:50] Speaker 1: The size of that step is the learning rate. If it's too large, you overshoot the valley and the loss bounces around. If it's too small, training takes forever.\n[00:01:18] Speaker 1: The direction of each step comes from the gradient, the vector of partial derivatives of the loss with respect to each parameter.\n[00:01:42] You: Sorry, does the gradient always point towards the minimum?\n[00:01:52] Speaker 1: No, it points in the direction of steepest increase. We step in the opposite direction. And it can lead to a local minimum rather than the global one.\n[00:02:20] Speaker 1: In practice we use stochastic gradient descent: instead of the whole dataset, we use a small random batch for each step. It's noisier but much faster, and the noise can even help escape shallow local minima.\n[00:02:55] Speaker 1: A common improvement is momentum, which keeps a running average of past gradients so the updates are smoother.\n[00:03:20] You: Is momentum the same as Adam?\n[00:03:28] Speaker 1: Not quite. Adam also adapts the learning rate for each parameter. I'm not certain of the exact bias-correction details, so check the original paper.\n[00:03:55] Speaker 1: For next week, read chapter four of the course notes at https://courses.example.com/notes?token=abc123def456ghi789jkl012 and implement stochastic gradient descent on the toy dataset. Questions to lecturer@example.com.\n",
+  "formatted": [
+   "lecturer@example.com",
+   "abc123def456ghi789jkl012"
+  ],
+  "facts": [
+   [
+    "gradient descent"
+   ],
+   [
+    "learning rate"
+   ],
+   [
+    "stochastic"
+   ],
+   [
+    "momentum"
+   ],
+   [
+    "adam"
+   ],
+   [
+    "local minim"
+   ],
+   [
+    "chapter four",
+    "chapter 4"
+   ]
+  ]
+ }
+]

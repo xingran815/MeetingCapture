@@ -1,0 +1,43 @@
+{
+ "concepts": [
+  {
+   "name": "gradient descent",
+   "explanation": "An iterative optimisation algorithm that moves parameters opposite to the gradient of a loss function.",
+   "sources": [
+    {
+     "title": "Gradient descent explained",
+     "url": "https://example.org/ml/gradient-descent"
+    }
+   ]
+  },
+  {
+   "name": "learning rate",
+   "explanation": "A hyperparameter that scales each update step in gradient-based training.",
+   "sources": [
+    {
+     "title": "Choosing a learning rate",
+     "url": "http://example.org/ml/learning-rate"
+    },
+    {
+     "title": "Bad scheme",
+     "url": "data:text/html,<script>alert(1)</script>"
+    }
+   ]
+  },
+  {
+   "name": "momentum",
+   "explanation": "A method that accumulates an exponentially decaying average of past gradients to smooth updates.",
+   "sources": []
+  },
+  {
+   "name": "adam",
+   "explanation": "An optimiser that combines momentum with per-parameter adaptive learning rates.",
+   "sources": [
+    {
+     "title": "Adam optimiser paper",
+     "url": "https://example.org/ml/adam"
+    }
+   ]
+  }
+ ]
+}

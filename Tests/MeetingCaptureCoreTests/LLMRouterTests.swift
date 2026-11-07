@@ -156,7 +156,7 @@ final class LLMRouterTests: GuardedTestCase {
         let requestsBefore = NetworkRefusal.attempts
         let pipeline = SummaryPipeline(backend: CLISummaryBackend(router: router), redaction: true)
         do {
-            _ = try await pipeline.run(transcript: "hello", forcedStyle: .meeting)
+            _ = try await pipeline.run(transcript: "hello", forcedScenario: "meeting")
             XCTFail("expected a stop")
         } catch {
             XCTAssertTrue(error is LLMRouter.RouterError, "\(error)")

@@ -175,15 +175,22 @@ final class ToolsOffTests: GuardedTestCase {
     func testTranscriptNeverReachesACallWithToolsOn() async throws {
         let world = try FakeCLIWorld()
         defer { world.cleanUp() }
-        try world.install(.claude, answers: [.init(stdout: FakeCLIWorld.claudeOK())])
-        try world.install(.codex, answers: [.init(stdout: FakeCLIWorld.codexOK())])
+        for cli in CLIKind.allCases {
+            try world.install(
+                cli,
+                answers: [
+                    FakeCLIWorld.jsonScript(Replies.classify("meeting"), cli: cli),
+                    FakeCLIWorld.jsonScript(Replies.sections(["summary": ["notes"]]), cli: cli),
+                    FakeCLIWorld.jsonScript(Replies.review(["summary": ["notes"]]), cli: cli),
+                ])
+        }
         let transcript = "[00:00:01] You: The merger with Northwind closes on the ninth, keep it quiet."
 
         for cli in CLIKind.allCases {
             let router = world.router(primary: cli)
             let outcome = try await SummaryPipeline(backend: CLISummaryBackend(router: router), redaction: true)
                 .run(transcript: transcript)
-            XCTAssertFalse(outcome.markdown.isEmpty)
+            XCTAssertFalse(items(outcome.report, "summary").isEmpty)
             _ = try await router.call(try .conceptSearch(tier: .cheap, concepts: ["cognitive defusion"]))
         }
 
@@ -202,7 +209,8 @@ final class ToolsOffTests: GuardedTestCase {
             }
         }
         XCTAssertEqual(sawToolsOn, 2, "both CLIs ran a search")
-        XCTAssertEqual(sawTranscript, 4, "the transcript did go out, on classifier and summary calls with tools off")
+        XCTAssertEqual(
+            sawTranscript, 6, "the transcript did go out, on classify, sections and review calls with tools off")
     }
 
     func testConceptSearchRefusesAnythingLikeATranscriptLine() {

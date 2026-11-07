@@ -1,0 +1,36 @@
+[
+ {
+  "id": "scenario-general",
+  "kind": "general",
+  "text": "[00:00:04] Speaker 1: Did you get the tickets for the trip?\n[00:00:09] You: Not yet. The cheapest train is 64 euros each if we book by Friday, and then it goes up.\n[00:00:25] Speaker 1: Then let's book on Thursday. I'll check which of us has the discount card.\n[00:00:40] You: I think Maria's card works. I'll text her. By the way, did you ever sort out the apartment keys?\n[00:00:58] Speaker 1: Not really. The owner says he'll leave them with the neighbour, but I haven't confirmed. His number is +1 415 555 0121.\n[00:01:20] You: Can you confirm tonight? I don't want to arrive and find nobody there.\n[00:01:34] Speaker 1: Yes. Also, what are we doing about the museum? The queue is long on Saturday.\n[00:01:52] You: Let's go Sunday morning. Or is it closed on Sundays? I don't know.\n[00:02:08] Speaker 1: I'm not sure either. I'll look it up and message the group. Send the booking confirmation to trip.plans@example.com so everyone has it.\n[00:02:30] You: Will do. Anything else? Packing list, maybe, but that can wait.\n",
+  "formatted": [
+   "+1 415 555 0121",
+   "trip.plans@example.com"
+  ],
+  "facts": [
+   [
+    "64"
+   ],
+   [
+    "thursday"
+   ],
+   [
+    "keys"
+   ],
+   [
+    "neighbour",
+    "neighbor"
+   ],
+   [
+    "sunday"
+   ],
+   [
+    "museum"
+   ],
+   [
+    "discount card",
+    "maria"
+   ]
+  ]
+ }
+]

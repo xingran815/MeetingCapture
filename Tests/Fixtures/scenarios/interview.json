@@ -1,0 +1,38 @@
+[
+ {
+  "id": "scenario-interview",
+  "kind": "interview",
+  "text": "[00:00:08] Speaker 1: Thanks for coming in. Let's start with you. Tell me about a project you're proud of.\n[00:00:20] You: Last year I led the migration of our reporting service from a monolith to three smaller services. We cut the nightly job from six hours to forty minutes.\n[00:00:48] Speaker 1: Nice. How did you handle disagreement on the team during that?\n[00:01:00] You: Um, mostly I just kept going. There was one engineer who disagreed about the database choice, and I think we eventually just went with mine.\n[00:01:25] Speaker 1: Okay. What's a weakness you're working on?\n[00:01:33] You: I take on too much. I'm trying to delegate more, but I don't have a good example yet.\n[00:01:55] Speaker 1: How would you design a rate limiter for a public API?\n[00:02:08] You: I'd use a token bucket per API key, stored in Redis, with a small local cache. I haven't done the distributed version in production, so I'm not sure about the clock-skew issues.\n[00:02:40] Speaker 1: Good that you flagged that. Do you have questions for us?\n[00:02:48] You: Yes, what does the on-call load look like for this team, and how is success measured in the first six months?\n[00:03:10] Speaker 1: On-call is one week in six. For success, we'd agree three goals with you in the first month. I'll send the details and the take-home exercise to recruiting@example.com on Monday, you should hear from us within a week.\n[00:03:40] You: Great, I'll send my references to hr.team@example.com tonight. Thanks for your time.\n",
+  "formatted": [
+   "recruiting@example.com",
+   "hr.team@example.com"
+  ],
+  "facts": [
+   [
+    "reporting service",
+    "migration"
+   ],
+   [
+    "40 minutes",
+    "forty minutes"
+   ],
+   [
+    "token bucket"
+   ],
+   [
+    "delegat"
+   ],
+   [
+    "on-call",
+    "on call"
+   ],
+   [
+    "references"
+   ],
+   [
+    "take-home",
+    "take home"
+   ]
+  ]
+ }
+]

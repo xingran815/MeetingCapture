@@ -1,0 +1,161 @@
+{
+ "topic": "Planning a weekend trip",
+ "sections": {
+  "summary": [
+   {
+    "text": "Two people planned a trip: train tickets, how to get the apartment keys, and when to visit the museum.",
+    "speaker": "",
+    "owner": "",
+    "due": "",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   }
+  ],
+  "who_said_what": [
+   {
+    "text": "Cheapest train is 64 euros each if booked by Friday.",
+    "speaker": "You",
+    "owner": "",
+    "due": "",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   },
+   {
+    "text": "Will book on Thursday and check who has the discount card.",
+    "speaker": "Speaker 1",
+    "owner": "",
+    "due": "",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   },
+   {
+    "text": "Suggested the museum on Sunday morning.",
+    "speaker": "You",
+    "owner": "",
+    "due": "",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   }
+  ],
+  "open_questions": [
+   {
+    "text": "Is the museum closed on Sundays?",
+    "speaker": "",
+    "owner": "",
+    "due": "",
+    "answer": "I don't know",
+    "quote": "",
+    "detail": "",
+    "confidence": "unsure",
+    "reason": "Neither speaker knew and the transcript does not say.",
+    "source": "ai"
+   },
+   {
+    "text": "Will the owner really leave the keys with the neighbour?",
+    "speaker": "",
+    "owner": "",
+    "due": "",
+    "answer": "Not confirmed yet; Speaker 1 will confirm tonight.",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   }
+  ],
+  "actions": [
+   {
+    "text": "Book the train tickets",
+    "speaker": "",
+    "owner": "Speaker 1",
+    "due": "Thursday",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   },
+   {
+    "text": "Text Maria about the discount card",
+    "speaker": "",
+    "owner": "You",
+    "due": "",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   },
+   {
+    "text": "Confirm the keys with the owner",
+    "speaker": "",
+    "owner": "Speaker 1",
+    "due": "tonight",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   },
+   {
+    "text": "Look up the museum opening days and message the group",
+    "speaker": "",
+    "owner": "Speaker 1",
+    "due": "",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   },
+   {
+    "text": "Send the booking confirmation to the group",
+    "speaker": "",
+    "owner": "You",
+    "due": "",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   }
+  ],
+  "insights": [
+   {
+    "text": "Check the museum's opening days before booking, since Sunday closing would change the plan.",
+    "speaker": "",
+    "owner": "",
+    "due": "",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "ai"
+   }
+  ]
+ },
+ "changes": [],
+ "transcriptSuggestions": []
+}

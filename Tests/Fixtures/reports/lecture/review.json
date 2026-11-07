@@ -1,0 +1,171 @@
+{
+ "topic": "Gradient descent basics",
+ "sections": {
+  "summary": [
+   {
+    "text": "An introduction to gradient descent: the loss landscape, the learning rate, the gradient, stochastic gradient descent, momentum and Adam. Homework is to implement stochastic gradient descent.",
+    "speaker": "",
+    "owner": "",
+    "due": "",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   }
+  ],
+  "key_concepts": [
+   {
+    "text": "Gradient descent moves parameters a small step downhill on the loss.",
+    "speaker": "",
+    "owner": "",
+    "due": "",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   },
+   {
+    "text": "The learning rate sets the step size: too large overshoots, too small is slow.",
+    "speaker": "",
+    "owner": "",
+    "due": "",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   },
+   {
+    "text": "The gradient points to steepest increase, so steps go the opposite way; it can reach a local minimum.",
+    "speaker": "",
+    "owner": "",
+    "due": "",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   },
+   {
+    "text": "Stochastic gradient descent uses a small random batch per step: noisier but faster.",
+    "speaker": "",
+    "owner": "",
+    "due": "",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   }
+  ],
+  "explanations": [
+   {
+    "text": "gradient descent",
+    "speaker": "",
+    "owner": "",
+    "due": "",
+    "answer": "Repeatedly adjusting parameters to lower a loss.",
+    "quote": "The basic method behind training most neural networks.",
+    "detail": "Each update subtracts the gradient times the learning rate from the parameters.",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   },
+   {
+    "text": "learning rate",
+    "speaker": "",
+    "owner": "",
+    "due": "",
+    "answer": "How far each update moves the parameters.",
+    "quote": "The size of that step is the learning rate.",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   },
+   {
+    "text": "momentum",
+    "speaker": "",
+    "owner": "",
+    "due": "",
+    "answer": "Adding past update direction to the current step.",
+    "quote": "A running average of past gradients so the updates are smoother.",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   },
+   {
+    "text": "Adam",
+    "speaker": "",
+    "owner": "",
+    "due": "",
+    "answer": "An optimizer with per-parameter learning rates and momentum.",
+    "quote": "Adam also adapts the learning rate for each parameter.",
+    "detail": "",
+    "confidence": "unsure",
+    "reason": "The lecturer was not certain about the bias-correction details.",
+    "source": "transcript"
+   }
+  ],
+  "study_questions": [
+   {
+    "text": "Why does the gradient not always point to the minimum?",
+    "speaker": "",
+    "owner": "",
+    "due": "",
+    "answer": "It points to the steepest increase and only describes the local slope.",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "ai"
+   },
+   {
+    "text": "What goes wrong with a learning rate that is too large?",
+    "speaker": "",
+    "owner": "",
+    "due": "",
+    "answer": "The updates overshoot the valley and the loss bounces around.",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "ai"
+   }
+  ],
+  "insights": [
+   {
+    "text": "Implement the toy dataset exercise with two learning rates and compare the loss curves.",
+    "speaker": "",
+    "owner": "",
+    "due": "",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "ai"
+   }
+  ]
+ },
+ "changes": [
+  {
+   "what": "Corrected \"Atom\" to \"Adam\" in the study notes.",
+   "why": "The student asked about the Adam optimiser."
+  }
+ ],
+ "transcriptSuggestions": [
+  {
+   "line": 8,
+   "suggestion": "Is momentum the same as Adam?"
+  }
+ ]
+}

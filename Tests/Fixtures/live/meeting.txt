@@ -1,0 +1,16 @@
+[00:00:04] You: Thanks for joining. This is the planning call for the customer portal launch. I want to leave with owners and dates.
+[00:00:16] Speaker 1: Design is done for the login and billing screens. The settings page still needs one more review round, probably two days.
+[00:00:38] Speaker 2: On the backend, the invoice API is ready but the webhook retries are not. I'd say we need a week for retries and the load test.
+[00:01:02] You: So the launch can't be the 3rd. What is realistic?
+[00:01:11] Speaker 2: The 17th, if the load test passes the first time. If it fails, the 24th.
+[00:01:29] Speaker 3: Support needs the help-centre articles two weeks before launch, so that is the 3rd either way. I can write them from the current screens, but they will need a final pass after the settings page changes.
+[00:01:57] You: Okay. Decision: we target the 17th, with the 24th as the fallback. Speaker 3, start the articles now.
+[00:02:12] Speaker 3: Will do. Please send me the screen exports at docs.team@example.com, the shared drive link is broken.
+[00:02:31] Speaker 1: I'll export them today. One risk: the pricing table is still marked draft. Does anyone know whether finance signed it off?
+[00:02:49] Speaker 2: I don't think so. I saw a comment asking for the annual discount to be changed.
+[00:03:05] You: Then that's an open question for finance. I'll email them. Who owns the cookie banner text?
+[00:03:20] Speaker 1: Nobody yet. Legal said they'd send wording, but I haven't seen it.
+[00:03:38] Speaker 2: I can chase legal, my number is +1 415 555 0152 if they need to call me.
+[00:03:52] You: Good. Summary of owners: Speaker 1 exports the screens today and finishes the settings review in two days; Speaker 2 does retries and the load test by the 10th; Speaker 3 drafts the articles; I email finance and check back with legal on Friday.
+[00:04:25] Speaker 3: Sounds right. Should we meet again Thursday to check progress?
+[00:04:33] You: Yes, Thursday at ten. I'll send the invite.

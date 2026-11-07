@@ -44,6 +44,33 @@ final class FakeCLIWorld {
             """
     }
 
+    /// A Claude answer to a call that sent a JSON Schema: the object travels in
+    /// `structured_output`, and the runner refuses a schema call without it.
+    static func claudeStructured(_ json: String) -> String {
+        let object = try! JSONSerialization.jsonObject(with: Data(json.utf8))
+        let result: [String: Any] = [
+            "type": "result", "subtype": "success", "is_error": false, "result": "", "structured_output": object,
+        ]
+        let line = String(decoding: try! JSONSerialization.data(withJSONObject: result), as: UTF8.self)
+        return """
+            {"type":"system","subtype":"init","apiKeySource":"none","model":"fake"}
+            {"type":"rate_limit_event","rate_limit_info":{"status":"allowed","resetsAt":1800100000,"unifiedWindows":{"five_hour":{"utilization":0.07},"seven_day":{"utilization":0.66}}}}
+            \(line)
+            """
+    }
+
+    /// One scripted answer carrying this JSON, in the shape the given CLI uses for a schema call.
+    static func jsonScript(_ json: String, cli: CLIKind = .claude) -> Script {
+        switch cli {
+        case .claude: return Script(stdout: claudeStructured(json))
+        case .codex:
+            let compact = String(
+                decoding: try! JSONSerialization.data(
+                    withJSONObject: try! JSONSerialization.jsonObject(with: Data(json.utf8))), as: UTF8.self)
+            return Script(stdout: codexOK(compact))
+        }
+    }
+
     static func codexOK(_ text: String = "fake answer") -> String {
         """
         {"type":"thread.started","thread_id":"x"}

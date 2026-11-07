@@ -1,0 +1,39 @@
+[
+ {
+  "id": "scenario-one_on_one",
+  "kind": "one_on_one",
+  "text": "[00:00:07] Speaker 1: Thanks for making time. How are you feeling about the quarter?\n[00:00:15] You: Mostly good. The search project shipped, but I'm worried the on-call load is eating my focus time.\n[00:00:36] Speaker 1: Let me give you some feedback first. The search launch was well run, and the incident write-up you did was excellent. One thing: your design docs often arrive the night before the review, which doesn't give people time to comment.\n[00:01:05] You: Fair. I'll send drafts two days ahead from now on.\n[00:01:18] Speaker 1: Great. Anything I could do better?\n[00:01:25] You: It would help if priorities were written down somewhere. I got three different asks last week and wasn't sure which came first.\n[00:01:50] Speaker 1: That's useful, and I own it. I'll post a ranked list in the team channel by Wednesday.\n[00:02:10] You: On growth: I'd like to move toward a tech lead role next year. I'm not sure what's missing.\n[00:02:30] Speaker 1: Mostly scope and influence across teams. Let's pick one cross-team project for you. I'll ask Leo from platform whether the build-cache work can be shared.\n[00:02:58] You: That would be great. I could also start mentoring Sam, our new hire.\n[00:03:15] Speaker 1: Yes, please. Let's check in on all three things in two weeks. My calendar invite will come from manager@example.com, and you can reach me on +1 415 555 0166 if something is urgent.\n",
+  "formatted": [
+   "manager@example.com",
+   "+1 415 555 0166"
+  ],
+  "facts": [
+   [
+    "two days",
+    "2 days"
+   ],
+   [
+    "wednesday"
+   ],
+   [
+    "tech lead"
+   ],
+   [
+    "mentor"
+   ],
+   [
+    "build-cache",
+    "build cache",
+    "cross-team"
+   ],
+   [
+    "on-call",
+    "on call"
+   ],
+   [
+    "two weeks",
+    "2 weeks"
+   ]
+  ]
+ }
+]

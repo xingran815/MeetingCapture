@@ -1,0 +1,170 @@
+{
+ "topic": "Weekly platform sync",
+ "sections": {
+  "summary": [
+   {
+    "text": "The platform team reviewed the billing migration, the weekend on-call rota and the cloud budget. The cutover moves a week because the invoice export still times out.",
+    "speaker": "",
+    "owner": "",
+    "due": "",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   }
+  ],
+  "who_said_what": [
+   {
+    "text": "Billing migration is at ninety percent; the invoice export is the last blocker.",
+    "speaker": "Speaker 1",
+    "owner": "",
+    "due": "",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   },
+   {
+    "text": "Will fix the export and have it in review by Thursday; needs the failing account list sent to <EMAIL_1>.",
+    "speaker": "Speaker 2",
+    "owner": "",
+    "due": "",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   },
+   {
+    "text": "Cloud spend is 18,500 dollars over plan, mostly from the staging cluster.",
+    "speaker": "You",
+    "owner": "",
+    "due": "",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   }
+  ],
+  "open_questions": [
+   {
+    "text": "Does the new cutover date clash with the audit window?",
+    "speaker": "",
+    "owner": "",
+    "due": "",
+    "answer": "I don't know",
+    "quote": "",
+    "detail": "",
+    "confidence": "unsure",
+    "reason": "Nobody in the meeting knew; finance has to confirm.",
+    "source": "ai"
+   },
+   {
+    "text": "Renew the monitoring contract in October or switch vendor?",
+    "speaker": "",
+    "owner": "",
+    "due": "",
+    "answer": "Not decided; Speaker 1 will collect two quotes first.",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   }
+  ],
+  "actions": [
+   {
+    "text": "Fix the invoice export and put it in review",
+    "speaker": "",
+    "owner": "Speaker 2",
+    "due": "Thursday",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   },
+   {
+    "text": "Ask finance about the audit window",
+    "speaker": "",
+    "owner": "Speaker 3",
+    "due": "Friday",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "unsure",
+    "reason": "Friday is when Speaker 3 can be reached, not clearly a deadline.",
+    "source": "transcript"
+   },
+   {
+    "text": "Shut down the staging cluster and send a cost report",
+    "speaker": "",
+    "owner": "Speaker 3",
+    "due": "next Monday",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   },
+   {
+    "text": "Swap on-call shifts with Speaker 2 and update the rota sheet",
+    "speaker": "",
+    "owner": "Speaker 1",
+    "due": "",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   }
+  ],
+  "insights": [
+   {
+    "text": "Ask finance this week, before the 21st gets locked in, so the audit window does not force a second move.",
+    "speaker": "",
+    "owner": "",
+    "due": "",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "ai"
+   },
+   {
+    "text": "Turn off the staging cluster on a schedule, not by hand, so it cannot be left running again.",
+    "speaker": "",
+    "owner": "",
+    "due": "",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "ai"
+   }
+  ]
+ },
+ "changes": [
+  {
+   "what": "Added the due date Friday to the finance action.",
+   "why": "Speaker 3 said they could be reached before Friday; the transcript does not say it is the due date, so it was marked unsure."
+  },
+  {
+   "what": "Removed a claim that the budget overrun was approved.",
+   "why": "Nobody approved it in the transcript."
+  }
+ ],
+ "transcriptSuggestions": []
+}

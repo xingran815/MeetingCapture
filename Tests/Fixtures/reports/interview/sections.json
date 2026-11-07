@@ -1,0 +1,185 @@
+{
+ "topic": "Backend engineer interview",
+ "sections": {
+  "summary": [
+   {
+    "text": "A backend engineering interview covering a past migration project, teamwork, a weakness, and a rate limiter design question. The interviewer will send the details of a take-home exercise.",
+    "speaker": "",
+    "owner": "",
+    "due": "",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   }
+  ],
+  "questions": [
+   {
+    "text": "Tell me about a project you're proud of.",
+    "speaker": "Speaker 1",
+    "owner": "",
+    "due": "",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   },
+   {
+    "text": "How did you handle disagreement on the team?",
+    "speaker": "Speaker 1",
+    "owner": "",
+    "due": "",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   },
+   {
+    "text": "What's a weakness you're working on?",
+    "speaker": "Speaker 1",
+    "owner": "",
+    "due": "",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   },
+   {
+    "text": "How would you design a rate limiter for a public API?",
+    "speaker": "Speaker 1",
+    "owner": "",
+    "due": "",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   }
+  ],
+  "answers": [
+   {
+    "text": "Led the migration of the reporting service to three smaller services, cutting the nightly job from six hours to forty minutes.",
+    "speaker": "",
+    "owner": "",
+    "due": "",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   },
+   {
+    "text": "Said they mostly kept going; one engineer disagreed about the database and the user's choice won.",
+    "speaker": "",
+    "owner": "",
+    "due": "",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   },
+   {
+    "text": "Takes on too much and is trying to delegate, with no good example yet.",
+    "speaker": "",
+    "owner": "",
+    "due": "",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   },
+   {
+    "text": "Token bucket per API key in Redis with a local cache; had not run the distributed version in production.",
+    "speaker": "",
+    "owner": "",
+    "due": "",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   }
+  ],
+  "gaps": [
+   {
+    "text": "The disagreement answer did not show how the other engineer's view was heard.",
+    "speaker": "",
+    "owner": "",
+    "due": "",
+    "answer": "Describe asking for the engineer's concerns, testing both database options on a small benchmark, and agreeing the result with the team.",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "ai"
+   },
+   {
+    "text": "No concrete example of delegating.",
+    "speaker": "",
+    "owner": "",
+    "due": "",
+    "answer": "Prepare one example with the task, who took it, and the outcome.",
+    "quote": "",
+    "detail": "",
+    "confidence": "unsure",
+    "reason": "Only the user can know whether such an example exists.",
+    "source": "ai"
+   }
+  ],
+  "follow_ups": [
+   {
+    "text": "Expect the take-home exercise details by email on Monday",
+    "speaker": "",
+    "owner": "",
+    "due": "Monday",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   },
+   {
+    "text": "Send references to the recruiting contact tonight",
+    "speaker": "",
+    "owner": "",
+    "due": "tonight",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "transcript"
+   }
+  ],
+  "insights": [
+   {
+    "text": "Raising the clock-skew uncertainty was received well; do it again, and add what you would read to close the gap.",
+    "speaker": "",
+    "owner": "",
+    "due": "",
+    "answer": "",
+    "quote": "",
+    "detail": "",
+    "confidence": "sure",
+    "reason": "",
+    "source": "ai"
+   }
+  ]
+ }
+}

@@ -1,0 +1,32 @@
+{
+ "concepts": [
+  {
+   "name": "cognitive defusion",
+   "explanation": "A technique from Acceptance and Commitment Therapy that teaches people to observe thoughts as mental events instead of treating them as literal truths.",
+   "sources": [
+    {
+     "title": "Defusion: an overview",
+     "url": "https://example.org/act/cognitive-defusion"
+    },
+    {
+     "title": "Not a link",
+     "url": "javascript:alert(1)"
+    },
+    {
+     "title": "Practice sheet",
+     "url": "https://example.org/act/defusion-sheet.pdf"
+    }
+   ]
+  },
+  {
+   "name": "values exercise",
+   "explanation": "An exercise that helps a person identify what matters to them and commit to actions that fit.",
+   "sources": [
+    {
+     "title": "Values in therapy",
+     "url": "https://example.org/act/values"
+    }
+   ]
+  }
+ ]
+}

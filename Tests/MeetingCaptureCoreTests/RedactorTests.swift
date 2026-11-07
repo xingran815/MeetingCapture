@@ -174,68 +174,88 @@ final class RedactorTests: XCTestCase {
     }
 }
 
+/// The transcript-to-report path on fake CLIs. Ported from the single-summary pipeline:
+/// each test keeps the behaviour it guarded (spec 04 replaced the style with a scenario).
 final class SummaryPipelineTests: GuardedTestCase {
+
+    private func model(_ call: FakeCLIWorld.Call) -> String {
+        call.args[call.args.firstIndex(of: "--model")! + 1]
+    }
 
     func testRedactedValueNeverReachesAnyCallAndComesBackInTheAnswer() async throws {
         let world = try FakeCLIWorld()
         defer { world.cleanUp() }
         let email = "priya" + "@example.com"
         // The fake model copies the token, as the prompt asks.
+        let sections = Replies.sections(["summary": ["Send it to <EMAIL_1>."]])
         try world.install(
             .claude,
             answers: [
-                .init(stdout: FakeCLIWorld.claudeOK("meeting")),
-                .init(stdout: FakeCLIWorld.claudeOK("Send it to <EMAIL_1>.")),
+                FakeCLIWorld.jsonScript(Replies.classify("meeting")),
+                FakeCLIWorld.jsonScript(sections),
+                FakeCLIWorld.jsonScript(Replies.review(["summary": ["Send it to <EMAIL_1>."]])),
             ])
         let outcome = try await SummaryPipeline(backend: CLISummaryBackend(router: world.router()), redaction: true)
             .run(transcript: "[00:00:01] You: Send the contract to \(email), please.")
 
-        for call in world.calls(.claude) {
-            XCTAssertFalse(call.everything.contains(email))
-        }
-        XCTAssertEqual(world.calls(.claude).count, 2)
-        XCTAssertEqual(
-            world.calls(.claude)[0].args[world.calls(.claude)[0].args.firstIndex(of: "--model")! + 1], "haiku",
-            "the classifier is cheap tier")
-        XCTAssertEqual(
-            world.calls(.claude)[1].args[world.calls(.claude)[1].args.firstIndex(of: "--model")! + 1], "sonnet",
-            "the summary is normal tier")
-        XCTAssertTrue(
-            world.calls(.claude)[1].args.joined().contains("copy a token exactly")
-                || world.calls(.claude)[1].args.joined().contains("Copy a token exactly"))
-        XCTAssertEqual(outcome.markdown, "Send it to \(email).")
+        let calls = world.calls(.claude)
+        for call in calls { XCTAssertFalse(call.everything.contains(email)) }
+        XCTAssertEqual(calls.count, 3, "classify, sections, review (the meeting template has no concepts)")
+        XCTAssertEqual(model(calls[0]), "haiku", "the classifier is cheap tier")
+        XCTAssertEqual(model(calls[1]), "sonnet", "the sections are normal tier")
+        XCTAssertEqual(model(calls[2]), "opus", "the review is frontier tier")
+        XCTAssertTrue(calls[1].args.joined().contains("Copy a token exactly"))
+        XCTAssertEqual(items(outcome.report, "summary").first?.text, "Send it to \(email).")
         XCTAssertEqual(outcome.redactedValues, 1)
+        XCTAssertTrue(outcome.flaggedTokens.isEmpty)
     }
 
     func testRedactionOffSendsTheText() async throws {
         let world = try FakeCLIWorld()
         defer { world.cleanUp() }
         let email = "priya" + "@example.com"
-        try world.install(.claude, answers: [.init(stdout: FakeCLIWorld.claudeOK("ok"))])
+        try world.install(
+            .claude,
+            answers: [
+                FakeCLIWorld.jsonScript(Replies.sections(["summary": ["ok"]])),
+                FakeCLIWorld.jsonScript(Replies.review(["summary": ["ok"]])),
+            ])
         _ = try await SummaryPipeline(backend: CLISummaryBackend(router: world.router()), redaction: false)
-            .run(transcript: "Mail \(email)", forcedStyle: .meeting)
+            .run(transcript: "Mail \(email)", forcedScenario: "meeting")
         XCTAssertTrue(try XCTUnwrap(world.calls(.claude).first).stdin.contains(email))
     }
 
-    func testForcedStyleSkipsTheClassifier() async throws {
+    func testForcedScenarioSkipsTheClassifier() async throws {
         let world = try FakeCLIWorld()
         defer { world.cleanUp() }
-        try world.install(.claude, answers: [.init(stdout: FakeCLIWorld.claudeOK("notes"))])
+        try world.install(
+            .claude,
+            answers: [
+                FakeCLIWorld.jsonScript(Replies.sections(["summary": ["notes"]])),
+                FakeCLIWorld.jsonScript(Replies.review(["summary": ["notes"]])),
+            ])
         let outcome = try await SummaryPipeline(backend: CLISummaryBackend(router: world.router()), redaction: true)
-            .run(transcript: "hello", forcedStyle: .therapy)
-        XCTAssertEqual(outcome.style, .therapy)
-        XCTAssertEqual(world.calls(.claude).count, 1)
+            .run(transcript: "hello", forcedScenario: "general")
+        XCTAssertEqual(outcome.report.scenario, "general")
+        XCTAssertEqual(world.calls(.claude).count, 2, "sections and review only")
+        XCTAssertEqual(model(world.calls(.claude)[0]), "sonnet", "the first call is the sections, not a classifier")
     }
 
     func testReportSaysWhatHappened() async throws {
         let world = try FakeCLIWorld()
         defer { world.cleanUp() }
         try world.install(.claude, answers: [.init(stdout: "", exit: 1, stderr: "usage limit reached")])
-        try world.install(.codex, answers: [.init(stdout: FakeCLIWorld.codexOK("Mail <EMAIL_7>."))])
+        try world.install(
+            .codex,
+            answers: [
+                FakeCLIWorld.jsonScript(Replies.sections(["summary": ["Mail <EMAIL_7>."]]), cli: .codex),
+                FakeCLIWorld.jsonScript(Replies.review(["summary": ["Mail <EMAIL_7>."]]), cli: .codex),
+            ])
         let outcome = try await SummaryPipeline(backend: CLISummaryBackend(router: world.router()), redaction: true)
-            .run(transcript: "hello", forcedStyle: .meeting)
+            .run(transcript: "hello", forcedScenario: "meeting")
         XCTAssertEqual(outcome.flaggedTokens, ["<EMAIL_7>"])
-        XCTAssertTrue(outcome.report.contains("<EMAIL_7>"))
-        XCTAssertTrue(outcome.report.contains("Codex"), "a switch of CLI goes in the report")
+        XCTAssertTrue(
+            outcome.report.notices.joined().contains("<EMAIL_7>"), "an unknown token is flagged in the notices")
+        XCTAssertTrue(outcome.report.notices.joined().contains("Codex"), "a switch of CLI goes in the report")
     }
 }
