@@ -817,6 +817,8 @@ struct SummaryPipeline {
                 item.confidence = "unsure"
                 if (item.reason ?? "").isEmpty { item.reason = "Marked as from an earlier report, but none was given." }
             }
+            // An insight is the AI's own view, so it shows as AI even when it builds on
+            // an earlier report.
             if kind == .insights { item.source = "ai" }
             let empty = [item.text, item.answer, item.quote, item.detail].allSatisfy { ($0 ?? "").isEmpty }
             return empty ? nil : item

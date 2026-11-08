@@ -5,7 +5,8 @@ import Foundation
 // allow-list of report fields, never a transcript:
 //
 //   sent:      title (the user's, if set), scenario, section titles, item `text` and
-//              `detail`, `priority`, `keywords`, with the user's edits applied; a
+//              `detail`, `priority`, `keywords`, whether an item was itself from an
+//              earlier report (`source` earlier, D-97), with the user's edits applied; a
 //              report's notes only where that report's notes switch is on
 //   never:     `transcript`, item `quote`, `reviewChanges`, notices, and every other field
 //
@@ -394,7 +395,11 @@ enum GroupContextBuilder {
             guard !items.isEmpty else { continue }
             lines.append("## \(line(section.title))")
             for item in items {
-                let mark = item.isHigh ? "[key] " : item.isLow ? "[background] " : ""
+                // A fact this report itself kept from an earlier one says so, so the next
+                // report can't take it for this recording's own (D-97, M5.2 review).
+                let mark =
+                    (item.isHigh ? "[key] " : item.isLow ? "[background] " : "")
+                    + (item.isEarlier ? "[from an earlier report] " : "")
                 lines.append("- \(mark)\(line(item.text ?? ""))")
                 if let detail = item.detail, !detail.isEmpty { lines.append("  More: \(line(detail))") }
                 let text = item.text ?? ""
