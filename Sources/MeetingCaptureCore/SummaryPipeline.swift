@@ -483,7 +483,9 @@ struct SummaryPipeline {
         ]
         if earlier {
             lines += [
-                "Earlier reports in this group come after the transcript. Use them as background to understand names, ongoing topics and follow-ups. A fact that only an earlier report has (not this transcript) may be used only when it helps the reader follow this recording; mark that item \"source\": \"earlier\". Never present it as said in this recording, and never let an earlier report contradict this transcript: the transcript wins."
+                "Earlier reports in this group come after the transcript. Use them to understand names, ongoing topics and follow-ups.",
+                "When this recording follows up on something an earlier report has (a deadline, a decision, an open task, an earlier worry, what a short word like \"the reader\" refers to), give the reader that earlier fact: add it as its own item in the section it fits, written as background (such as \"Earlier: the room had to be confirmed by the end of May\"), and mark that item \"source\": \"earlier\". Never mix an earlier fact into an item about what was said in this recording; keep this recording's own words there.",
+                "Add only earlier facts this recording connects to, a few at most; don't retell the earlier reports. Never present an earlier fact as said in this recording, and never let an earlier report contradict this transcript: the transcript wins. If this recording changes an earlier fact (a new date, a reversed decision), report what was said here, and you may note the earlier fact as its own earlier item.",
             ]
         }
         lines += template.rules
@@ -514,7 +516,7 @@ struct SummaryPipeline {
     static func reviewPrompt(_ template: ScenarioTemplate, language: String, earlier: Bool = false) -> String {
         let check =
             earlier
-            ? "Check every item against the transcript. An item marked \"source\": \"earlier\" is checked against the earlier reports given after the draft instead: keep it only if an earlier report really says it and it doesn't contradict the transcript. Fix what's wrong, remove what is in neither, add what's important and missing, and mark what you can't confirm as unsure with the reason. An item whose fact is only in an earlier report must be marked \"source\": \"earlier\"."
+            ? "Check every item against the transcript. An item marked \"source\": \"earlier\" is checked against the earlier reports given after the draft instead: keep it if an earlier report really says it, this recording connects to it, and the transcript doesn't contradict it. Don't remove such an item or reword it into this recording's words just because the transcript doesn't say it; that is what the mark is for. Where the draft mixed an earlier fact into an item about this recording, take the earlier fact out of that item and, if it's useful, give it its own earlier item. If this recording follows up on something an earlier report has and the draft left out the earlier fact the reader needs, add it as its own earlier item. Fix what's wrong, remove what is in neither, add what's important and missing, and mark what you can't confirm as unsure with the reason."
             : "Check every item against the transcript. Fix what's wrong, remove what was invented, add what's important and missing, and mark what you can't confirm as unsure with the reason."
         return """
             You review a draft report on a recording of this kind: \(template.title). You get the transcript with numbered lines and the draft as JSON\(earlier ? ", then the group's earlier reports" : "").
