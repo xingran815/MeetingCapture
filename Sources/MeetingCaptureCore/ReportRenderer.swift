@@ -200,6 +200,7 @@ enum ReportRenderer {
     private static func cls(_ item: Report.Item) -> String {
         var names: [String] = []
         if item.isAI { names.append("ai") }
+        if item.isEarlier { names.append("from-earlier") }
         if item.isUnsure { names.append("unsure") }
         if item.isHigh { names.append("high") }
         if item.isLow { names.append("low") }
@@ -209,6 +210,10 @@ enum ReportRenderer {
     /// The AI badge and the unsure marker with its reason, both visible.
     private static func marks(_ item: Report.Item) -> String {
         var h = ""
+        if item.isEarlier {
+            h +=
+                "<p class=\"earlier\"><span class=\"mark\">From an earlier report</span> Not said in this recording.</p>"
+        }
         if item.isUnsure {
             let reason = (item.reason ?? "").isEmpty ? "no reason given" : item.reason!
             h += "<p class=\"doubt\"><span class=\"mark\">Unsure</span> \(escape(reason))</p>"
@@ -350,6 +355,7 @@ enum ReportRenderer {
         .badge{display:inline-block;font-size:.7rem;font-weight:700;letter-spacing:.05em;color:var(--ai);border:1px solid var(--ai);border-radius:4px;padding:0 4px;margin-right:4px;vertical-align:1px}
         .doubt{margin:.25rem 0 0;font-size:.88rem;color:var(--warn)}
         .mark{display:inline-block;font-weight:700;font-size:.72rem;background:var(--warn-bg);color:var(--warn);border:1px dashed var(--warn);border-radius:4px;padding:0 5px;margin-right:4px}
+        .earlier{margin:2px 0 0;font-size:.85rem;color:var(--muted,#666)}.earlier .mark{font-weight:700;margin-right:4px}
         .unsure{outline:1px dashed var(--warn);outline-offset:3px;border-radius:4px}
         mark{background:var(--hl);color:inherit;border-radius:3px;padding:0 2px}
         .pri{display:inline-block;font-size:.7rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--bg);background:var(--key);border-radius:4px;padding:1px 5px;margin-right:4px;vertical-align:1px}
@@ -489,8 +495,9 @@ enum ReportRenderer {
     private static func mdLine(_ s: String?) -> String { mdSafe(oneLine(s)) }
 
     private static func unsureSuffix(_ item: Report.Item) -> String {
-        guard item.isUnsure else { return "" }
-        return " _(unsure: \(mdLine((item.reason ?? "").isEmpty ? "no reason given" : item.reason)))_"
+        let earlier = item.isEarlier ? " _(from an earlier report, not said in this recording)_" : ""
+        guard item.isUnsure else { return earlier }
+        return earlier + " _(unsure: \(mdLine((item.reason ?? "").isEmpty ? "no reason given" : item.reason)))_"
     }
 
     private static func oneLine(_ s: String?) -> String {
@@ -533,6 +540,7 @@ enum ReportRenderer {
                 var line = item.isHigh ? "  ▶ KEY " : "  • "
                 if let s = item.speaker, !s.isEmpty, section.kind == .bullets { line += "\(t(s)): " }
                 if section.kind == .insights || item.isAI && section.kind != .qa { line += "[AI] " }
+                if item.isEarlier { line += "[earlier report] " }
                 line += hl(item.text, item.keywords)
                 if section.kind == .qa {
                     line +=

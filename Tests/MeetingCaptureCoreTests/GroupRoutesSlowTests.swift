@@ -59,9 +59,12 @@ final class GroupRoutesSlowTests: XCTestCase {
     private func assertContextReached(_ calls: [FakeCLIWorld.Call], file: StaticString = #filePath, line: UInt = #line)
     {
         let withContext = calls.filter { $0.stdin.contains(SummaryPipeline.contextHeading) }
-        XCTAssertEqual(withContext.count, 1, "only the sections call carries the context", file: file, line: line)
-        XCTAssertTrue(
-            withContext.first?.stdin.contains(earlierItem) ?? false, "the earlier item text", file: file, line: line)
+        // D-97: the sections call and the review call, never the classifier.
+        XCTAssertEqual(withContext.count, 2, "sections and review carry the context", file: file, line: line)
+        for c in withContext {
+            XCTAssertTrue(c.stdin.contains(earlierItem), "the earlier item text", file: file, line: line)
+            XCTAssertFalse(c.args.contains("haiku"), "the classifier never gets it", file: file, line: line)
+        }
         for c in calls {
             XCTAssertFalse(
                 c.everything.contains(transcriptMarker), "a transcript marker reached a call", file: file, line: line)

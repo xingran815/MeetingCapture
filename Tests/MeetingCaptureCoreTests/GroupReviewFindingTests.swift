@@ -6,7 +6,8 @@ import XCTest
 /// GroupPipelineTests).
 final class GroupReviewFindingTests: GroupTestCase {
 
-    private let reviewSentence = "The review checked this report against its own transcript only"
+    private let reviewSentence =
+        "The review checked this report against its own transcript and the group's earlier reports"
 
     private func context(_ members: [String]) throws -> GroupContext {
         try addRecording(recName, hoursAgo: 0, report: simpleReport(topic: "Me"))

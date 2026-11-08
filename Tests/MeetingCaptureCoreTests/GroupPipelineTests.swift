@@ -76,7 +76,8 @@ final class GroupPipelineTests: GroupTestCase {
         XCTAssertFalse(sections.contains(Mark.notesOff), "notes with that report's switch off")
     }
 
-    func testContextGoesToTheSectionsStepOnlyNeitherClassifyNorReview() async throws {
+    // D-97: context goes to the sections AND the review step, never the classifier.
+    func testContextGoesToTheSectionsAndReviewStepsNeverTheClassifier() async throws {
         let context = try markedGroup()
         let b = echoBackend()
         _ = try await run(b, context: context)
@@ -88,14 +89,15 @@ final class GroupPipelineTests: GroupTestCase {
             Mark.notesOn,
             Mark.itemDetail, Mark.scenarioTitle, "EARLIER REPORTS IN THIS GROUP",
         ]
-        for tier in [ModelTier.cheap, .frontier] {
-            let call = try XCTUnwrap(b.calls(tier).first)
-            for n in needles {
-                XCTAssertFalse(call.input.contains(n), "\(n) reached the \(tier) input")
-                XCTAssertFalse(call.system.contains(n), "\(n) reached the \(tier) system prompt")
-            }
+        let classify = try XCTUnwrap(b.calls(.cheap).first)
+        for n in needles {
+            XCTAssertFalse(classify.input.contains(n), "\(n) reached the classify input")
+            XCTAssertFalse(classify.system.contains(n), "\(n) reached the classify system prompt")
         }
-        XCTAssertTrue(try XCTUnwrap(b.calls(.normal).first).input.contains(SummaryPipeline.contextHeading))
+        for tier in [ModelTier.normal, .frontier] {
+            let input = try XCTUnwrap(b.calls(tier).first).input
+            for n in needles { XCTAssertTrue(input.contains(n), "\(n) missing from the \(tier) input") }
+        }
     }
 
     func testContextComesAfterTheTranscriptAndNeverInsideIt() async throws {
@@ -150,14 +152,15 @@ final class GroupPipelineTests: GroupTestCase {
         XCTAssertFalse(outcome.report.notices.joined().contains("group"), "\(outcome.report.notices)")
     }
 
-    func testTheReviewIsToldNothingAboutThePastReportsSoAnOldMistakeIsNotCarriedForward() async throws {
+    func testD97TheReviewIsToldAboutThePastReportsAfterTheDraft() async throws {
         let context = try markedGroup()
         let b = echoBackend()
         let outcome = try await run(b, context: context)
         XCTAssertTrue(outcome.report.reviewed)
         let review = try XCTUnwrap(b.calls(.frontier).first)
-        XCTAssertFalse(review.input.contains("EARLIER REPORT"))
-        XCTAssertFalse(review.system.contains("EARLIER REPORT"))
+        let heading = try XCTUnwrap(review.input.range(of: SummaryPipeline.contextHeading))
+        XCTAssertTrue(review.input[heading.upperBound...].contains(Mark.itemText))
+        XCTAssertFalse(review.input[..<heading.lowerBound].contains(Mark.itemText), "only under the heading")
     }
 
     // MARK: Done-when: one token space, the group's switch, global redaction

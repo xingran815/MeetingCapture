@@ -160,6 +160,9 @@ struct SummaryPipeline {
         let redacted = both.transcript
         let notesInput = both.notes.map { "\n\n" + Self.notesHeading + "\n" + $0 } ?? ""
         let contextInput = both.context.map { "\n\n" + Self.contextHeading + "\n" + $0 } ?? ""
+        // With context, an item may carry a fact only an earlier report has, marked
+        // `source: earlier` (user, 2026-11-08, after the M5.2 👤 read).
+        let earlier = both.context != nil
         let suffix = redacted.tokens.isEmpty ? "" : Redactor.tokenInstruction
         let original = TranscriptParser.parse(transcript)
         var models = Report.Models()
@@ -195,8 +198,9 @@ struct SummaryPipeline {
 
         // 2. Sections. One retry on a malformed reply, then a clear failure.
         onStep(.writingSections)
-        let sectionsSchema = Self.sectionsSchema(template, review: false)
-        let sectionsSystem = Self.sectionsPrompt(template, language: Self.safeLanguage(language)) + suffix
+        let sectionsSchema = Self.sectionsSchema(template, review: false, earlier: earlier)
+        let sectionsSystem =
+            Self.sectionsPrompt(template, language: Self.safeLanguage(language), earlier: earlier) + suffix
         let draft = try await withOneRetry(step: "sections") { retryNote in
             let reply = try await backend.complete(
                 tier: .normal, system: sectionsSystem, input: redacted.text + notesInput + contextInput + retryNote,
@@ -258,9 +262,12 @@ struct SummaryPipeline {
         if review {
             onStep(.reviewing)
             do {
-                let reviewSchema = Self.sectionsSchema(template, review: true)
-                let system = Self.reviewPrompt(template, language: Self.safeLanguage(language)) + suffix
-                let input = Self.reviewInput(numbered: numbered, draft: sections, template: template, topic: topic)
+                let reviewSchema = Self.sectionsSchema(template, review: true, earlier: earlier)
+                let system =
+                    Self.reviewPrompt(template, language: Self.safeLanguage(language), earlier: earlier) + suffix
+                let input =
+                    Self.reviewInput(numbered: numbered, draft: sections, template: template, topic: topic)
+                    + contextInput
                 let result = try await withOneRetry(step: "review") { retryNote in
                     let reply = try await backend.complete(
                         tier: .frontier, system: system, input: input + retryNote, schema: reviewSchema)
@@ -296,7 +303,9 @@ struct SummaryPipeline {
 
         // Only true when the review ran. From the M5.2 review.
         if reviewed, let context, !context.used.isEmpty {
-            notices.append("The review checked this report against its own transcript only, not the group's reports.")
+            notices.append(
+                "The review checked this report against its own transcript and the group's earlier reports. Facts kept only from an earlier report are marked \"From an earlier report\"."
+            )
         }
 
         onStep(.finishing)
@@ -310,7 +319,7 @@ struct SummaryPipeline {
             sections: template.sections.map { spec in
                 Report.Section(
                     id: spec.id, title: spec.title, kind: spec.kind, note: spec.note,
-                    items: Self.cleaned(sections[spec.id] ?? [], kind: spec.kind))
+                    items: Self.cleaned(sections[spec.id] ?? [], kind: spec.kind, earlier: earlier))
             },
             reviewChanges: changes,
             transcript: original.enumerated().map { i, entry in
@@ -348,7 +357,7 @@ struct SummaryPipeline {
         "THE USER'S OWN NOTES (written by the user after the call, not said in it; use them as context, and never quote them as something said):"
 
     static let contextHeading =
-        "EARLIER REPORTS IN THIS GROUP (written by this app from earlier recordings, not said in this one; use them only as background, such as who people are, ongoing topics and follow-ups; never report anything from them as said in this recording, and never quote them):"
+        "EARLIER REPORTS IN THIS GROUP (written by this app from earlier recordings, not said in this one; use them as background, such as who people are, ongoing topics and follow-ups; never report anything from them as said in this recording, never quote them, and mark an item whose fact only they have \"source\": \"earlier\"):"
 
     /// Redacts the transcript, the notes and the group context as one text, so a value in
     /// more than one gets the same token and restoring works for all. Separators have a
@@ -460,7 +469,7 @@ struct SummaryPipeline {
         - "keywords": one or two short phrases copied exactly from this item's "text" or "answer", chosen so a reader who reads only the highlights still gets the point: who, when, what was decided, how, why. About half the items get some; never highlight general words, and never a fact already highlighted in another item. Only "prose" and "bullets" sections get keywords; every other kind gets an empty list.
         """
 
-    static func rules(_ template: ScenarioTemplate, language: String) -> String {
+    static func rules(_ template: ScenarioTemplate, language: String, earlier: Bool = false) -> String {
         var lines = [
             "Use only what is in the transcript. Never invent names, numbers, dates, decisions or quotes.",
             "\(honesty) Mark such an item \"confidence\": \"unsure\" and give the reason in \"reason\". Otherwise \"confidence\" is \"sure\" and \"reason\" is \"\".",
@@ -472,6 +481,11 @@ struct SummaryPipeline {
                 : "Write in the transcript's language (\(language)).",
             "An empty section is fine when the transcript has nothing for it.",
         ]
+        if earlier {
+            lines += [
+                "Earlier reports in this group come after the transcript. Use them as background to understand names, ongoing topics and follow-ups. A fact that only an earlier report has (not this transcript) may be used only when it helps the reader follow this recording; mark that item \"source\": \"earlier\". Never present it as said in this recording, and never let an earlier report contradict this transcript: the transcript wins."
+            ]
+        }
         lines += template.rules
         return lines.map { "- \($0)" }.joined(separator: "\n")
     }
@@ -481,7 +495,7 @@ struct SummaryPipeline {
             .joined(separator: "\n")
     }
 
-    static func sectionsPrompt(_ template: ScenarioTemplate, language: String) -> String {
+    static func sectionsPrompt(_ template: ScenarioTemplate, language: String, earlier: Bool = false) -> String {
         """
         You write the sections of a report on a recording of this kind: \(template.title). The user gives you the transcript, one line per turn, as [time] speaker: text.
 
@@ -491,28 +505,32 @@ struct SummaryPipeline {
         \(kindGuide)
 
         Rules:
-        \(rules(template, language: language))
+        \(rules(template, language: language, earlier: earlier))
 
         Also give "topic": a short title of at most 8 words, with no names of people. Reply with the requested JSON only.
         """
     }
 
-    static func reviewPrompt(_ template: ScenarioTemplate, language: String) -> String {
-        """
-        You review a draft report on a recording of this kind: \(template.title). You get the transcript with numbered lines and the draft as JSON.
+    static func reviewPrompt(_ template: ScenarioTemplate, language: String, earlier: Bool = false) -> String {
+        let check =
+            earlier
+            ? "Check every item against the transcript. An item marked \"source\": \"earlier\" is checked against the earlier reports given after the draft instead: keep it only if an earlier report really says it and it doesn't contradict the transcript. Fix what's wrong, remove what is in neither, add what's important and missing, and mark what you can't confirm as unsure with the reason. An item whose fact is only in an earlier report must be marked \"source\": \"earlier\"."
+            : "Check every item against the transcript. Fix what's wrong, remove what was invented, add what's important and missing, and mark what you can't confirm as unsure with the reason."
+        return """
+            You review a draft report on a recording of this kind: \(template.title). You get the transcript with numbered lines and the draft as JSON\(earlier ? ", then the group's earlier reports" : "").
 
-        Check every item against the transcript. Fix what's wrong, remove what was invented, add what's important and missing, and mark what you can't confirm as unsure with the reason. Keep the same section ids:
-        \(sectionList(template))
+            \(check) Keep the same section ids:
+            \(sectionList(template))
 
-        \(kindGuide)
+            \(kindGuide)
 
-        Rules:
-        \(rules(template, language: language))
+            Rules:
+            \(rules(template, language: language, earlier: earlier))
 
-        In "changes", list each change you made and why, briefly; an empty list if you changed nothing.
-        In "transcriptSuggestions", propose corrected text for a line only where a word was clearly misheard, by its line number. Never change what someone meant, and never for style. Most transcripts need few or none.
-        Also give "topic". Reply with the requested JSON only.
-        """
+            In "changes", list each change you made and why, briefly; an empty list if you changed nothing.
+            In "transcriptSuggestions", propose corrected text for a line only where a word was clearly misheard, by its line number. Never change what someone meant, and never for style. Most transcripts need few or none.
+            Also give "topic". Reply with the requested JSON only.
+            """
     }
 
     static func reviewInput(
@@ -571,9 +589,15 @@ struct SummaryPipeline {
         ])
     }
 
-    static func sectionsSchema(_ template: ScenarioTemplate, review: Bool) -> String {
+    /// `earlier` (a group's context was given) lets an item's `source` be `earlier`.
+    static func sectionsSchema(_ template: ScenarioTemplate, review: Bool, earlier: Bool = false) -> String {
+        var items = itemSchema
+        if earlier, var props = items["properties"] as? [String: Any] {
+            props["source"] = ["type": "string", "enum": ["transcript", "ai", "earlier"]]
+            items["properties"] = props
+        }
         var sectionProps: [String: Any] = [:]
-        for spec in template.sections { sectionProps[spec.id] = ["type": "array", "items": itemSchema] }
+        for spec in template.sections { sectionProps[spec.id] = ["type": "array", "items": items] }
         var properties: [String: Any] = [
             "topic": ["type": "string"],
             "sections": [
@@ -783,9 +807,16 @@ struct SummaryPipeline {
         s.count > limit ? String(s.prefix(limit)) + "…" : s
     }
 
-    private static func cleaned(_ items: [Report.Item], kind: SectionKind) -> [Report.Item] {
+    private static func cleaned(_ items: [Report.Item], kind: SectionKind, earlier: Bool) -> [Report.Item] {
         items.prefix(maxItemsPerSection).compactMap { item in
             var item = item
+            // "earlier" means an earlier report in the group said it; with no context
+            // given, there's nothing it could come from, so it reads as unsure.
+            if item.isEarlier, !earlier {
+                item.source = "transcript"
+                item.confidence = "unsure"
+                if (item.reason ?? "").isEmpty { item.reason = "Marked as from an earlier report, but none was given." }
+            }
             if kind == .insights { item.source = "ai" }
             let empty = [item.text, item.answer, item.quote, item.detail].allSatisfy { ($0 ?? "").isEmpty }
             return empty ? nil : item

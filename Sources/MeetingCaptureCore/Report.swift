@@ -57,7 +57,8 @@ struct Report: Codable, Equatable {
         var detail: String?
         var confidence: String?
         var reason: String?
-        /// `ai` for the model's own view, `transcript` for what was said.
+        /// `ai` for the model's own view, `transcript` for what was said, `earlier` for a
+        /// fact from an earlier report in the group (M5.2).
         var source: String?
         var sources: [Link]?
         /// `high`, `normal` or `low`, so the reader can skim. Nil reads as normal.
@@ -69,6 +70,8 @@ struct Report: Codable, Equatable {
         var isLow: Bool { priority == "low" }
         var isUnsure: Bool { confidence?.lowercased() == "unsure" }
         var isAI: Bool { source?.lowercased() == "ai" }
+        /// A fact only one of the group's earlier reports has, not this transcript (M5.2).
+        var isEarlier: Bool { source?.lowercased() == "earlier" }
     }
 
     struct Link: Codable, Equatable {
