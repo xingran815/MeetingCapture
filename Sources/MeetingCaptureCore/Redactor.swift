@@ -108,13 +108,20 @@ enum Redactor {
         let ns = text as NSString
         var cut = NSRange(text.startIndex..<text.index(text.startIndex, offsetBy: maxCharacters), in: text).length
         let whole = NSRange(location: 0, length: ns.length)
-        for rule in rules {
-            for match in rule.regex.matches(in: text, range: whole) {
-                let range = match.range(at: rule.group)
-                guard range.location != NSNotFound else { continue }
-                // Any match counts, valid or not: a cut through an unvalidated
-                // look-alike costs a few characters, never a leak.
-                if range.location < cut, cut < range.location + range.length { cut = range.location }
+        // Any match counts, valid or not: a cut through an unvalidated look-alike costs a
+        // few characters, never a leak. Matches of two rules can overlap, so a cut moved
+        // back to one match's start can land inside another: repeat until it stays put
+        // (M6 review L4). The cut only moves left, so this ends.
+        let ranges = rules.flatMap { rule in
+            rule.regex.matches(in: text, range: whole).map { $0.range(at: rule.group) }
+                .filter { $0.location != NSNotFound }
+        }
+        var moved = true
+        while moved {
+            moved = false
+            for range in ranges where range.location < cut && cut < range.location + range.length {
+                cut = range.location
+                moved = true
             }
         }
         // Back off a split surrogate pair or combined character.

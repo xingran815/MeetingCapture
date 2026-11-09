@@ -26,7 +26,7 @@ key.
 |---|---|---|---|---|
 | Topic and scenario | Cheap | `haiku` | `gpt-6-luna` | The redacted transcript |
 | Sections | Normal | `sonnet` | `gpt-6.1-sol` | The redacted transcript, your notes if allowed, a group's earlier reports |
-| Concept search | Normal, web search on | `sonnet` | `gpt-6.1-sol` | Generic concept names only |
+| Concept search | Normal, web search on | `sonnet` | `gpt-6.1-sol` | Concept names only; meant to be generic, but only renamed speakers' names are filtered |
 | Review | Frontier | `opus` | `gpt-6-astra` | The draft, the redacted transcript, a group's earlier reports |
 
 A typical report is 3 to 5 calls; a malformed reply gets one retry.

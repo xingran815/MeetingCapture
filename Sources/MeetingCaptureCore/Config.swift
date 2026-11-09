@@ -34,7 +34,7 @@ struct Config: Codable, Equatable {
     // LLM — a tree of named, switchable configurations. Each profile carries its
     // own provider/model/base URL/reasoning settings; its API key lives in
     // APIKeyStore keyed by profile.id. Exactly one profile is "active" at a time
-    // (selectedLLMProfileID); Settings → LLM configurations switches between them.
+    // (selectedLLMProfileID); Settings → API configurations switches between them.
     var llmProfiles: [LLMProfile] = []
     var selectedLLMProfileID: String = ""
 

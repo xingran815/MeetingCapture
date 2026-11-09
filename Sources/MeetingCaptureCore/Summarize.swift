@@ -75,7 +75,7 @@ final class Summarizer {
     func complete(system: String, user: String) async throws -> String {
         guard let apiKey = apiKeyProvider(), !apiKey.isEmpty else {
             throw SummarizerError.badResponse(
-                "No LLM API key available at request time. Set it via Settings → LLM configurations, LLM_API_KEY, or --llm-api-key."
+                "No LLM API key available at request time. Set it via Settings → API configurations, LLM_API_KEY, or --llm-api-key."
             )
         }
 
@@ -135,7 +135,7 @@ final class Summarizer {
         guard (200..<300).contains(http.statusCode) else {
             let bodyText = Self.scrubbed(data)
             throw SummarizerError.badResponse(
-                "HTTP \(http.statusCode) from \(endpoint.absoluteString):\n\(bodyText)"
+                "HTTP \(http.statusCode) from \(Self.withoutQuery(endpoint)):\n\(bodyText)"
             )
         }
 
@@ -150,8 +150,23 @@ final class Summarizer {
     /// content, which is what we want to show the user.
     /// A provider's error can quote its input, so it's scrubbed before reaching a
     /// screen or log, as CLI errors are.
-    private static func scrubbed(_ data: Data) -> String {
-        Redactor.redact(String(decoding: data, as: UTF8.self)).text
+    /// Capped like CLI errors (M6 review L2): an empty reply from a reasoning model can
+    /// carry its whole reasoning about the transcript, and this text can end up in a
+    /// saved notice.
+    static func scrubbed(_ data: Data, limit: Int = 400) -> String {
+        let text = Redactor.redact(String(decoding: data, as: UTF8.self)).text
+        return text.count > limit ? String(text.prefix(limit)) + "…" : text
+    }
+
+    /// The endpoint without its query or user info, which a custom base URL can use
+    /// for a key (M6 review L2).
+    static func withoutQuery(_ url: URL) -> String {
+        guard var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url.host ?? "" }
+        parts.query = nil
+        parts.fragment = nil
+        parts.user = nil
+        parts.password = nil
+        return parts.string ?? (url.host ?? "")
     }
 
     private func parseContent(from data: Data) throws -> String {
@@ -249,7 +264,7 @@ final class Summarizer {
                         SummarizerError.badResponse(
                             "HTTP 404 — model not found or wrong base URL")))
             default:
-                let snippet = (data.flatMap { String(data: $0, encoding: .utf8) } ?? "").prefix(300)
+                let snippet = data.map { Self.scrubbed($0, limit: 300) } ?? ""
                 completion(.failure(SummarizerError.badResponse("HTTP \(http.statusCode): \(snippet)")))
             }
         }

@@ -136,8 +136,8 @@ struct SummaryPipeline {
     /// step only, marked as the user's notes, never as part of the transcript.
     ///
     /// `context` is the group's earlier reports (M5.2, D-94), already allow-listed. It goes
-    /// to the sections step only, never to the classifier or the review, which checks this
-    /// report against its own transcript. It is redacted in the same token space as the
+    /// to the sections and review steps, never to the classifier; the review keeps a fact
+    /// from it only when marked earlier (D-97). It is redacted in the same token space as the
     /// transcript when global redaction and the group's switch are both on.
     func run(
         transcript: String, forcedScenario: String? = nil, notes: String? = nil, context: GroupContext? = nil
@@ -965,7 +965,7 @@ enum SummaryRoute {
         let baseURLString = overrides.baseURL ?? profile.baseURL
         guard Config.resolveApiKey(profileID: profile.id, flag: overrides.apiKeyFlag) != nil else {
             throw Summarizer.SummarizerError.badResponse(
-                "No LLM API key for \"\(profile.displayName)\". Store one via Settings → LLM configurations, export LLM_API_KEY, or log in to the claude or codex CLI."
+                "No LLM API key for \"\(profile.displayName)\". Store one via Settings → API configurations, export LLM_API_KEY, or log in to the claude or codex CLI."
             )
         }
         guard let baseURL = URL(string: baseURLString) else {

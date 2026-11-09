@@ -16,8 +16,8 @@ few days.
 | Transcription and speaker turns | Never | WhisperKit and SpeakerKit run locally; models are downloaded once from Hugging Face |
 | Transcript text | Yes, for a report | The `claude` or `codex` CLI you logged in to (Anthropic or OpenAI), or the endpoint of the API configuration you chose. Formatted values are replaced with tokens first |
 | Your notes on a report | Only if you turn that on for that report | Same as the transcript, redacted with it |
-| A group's earlier reports | Only for a report in a group | Same; allow-listed fields only (titles, sections, item text, keywords, your edits), never transcripts, quotes or review notes, redacted unless the group's switch is off |
-| Concept names | Yes, for the search step | The CLI's web search; generic names only, never a name, quote or personal detail, and never in a call that holds transcript text |
+| A group's earlier reports | Only for a report in a group | Same; allow-listed fields only (titles, sections, item text, keywords, your edits, and that report's notes when its notes switch is on), never transcripts, quotes or review notes. Redacted with the transcript unless the group's switch is off, in which case this context goes as written |
+| Concept names | Yes, for the search step | The CLI's web search, in a call that holds no transcript text. The model is told to keep names generic and renamed speakers' names are filtered, but a name the model writes into a concept (such as "Dana's attachment pattern") can get through |
 | API keys | Only to their own endpoint | Kept in `~/.config/MeetingCapture/llm_api_keys.json` (mode 0600), never in `config.json`, never logged |
 | CLI login tokens | Never touched | MeetingCapture doesn't read, store or forward them |
 

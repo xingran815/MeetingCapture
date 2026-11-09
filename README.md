@@ -186,8 +186,9 @@ recordings and converts or deletes only after you answer.
 
 ## What you get
 
-Everything goes to `~/Documents/MeetingCapture/` unless you change it
-(**Settings → 3**). For a recording named `<base>`:
+Recordings go to `~/Documents/MeetingCapture/` unless you change it
+(**Settings → 3**). In flag mode, `--output` without a folder writes to the
+current folder, which retention doesn't cover. For a recording named `<base>`:
 
 | File | What |
 |---|---|
@@ -213,14 +214,17 @@ the report says "Not reviewed".
 A report is yours to change: rename it, keep notes beside it, edit its text (in
 the app), or move the recording to the Trash. Notes go to the model only if you
 turn that on for that report. Delete moves only the files the recording lists,
-to the Trash, never for good.
+to the Trash, never for good. A report's notes, once that switch is on, also go
+to the model with every later report in its group (see Groups).
 
 ### Groups
 
 Put related reports in a group (a weekly one-on-one, a course). A new report in
 a group gets the earlier reports in it as context: their titles, sections and
-items, never their transcripts or quotes, up to 24,000 characters, newest
-first. A fact that comes only from an earlier report is marked **From an earlier
+items, plus an earlier report's notes when that report's notes switch is on;
+never their transcripts or quotes. Up to 24,000 characters, newest first. The
+context is redacted with the transcript unless you turn the group's **Redact
+the context** switch off. A fact that comes only from an earlier report is marked **From an earlier
 report, not said in this recording**, so you can tell the two apart. Groups
 live in `groups.json` in the output folder.
 
@@ -232,8 +236,8 @@ live in `groups.json` in the output folder.
 |---|---|---|
 | Recording | Your Mac | Nothing |
 | Echo removal, transcription, speaker turns | Your Mac (WhisperKit, SpeakerKit) | Nothing. Models are downloaded once from Hugging Face |
-| Report | `claude` or `codex` with your login, or your API configuration | The transcript text, redacted; your notes if you turned that on; a group's earlier reports, redacted |
-| Concept search | The CLI's web search | Generic concept names only, never a name, quote or personal detail |
+| Report | `claude` or `codex` with your login, or your API configuration | The transcript text, redacted; your notes if you turned that on; a group's earlier reports and their allowed notes, redacted unless the group's switch is off |
+| Concept search | The CLI's web search | Concept names only, never transcript text. The model is told to keep them generic and renamed speakers' names are filtered out, but another name can slip into one |
 
 **Redaction** replaces formatted values before any model call: emails (also
 spoken ones), API keys, tokens in URLs, IBANs, card numbers, phone numbers, US

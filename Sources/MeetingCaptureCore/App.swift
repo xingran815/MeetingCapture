@@ -195,7 +195,7 @@ public enum MeetingCaptureApp {
 
                   Manage saved configurations (add/edit/delete, each with its own provider,
                   model, base URL, and API key) and run a connectivity check in the
-                  interactive shell: Settings → LLM configurations.
+                  interactive shell: Settings → API configurations.
 
                 Misc:
                   --list                List running applications and exit
