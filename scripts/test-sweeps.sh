@@ -88,6 +88,9 @@ blocks "token in url"         secret-url-token    note.md   "https://host.invali
 blocks "hex after secret"     secret-hex-value    note.md   "secret: ${NOTHING}0123456789abcdef0123456789abcdef"
 blocks "real-looking email"   identity-email      note.md   "ask jo.bloggs""@realmail.net"
 blocks "home path"            identity-user-path  note.md   "see /Us""ers/someone/notes"
+# M6: the vendored-code exception for Sources/Speexdsp/ is gone, so identity rules apply there.
+blocks "M6: email under Sources/Speexdsp/"      identity-email      Sources/Speexdsp/vendored.c "/* ask jo.bloggs""@realmail.net */"
+blocks "M6: user path under Sources/Speexdsp/"  identity-user-path  Sources/Speexdsp/vendored.c "/* see /Us""ers/someone/notes */"
 blocks "wav file"             sensitive-file      a.wav     "RIFF"
 blocks "m4a file"             sensitive-file      a.m4a     "x"
 blocks "key file"             sensitive-file      llm_api_keys.json "{}"

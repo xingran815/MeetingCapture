@@ -243,10 +243,10 @@ final class ParityTests: XCTestCase {
             FileManager.default.fileExists(atPath: notes.path), "the file stays for the editor that has it open")
     }
 
-    // MARK: Settings › k Test CLI connection
+    // MARK: Settings › p Test CLI connection (M6 finding: picker keys; k was the picker up key)
 
     func testCLIConnectionTestPrintsOneLinePerCLIAndReturns() throws {
-        let r = try shell(["5", "k", "b", "q"])
+        let r = try shell(["5", "p", "b", "q"])
         XCTAssertFalse(r.timedOut, "Test CLI connection hung (semaphore around Task?):\n\(r.out)")
         XCTAssertEqual(r.status, 0, r.out)
         XCTAssertTrue(r.out.contains("Bye."), r.out)
@@ -260,7 +260,7 @@ final class ParityTests: XCTestCase {
     func testCLIConnectionTestReportsANotReadyCLIWithAReason() throws {
         // codex: not on PATH at all.
         try FileManager.default.removeItem(at: world.bin.appendingPathComponent("codex"))
-        let r = try shell(["5", "k", "b", "q"])
+        let r = try shell(["5", "p", "b", "q"])
         XCTAssertFalse(r.timedOut, r.out)
         let results = resultLines(r.out)
         XCTAssertEqual(results.count, 2, r.out)
@@ -271,7 +271,7 @@ final class ParityTests: XCTestCase {
     }
 
     func testCLIConnectionTestMakesNoModelCall() throws {
-        _ = try shell(["5", "k", "b", "q"])
+        _ = try shell(["5", "p", "b", "q"])
         XCTAssertEqual(world.calls(.claude).count, 0)
         XCTAssertEqual(world.calls(.codex).count, 0)
     }
