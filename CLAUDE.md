@@ -16,7 +16,7 @@ Swift Package Manager, macOS 26 only (D-92). Dependencies: WhisperKit (with Spea
 swift build
 .build/debug/MeetingCaptureCLI                 # interactive shell (primary UX)
 .build/debug/MeetingCaptureCLI --help          # flag mode, for scripts
-.build/debug/MeetingCaptureCLI --summarize-only Tests/Fixtures/live/meeting.txt
+.build/debug/MeetingCaptureCLI --summarize-only /tmp/m.txt   # writes the report beside the .txt
 scripts/build-app.sh [--install]               # .build/MeetingCapture.app, optionally to ~/Applications
 ./install.sh                                   # release CLI to ~/.local/bin/meetingcapture, hooks, TCC prompts
 ```

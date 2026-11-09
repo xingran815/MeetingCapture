@@ -172,12 +172,14 @@ meetingcapture --help
 meetingcapture --list
 meetingcapture --duration 10 --transcribe --output /tmp/mc-demo.wav
 meetingcapture --transcribe-only /tmp/mc-demo.m4a
-meetingcapture --summarize-only Tests/Fixtures/live/meeting.txt
-meetingcapture --summarize-only Tests/Fixtures/live/meeting.txt --scenario meeting --llm-cli codex
+cp Tests/Fixtures/live/meeting.txt /tmp/mc-sample.txt
+meetingcapture --summarize-only /tmp/mc-sample.txt
+meetingcapture --summarize-only /tmp/mc-sample.txt --scenario meeting --llm-cli codex
 meetingcapture --audio-cleanup
 ```
 
-`--list` shows the apps ScreenCaptureKit can see. `--audio-cleanup` lists old WAV
+`--list` shows the apps ScreenCaptureKit can see. The sample transcript is
+invented; a report is written beside it. `--audio-cleanup` lists old WAV
 recordings and converts or deletes only after you answer.
 
 ---
