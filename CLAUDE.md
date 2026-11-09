@@ -4,102 +4,107 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-> **Refactor in progress.** The block at the end of this file and `docs/specs/` win over anything below that disagrees. Sections below describe v0.6 and are rewritten in milestone 6.
+**MeetingCapture** — a local-first macOS meeting helper with a terminal shell (`meetingcapture`) and a SwiftUI desktop app (`MeetingCapture.app`). It records a call and the user's mic on two tracks, removes speaker echo after the call, transcribes locally with WhisperKit, labels speakers, and writes a report (one self-contained HTML page plus `.md` and `.report.json`). Reports run through the user's own `claude`/`codex` subscription CLIs by default; API configurations are optional. Audio and transcription never leave the machine; only redacted transcript text (plus opted-in notes and a group's earlier reports) goes to the model.
 
-**MeetingCapture** — a macOS meeting helper with a terminal UI and, from milestone 5, a desktop app. It records a meeting, transcribes it locally with Whisper, and summarizes it with an LLM. Full pipeline is local-first: audio capture and transcription never leave the machine; only transcript text is sent to the chosen LLM.
-
-Current state (v0.6): capture + transcribe + summarize all work. Echo is removed after the call, from the raw mic (M3.2). Indefinite-length recordings with 30-min chunking for fault tolerance. Interactive menu shell is the primary UX; flag-based invocation still works and is the scripting escape hatch.
+State after the refactor (M1–M6): capture, echo removal, transcription, speaker labels, scenario reports, the desktop app, the notebook (rename, notes, edits, delete to the Trash) and groups (shared report context with the "From an earlier report" mark) all work. User docs: `README.md`, `docs/llm-usage.md`, `SECURITY.md`, `docs/parity.md`. Specs for each milestone: `docs/specs/`.
 
 ## Build & run
 
-Swift Package Manager, one external dep (WhisperKit). Requires macOS 26 (D-92). The desktop app: `scripts/build-app.sh [--install]` makes `.build/MeetingCapture.app`.
-
-End-user / fresh-machine path: `./install.sh` builds release, installs to `~/.local/bin/meetingcapture`, triggers the mic prompt via the hidden `--permission-probe` flag, and walks the user through the Screen Recording grant. Idempotent.
-
-Dev loop:
+Swift Package Manager, macOS 26 only (D-92). Dependencies: WhisperKit (with SpeakerKit). Targets: `MeetingCaptureCore` (all logic), `MeetingCaptureCLI` (one-line `main.swift`), `MeetingCaptureDesktop` (SwiftUI, no core logic).
 
 ```bash
 swift build
-
-# Interactive shell (primary UX):
-.build/debug/MeetingCaptureCLI
-
-# Flag path (scripting escape hatch, all still works):
-.build/debug/MeetingCaptureCLI --duration 60 --transcribe --summarize --output /tmp/m.wav
-.build/debug/MeetingCaptureCLI --transcribe-only /tmp/m.wav
-.build/debug/MeetingCaptureCLI --summarize-only /tmp/m.txt
-.build/debug/MeetingCaptureCLI --list      # enumerate SCShareableContent apps
+.build/debug/MeetingCaptureCLI                 # interactive shell (primary UX)
+.build/debug/MeetingCaptureCLI --help          # flag mode, for scripts
+.build/debug/MeetingCaptureCLI --summarize-only Tests/Fixtures/live/meeting.txt
+scripts/build-app.sh [--install]               # .build/MeetingCapture.app, optionally to ~/Applications
+./install.sh                                   # release CLI to ~/.local/bin/meetingcapture, hooks, TCC prompts
 ```
 
-Prefer running the compiled binary over `swift run`: TCC (Screen Recording permission) is keyed to the binary path; `swift run` can invalidate that.
+Run the compiled binary, never `swift run`: TCC (Screen Recording) is keyed to the binary path. The app has its own TCC identity (`com.meetingcapture.desktop`); signed ad-hoc it loses its grants on every rebuild (D-92).
 
-Automated tests: `scripts/check.sh` (see the devkit block). Capture changes also get a check by hand: capture a WAV, inspect it with `afinfo`, read the `.txt` and `.md` outputs.
+Automated tests: `scripts/check.sh` (see the devkit block). Capture changes also get a check by hand: record, inspect with `afinfo`, read the `.txt`, `.md` and HTML outputs. App screenshots in tests: launch with `MEETINGCAPTURE_E2E=1 MEETINGCAPTURE_HOME=<temp home>` and invented files.
 
 ## Permissions
 
-Two TCC entitlements required, both tied to the binary path:
-- **Screen Recording** — System Settings → Privacy & Security → Screen Recording → add `.build/debug/MeetingCaptureCLI`. Symptom of missing grant: capture "succeeds" but produces a <0.5 s silent WAV; the code prints a hint.
-- **Microphone** — prompted on first mic use. No prompt usually means silent denial; re-grant manually.
-
-After rebuilds the path stays the same so grants persist.
+- **Screen & System Audio Recording** — add `.build/debug/MeetingCaptureCLI` or `~/.local/bin/meetingcapture`. Missing grant: capture "succeeds" with a <0.5 s silent file; the code prints a hint.
+- **Microphone** — prompted on first use; no prompt usually means silent denial.
 
 ## File-by-file
 
 ```
-main.swift           (MeetingCaptureCLI target) calls MeetingCaptureApp.main; everything else is in MeetingCaptureCore
-App.swift            flag parsing · shell bootstrap · flag-mode pipeline · setbuf
-Shell.swift          interactive menus (main + settings) · orchestrates the pipeline
+Sources/MeetingCaptureCLI/main.swift   calls MeetingCaptureApp.main; everything else is in MeetingCaptureCore
+
+MeetingCaptureCore/
+App.swift            flag parsing · --help · test-only flags behind MEETINGCAPTURE_E2E=1 · shell bootstrap · flag-mode pipeline · setbuf
+AppHome.swift        the folder holding .config/MeetingCapture; MEETINGCAPTURE_HOME replaces it only with MEETINGCAPTURE_E2E=1
+DesktopAPI.swift     facade the app and shell share: AppSettings, Recorder, MeetingProcessor (stage events), Library/LibraryEntry, ModelStore, SummaryService, LaunchEnvironment (PATH for Finder launches), ReportNavigation
+Shell.swift          interactive menus: main (1 record … 6 library, 7 groups), settings, API configurations · orchestrates the pipeline
 Menu.swift           termios cbreak list picker: Menu.pick (one-shot) + Menu.run (stays open, redraws in place)
-MeetingApps.swift    catalog of conferencing apps for SCStream audio auto-detection
-LLMProvider.swift    catalog of LLM provider presets (deepseek/openai/ollama/anthropic/custom) · ReasoningStyle (per-provider reasoning wire format) + host-aware reasoningStyle(baseURL:providerID:) · ReasoningEffort (unified off/low/medium/high depth) · LLMAPIStyle (openAIChat vs anthropicMessages wire protocol) · LLMProfile (one saved, switchable LLM configuration; reasoningEffort + reasoningStyleOverride, with legacy-key migration)
-Config.swift         persisted settings (JSON) · llmProfiles tree + active-profile helpers · path/api-key helpers · legacy-path + legacy-schema migration
-AudioCapture.swift   SCShareableContent → SCContentFilter → SCStream; owns the WAV writer indirectly
+MeetingApps.swift    catalog of conferencing apps for SCStream audio auto-detection (Zoom, Teams, Webex, Chrome, Safari)
+Config.swift         persisted settings (JSON) · llmRoute, primaryCLI, tier models, daily cap, redaction, retention · llmProfiles + active profile · legacy-path and legacy-schema migration
+LLMProvider.swift    API presets (deepseek/openai/ollama/anthropic/custom) · LLMAPIStyle (OpenAI chat vs Anthropic Messages) · ReasoningStyle/ReasoningEffort · LLMProfile
+APIKeyStore.swift    per-profile API keys (~/.config/MeetingCapture/llm_api_keys.json, mode 0600)
+AudioCapture.swift   SCShareableContent → SCContentFilter → SCStream
 MicCapture.swift     AVAudioEngine input tap · format conversion to 48 kHz mono
-EchoRemover.swift    after-the-call echo removal: lag and clock drift → sliding least squares → residual suppressor · EchoEvidence, the delay-and-level check on each mic line
 MicStartGate.swift   holds the mic until system audio starts
-TrackWriter.swift    two tracks (ch1 mic, ch2 system), writes int16 WAV; 30-min chunk rotation; pause/resume
+TrackWriter.swift    two tracks (ch1 mic, ch2 system), int16 WAV; 30-min chunk rotation; pause/resume
 CMSampleBuffer+PCM.swift  CMSampleBuffer → AVAudioPCMBuffer (handles non-interleaved ABL)
-Transcribe.swift     WhisperKit wrapper · language from the loudest 30 s · timestamped segments
-RecordingPipeline.swift  recorded files → labelled transcript → M4A, verified → WAV deleted
-AudioRetention.swift `<base>.mcmeta.json` sidecar · retention · unfinished recordings
-Summarize.swift      the API route: POST to the provider's endpoint (OpenAI-compatible /chat/completions OR Anthropic /messages, branched on LLMAPIStyle) via `complete(system:user:)` · per-provider reasoning serialization (DeepSeek `thinking` / OpenAI reasoning_effort / Anthropic adaptive thinking + output_config.effort) · ping() connectivity check
-APIKeyStore.swift    file-based LLM API keys, one per profile (~/.config/MeetingCapture/llm_api_keys.json, mode 0600)
-SummaryPipeline.swift  the one transcript → report path: redact, classify (cheap), sections (normal), concept search on names only (normal, tools on), review (frontier), restore · SummaryRoute picks the CLI or API backend
-Scenario.swift       scenario templates as JSON data: six built in, more from ~/.config/MeetingCapture/scenarios/*.json (D-82)
-Report.swift         the Report model every report renders from · TranscriptParser for `[hh:mm:ss] Speaker: text` lines
-ReportRenderer.swift  JSON → self-contained HTML (all text escaped, http/https links only, CSP blocks outside requests), markdown, terminal text · ReportFileName `<yyyyMMdd_HHmmss>_<topic>.html` · ReportFiles writes .md, .report.json and .html
-Notebook.swift       M5.1: the user's layer (`<base>.edits.json`, `<base>.notes.md`) merged at render · stale edits · delete to the Trash by the sidecar's lists only, sidecar last (D-93, D-95)
-Groups.swift         M5.2: `groups.json` (manual groups by base name) · allow-listed context from a group's earlier reports, capped, never a transcript · ReportInputs gathers notes, context and a pinned scenario for every route (D-94, D-96)
-Redactor.swift       regex redaction to `<EMAIL_1>`-style tokens before any LLM call, restored locally after
-LLMRouter.swift      which subscription CLI runs a call; tiers never mix across CLIs; switch only when usage is full
-ModelCLI.swift       pure description of a CLI call (args, tier, parsing); CLIRunner.swift starts it (no shell, allow-listed env)
-UsageLedger.swift    daily call count per CLI and last reported limits, file-locked
-SpeakerLabels.swift  mic track is `You`; speaker turns on the system track become `Speaker 1`, `Speaker 2`, …
 RecordingStopper.swift  lets exactly one stop through; arm() holds early stops until capture is live
 RecordingFiles.swift  how a recording's parts relate (meeting.wav, meeting_part2.wav, …; WAV or M4A)
+EchoRemover.swift    after-the-call echo removal: lag and clock drift → sliding least squares → residual suppressor · EchoEvidence, the delay-and-level check on each mic line
+Transcribe.swift     WhisperKit wrapper · language from the loudest 30 s · timestamped segments
+SpeakerLabels.swift  mic track is `You`; speaker turns on the system track become `Speaker 1`, `Speaker 2`, …
+RecordingPipeline.swift  recorded files → labelled transcript → M4A, verified → WAV deleted
 AudioArchive.swift   WAV → M4A, WAV deleted only once the M4A is proven good
+AudioRetention.swift `<base>.mcmeta.json` sidecar · retention · unfinished recordings
 AudioCleanup.swift   `--audio-cleanup`: lists old recordings, deletes only on an explicit answer
+Redactor.swift       regex redaction to `<EMAIL_1>`-style tokens before any LLM call, restored locally after · safePrefix: no cut inside a value a rule matches
+LLMRouter.swift      which subscription CLI runs a call; tiers never mix across CLIs; switch only when usage is full
+ModelCLI.swift       pure description of a CLI call (args, tier, parsing); CLIRunner.swift starts it (no shell, allow-listed env, empty temp cwd)
+UsageLedger.swift    daily call count per CLI and last reported limits, file-locked
+Summarize.swift      the API route: OpenAI-compatible /chat/completions or Anthropic /messages · per-provider reasoning · ping()
+SummaryPipeline.swift  transcript → report: redactTogether (transcript, notes, group context in one token space), classify (cheap), sections (normal), concept search on names only (normal, tools on), review (frontier, transcript plus group context), restore · SummaryRoute picks CLI or API
+Scenario.swift       scenario templates as JSON data: six built in, more from ~/.config/MeetingCapture/scenarios/*.json (D-82)
+Report.swift         the Report model every report renders from · item `source: "earlier"` · TranscriptParser for `[hh:mm:ss] Speaker: text` lines
+ReportRenderer.swift  JSON → self-contained HTML (all text escaped, http/https links only, CSP blocks outside requests), markdown, terminal text · ReportFiles writes .md, .report.json and `<yyyyMMdd_HHmmss>_<topic>.html`
+Notebook.swift       the user's layer (`<base>.edits.json`, `<base>.notes.md`) merged at render · stale edits · delete to the Trash by the sidecar's lists only, sidecar last (D-93, D-95)
+Groups.swift         `groups.json` (manual groups by base name, flock'd) · GroupContextBuilder: allow-listed, capped context from a group's earlier reports, never a transcript · ReportInputs gathers notes, context and a pinned scenario for every route (D-94, D-96, D-97)
 Diagnostics.swift    live checks that spend usage; only `check.sh --live` and `scripts/quality-compare.sh` run them
-Sources/Speexdsp/    Not built. Kept only so the echo lab's Speex baseline can be rerun; M6 deletes it (D-81)
-scripts/echo-lab/    M3.2's measuring tools: metrics, every candidate method, word scoring. Real calls only through real_counts.py, which prints counts
-install.sh           build (release) → install to ~/.local/bin → trigger TCC prompts
+
+MeetingCaptureDesktop/   SwiftUI app on DesktopAPI: AppModel, ContentView (sidebar + toolbar), RecordViews, ReportViews (WKWebView, non-persistent store), NotebookViews, GroupViews, SettingsViews
+
+scripts/             check.sh, ci.sh, sweeps (sweep.sh, identity.sh), e2e, build-app.sh, live and quality scripts
+scripts/echo-lab/    M3.2's measuring tools: metrics, candidate methods, word scoring. Real calls only through real_counts.py, which prints counts
+Tests/               MeetingCaptureCoreTests, FakeBin (fake claude/codex), Fixtures (invented only)
+install.sh           build (release) → install to ~/.local/bin → hooks → trigger TCC prompts
 ```
 
-Defaults (all overridable via Settings menu or flags):
-- Whisper: `openai_whisper-small`, VAD chunking off (D-39)
-- LLM: a **tree of named configurations** (`config.llmProfiles: [LLMProfile]`, one of them active via `config.selectedLLMProfileID`; `config.activeLLMProfile` resolves it, falling back to `.first` then a synthesized default). Each `LLMProfile` is self-contained — `name`, `providerID`, `model`, `baseURL`, `reasoningEffort`/`reasoningStyleOverride` — and has its own API key (see APIKeyStore below). API profiles are optional: by default (`config.llmRoute = .subscription`) summaries run on the logged-in `claude`/`codex` CLIs, and a fresh install has no profiles (`LLMProfile.defaultProfile()` is a key-less DeepSeek stand-in). Presets: `deepseek`, `openai`, `ollama`, `anthropic`, `custom` — see `LLMProvider.catalog`. A saved Qianfan or Kimi profile is dropped on load. **`anthropic` is the one preset that does NOT speak OpenAI's `/chat/completions`** — it carries `apiStyle: .anthropicMessages` and `Summarizer` branches to Anthropic's native Messages API (`POST {base}/messages`, `x-api-key` + `anthropic-version` headers, required `max_tokens`, top-level `system`, no `temperature`, `content[].text` response). Default model `claude-sonnet-4-6` at `https://api.anthropic.com/v1`. Each profile's `apiStyle` is host-aware (`LLMProvider.apiStyle(baseURL:providerID:)`): an `api.anthropic.com` base URL resolves to the Messages protocol even on a `custom` profile or a `--llm-base-url` override. Settings → LLM configurations lists all profiles (Enter on one makes it active instantly — `n`/`e`/`d` rows add/edit/delete); picking a preset prefills `baseURL`/`model` (still editable); `custom` lets you type your own. You can add any number of custom profiles. Settings → (per profile) Test connection runs a one-token ping (`Summarizer.ping`, `/chat/completions` or `/messages` per protocol).
-- Report scenario: **classified per transcript** by the cheap tier (`meeting`, `therapy`, `interview`, `one_on_one`, `lecture`, `general`); low confidence or a failed classifier uses `general` and says so. `--scenario <name>` forces one and skips the classifier; `--therapy` and `--summary-style` were removed and exit with a message. Templates are data (D-82). The model fills JSON only; `ReportRenderer` writes all HTML (spec 04). A failed review ships the draft with a "Not reviewed" banner; a malformed reply gets one retry, then a clear failure that keeps the transcript.
-- Reasoning mode: **multi-provider, off per profile.** One unified depth knob — `LLMProfile.reasoningEffort: ReasoningEffort` (`off`/`low`/`medium`/`high`) — that each provider maps to its own wire shape (`ReasoningStyle`): DeepSeek `thinking` (format `.thinking`; a stored `kimi` value reads as it), OpenAI `reasoning_effort`, Anthropic `thinking:{type:"adaptive"}` + `output_config.effort`; `Summarizer` serializes per style. The format is resolved **detect + override**, mirroring `apiStyle`: `LLMProvider.reasoningStyle(baseURL:providerID:)` auto-detects by host (anthropic/deepseek/openai), and `LLMProfile.reasoningStyleOverride` (set via Settings → Edit → "Reasoning format") forces a format on an unrecognized custom endpoint. `LLMProfile.effectiveReasoningStyle` = override ?? detect; `supportsReasoning` = effectiveReasoningStyle ≠ `.none`. Reasoning still requires a reasoning-capable model for that provider (e.g. an OpenAI o-series/gpt-5, not `gpt-4o-mini`); a model that rejects the param surfaces the provider's error. Ollama defaults to `.none` (use the override for local reasoning models). The editor offers a `5) Reasoning effort` picker + an `f) Reasoning format` override.
-- Output dir: `~/Documents/MeetingCapture`
-- Duration: 480 min (8h safety cap; Enter to stop, Space+Enter to pause/resume; recordings chunked every 30 min)
-- WAV while recording: interleaved two-track int16 @ 48 kHz (~11 MB/min), then M4A once proven good
-- Audio source: meeting-app auto-detect on (all 5 apps enabled). Settings → Audio source has an explicit "All system audio" toggle (`config.captureAllAudio`) that bypasses auto-detection; equivalent to the `--all-audio` flag.
+## Defaults
 
-API key resolution is **per profile** (first hit wins): `--llm-api-key` flag → `LLM_API_KEY` env (global, not per-profile — an escape hatch, not the normal path) → that profile's entry in the `APIKeyStore` JSON map (`~/.config/MeetingCapture/llm_api_keys.json`, mode 0600, keyed by `LLMProfile.id`). `Config.resolveApiKey(profileID:flag:)` / `Config.apiKeySource(profileID:)` take the profile id explicitly — callers always resolve against `config.activeLLMProfile.id` (shell) or the `--llm-profile`-selected profile (flag mode). The key file is set/cleared from Settings → LLM configurations → Edit → API key; it is kept OUT of `config.json` so the JSON stays safe to share. Note: a plaintext 0600 file is the user's explicit choice over the Keychain.
+All overridable in Settings (shell or app) or by flags.
 
-A pre-multi-profile config (flat `llmProviderID`/`llmModel`/`llmBaseURL`/... keys, no `llmProfiles`) is migrated on first load into a single `LLMProfile` with the fixed id `Config.migratedLegacyProfileID` ("migrated-legacy") so it has a predictable id; `Config.load()` then rewrites `config.json` to the new schema even if the user changes nothing that run.
+| Setting | Default |
+|---|---|
+| Whisper | `openai_whisper-small`, VAD chunking off (D-39), language auto |
+| Report route | `config.llmRoute = .subscription`, primary CLI `claude`, the other only when usage is full |
+| Tiers | cheap `haiku` / `gpt-6-luna`, normal `sonnet` / `gpt-6.1-sol`, frontier `opus` / `gpt-6-astra` (config, because names change) |
+| Daily cap | 200 calls per CLI per local day (D-18), `~/.config/MeetingCapture/usage.json` |
+| CLI API billing | refused (`allowCLIAPIBilling` false); `MEETINGCAPTURE_CLI_ONLY=1` refuses every API route (D-90) |
+| Redaction | on; a group's switch can only turn its context redaction off |
+| Scenario | classified per transcript (`meeting`, `therapy`, `interview`, `one_on_one`, `lecture`, `general`); low confidence → `general`, said so; `--scenario` forces one; a group can pin one |
+| Echo removal | on (`--no-aec` off) |
+| Output dir | `~/Documents/MeetingCapture` |
+| Audio retention | 30 days after `transcribedAt`; 0 keeps forever |
+| Safety cap | 480 min; Enter stops, Space+Enter pauses; 30-min chunks |
+| Audio source | meeting-app auto-detect, all five apps; `captureAllAudio` / `--all-audio` bypasses it |
+| Group context cap | 24,000 characters, 4,000 of notes per report, earlier reports only, newest first |
 
-Settings JSON: `~/.config/MeetingCapture/config.json` (moved from `~/Library/Application Support/MeetingCapture/`; the old path is read once and migrated forward on first load, non-destructively). Corrupt file → defaults + warning + a `config.json.corrupt` copy beside it, because the next Settings change saves over the original (D-54). Retention is then keep-forever (D-52).
+**API configurations** (`config.llmProfiles`, one active via `selectedLLMProfileID`) are self-contained: provider, model, base URL, reasoning effort and format override, and their own key. `anthropic` speaks the Messages API (`x-api-key`, `anthropic-version`, required `max_tokens`, top-level `system`); everything else speaks `/chat/completions`. `apiStyle` and the reasoning format are host-aware (`api.anthropic.com` → Messages even on `custom`), with `reasoningStyleOverride` for unrecognized endpoints. On an API profile every step uses its one model, the schema is in the prompt, and there is no concept search (D-86). Key resolution per profile: `--llm-api-key` → `$LLM_API_KEY` → `APIKeyStore`. A saved Qianfan or Kimi profile is dropped on load; a pre-multi-profile config migrates to one profile with id `migrated-legacy`.
+
+**Reports:** the model fills JSON only; `ReportRenderer` writes all HTML (spec 04). A failed review ships the draft with a "Not reviewed" banner; a malformed reply gets one retry, then a clear failure that keeps the transcript. Concept sources come only from the search call, reattached by name (D-84).
+
+Settings JSON: `~/.config/MeetingCapture/config.json` (an old `~/Library/Application Support/` path migrates forward once). Corrupt file → defaults + warning + a `config.json.corrupt` copy, and retention becomes keep-forever (D-52, D-54).
 
 ## Architecture gotchas
 
@@ -126,11 +131,13 @@ These are load-bearing and not obvious from reading a single file:
 - **A repeat isn't an echo, so labels go by delay and level, never by text (D-67).** A mic line is left out only if cleaning took at least 10 dB off the mic's loudest fifth and the cleaned loudest fifth is under a ceiling: 15 dB above the room, or 10 dB under this recording's own voice if that's lower. Talk-over also shows a big drop, so only level protects a soft speaker. The note and the sidecar give the times of left-out lines, never their words. Level is a mean of power, so one real word in a long line counts.
 - **A broadband echo figure can flatter (D-68).** Room noise is mostly low, so the broadband ceiling on `main-3` is 28 dB, but in the speech band it's 38 dB and the result is 29 dB. Output also falls below the room on some frames, so part of a figure can be room noise removed. Read `part1_speech_band` and the voice figures with any reduction figure. DTLN's 42 dB came with 10 dB off a voice.
 - **`words.py`'s repeat score can't see a lost repeat.** With no user voice at all it still scores over 95%, because an echo has the same words as its repeat. `masked_repeats.py` is the real test.
+- **Group context is redacted together with the transcript, in one token space (`SummaryPipeline.redactTogether`).** Redacting it separately would reuse `<EMAIL_1>` for two values, and restore would put back the wrong one. `GroupContextBuilder.render` strips every token shape from earlier reports first, and only allow-listed fields go in: never `transcript`, `quote`, `reviewChanges` or notices. Cuts go through `Redactor.safePrefix`, so a cap never splits a value a rule would match into two halves neither rule sees (D-94, D-96).
+- **The earlier mark is allowed only when context was sent.** The schema permits `source: "earlier"` only then, and `cleaned()` drops a stray one. A carried-forward fact keeps its mark in the next report's context (D-97, D-98).
 - **Do not enable Apple's Voice-Processing I/O on the mic input.** `AVAudioEngine.inputNode.setVoiceProcessingEnabled(true)` was tried (commit `a30025f`) to cancel the speaker→mic echo. It works as an AEC, but the API also switches the system audio HAL into "voice chat" mode — that ducks output (overriding user volume) and puts the mic into an exclusive voice-processing path. Any concurrent VoIP app (Zoom, Meet, Teams) that's also using VPIO is then unable to capture the mic, and its playback gets duck-attenuated. Recording becomes unusable in real meetings. **The fix is implemented:** `EchoRemover` works after the call on our own files, so it never claims the HAL session. Disable with `--no-aec` or Settings → Echo removal.
 
 ## Extending the tool
 
-Likely next rounds: see `dev/PLAN.md` (M4 onward).
+The refactor's milestones are done; new work starts from `dev/PLAN.md` and `dev/NOW.md`. Keep `docs/parity.md` current when either UI changes (`ParityTests` checks the terminal side), and keep the README's commands runnable.
 
 When working on the LLM side, follow `docs/specs/02-llm-providers.md`: the subscription CLIs are the default, and Qianfan and Kimi are gone.
 
@@ -138,7 +145,7 @@ When working on the shell, keep the "one keystroke to record" UX principle. If a
 
 Settings and the audio-source picker use `Menu.run`, not `Menu.pick`: it stays open and redraws the menu **in place** (clears its block, runs the per-selection handler, re-renders) so changing a setting never prints a fresh stacked copy. Consequence: pure toggles must NOT print confirmations (the `[bracketed]` value already updates on redraw); rely on the menu's own redraw for feedback. In-place redraw only happens on a real TTY — piped stdin falls back to a reprinted numbered list.
 
-The Settings menu is grouped with dimmed `MenuItem.separator(...)` header rows (Capture & transcription / LLM / Audio). Because separators shift row indices, the `Menu.run` handler dispatches on `buildItems()[i].key` (the item's shortcut char), **not** the positional index — so you can reorder rows or add/remove separators without renumbering the `switch`. `Menu.run` only ever calls the handler with the index of an *enabled* row, so separators are never dispatched. Shortcut keys must avoid `j`/`k`/`q`/`b` (reserved by the picker for navigation/back/quit).
+The Settings menu is grouped with dimmed `MenuItem.separator(...)` header rows (Capture & transcription / LLM / Audio). Because separators shift row indices, the `Menu.run` handler dispatches on `buildItems()[i].key` (the item's shortcut char), **not** the positional index — so you can reorder rows or add/remove separators without renumbering the `switch`. `Menu.run` only ever calls the handler with the index of an *enabled* row, so separators are never dispatched. Shortcut keys must avoid `j`/`k`/`q`/`b` (reserved by the picker for navigation/back/quit): on a TTY they never reach the handler, though piped tests still pass. Settings' Test CLI connection was `k` and unreachable until M6 moved it to `p`.
 
 <!-- devkit:start -->
 ## Dev system (devkit) — read this first in every new session

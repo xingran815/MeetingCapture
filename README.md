@@ -1,18 +1,19 @@
 # MeetingCapture
 
-A local-first macOS command-line tool that records your meeting audio (Zoom,
-Teams, Google Meet, anything that plays through the speakers), transcribes it
-on-device with [WhisperKit](https://github.com/argmaxinc/WhisperKit), and
-summarizes the transcript with a bring-your-own LLM. Audio and transcripts
-never leave your machine; only the final text is sent to the LLM endpoint you
-configure.
+A local-first macOS meeting helper. It records a call (Zoom, Teams, Webex, Google Meet in
+Chrome or Safari, or any system audio) together with your microphone, transcribes it on your
+Mac with [WhisperKit](https://github.com/argmaxinc/WhisperKit), and writes a
+report: a self-contained HTML page plus Markdown and JSON.
 
-Pick your LLM provider in **Settings → LLM provider**: presets for OpenAI, a
-local [Ollama](https://ollama.com/), or [Kimi-K2.5](https://platform.moonshot.ai/)
-via [Baidu Qianfan](https://qianfan.cloud.baidu.com/) (the default), plus a
-**Custom** option for any other OpenAI-compatible `/chat/completions` endpoint.
-A built-in **Test connection** check verifies the endpoint, key, and model
-before you rely on them.
+- **Two ways to use it:** a terminal shell (`meetingcapture`) and a desktop app
+  (`MeetingCapture.app`). Both read the same folder and settings.
+- **Reports through your own subscription:** by default the report is written by
+  the official `claude` or `codex` command-line tools, logged in with your own
+  account. An API key (OpenAI, Anthropic, DeepSeek, Ollama, or any compatible
+  endpoint) is optional.
+- **Audio and transcription never leave the Mac.** Only transcript text, with
+  formatted values such as emails and phone numbers replaced by tokens, goes to
+  the model.
 
 ---
 
@@ -20,150 +21,232 @@ before you rely on them.
 
 | | |
 |---|---|
-| macOS | 14.0+ (WhisperKit floor) |
-| Hardware | Apple Silicon recommended — Whisper runs on the Neural Engine. Intel works but is slow. |
-| Toolchain | Xcode 15+ / Swift 5.9 |
-| LLM | An API key for any OpenAI-compatible `/chat/completions` provider (OpenAI, Qianfan/Kimi, a local Ollama, etc.) |
+| macOS | 26 or later |
+| Hardware | Apple Silicon. Whisper runs on the Neural Engine. |
+| Toolchain | Xcode 26 or its Command Line Tools (Swift 6.2) |
+| Reports | `claude` (Claude Code) or `codex` (Codex CLI), logged in with your subscription; or an API key for an API configuration |
 
 ---
 
-## Recording disclosure & consent
+## Recording consent
 
-This tool captures audio via OS-level taps (system audio + your local mic). It
-does **not** notify other meeting participants — Zoom, Teams, and Meet only
-display a "recording" indicator when *their own* record button is used. Other
-participants will not know you're recording unless you tell them.
+MeetingCapture records through the operating system. It does **not** tell other
+participants, and the meeting app shows no "recording" badge.
 
-- **Disclose verbally before recording.** Consent-to-record laws vary by
-  jurisdiction (US two-party-consent states, GDPR in the EU, etc.). It is your
-  responsibility to comply with the law where you and the other participants
-  are located.
-- macOS displays a **purple dot** in the menu bar while Screen Recording is
-  active. Anyone watching your screen-share can see it.
+- **Say that you're recording, and get consent, before you start.** Recording
+  laws differ by place (all-party consent in some US states, GDPR in the EU, and
+  others). Following them where everyone on the call is located is your job.
+- macOS shows a purple indicator in the menu bar while audio is being captured.
 
 ---
 
-## Quick install
+## Install
+
+### Terminal
 
 ```bash
-git clone <this repo>
+git clone https://github.com/xingran815/MeetingCapture.git
 cd MeetingCapture
 ./install.sh
 ```
 
-Builds release, installs to `~/.local/bin/meetingcapture`, triggers the
-Microphone prompt, and walks you through the Screen Recording grant. Safe to
-re-run after rebuilds — TCC grants stay valid because the install path is
-stable.
+`install.sh` builds a release binary, installs it to
+`~/.local/bin/meetingcapture`, sets up the repo's git hooks, opens the Microphone
+prompt, and walks you through the Screen Recording grant. It's safe to run again
+after you pull: the path stays the same, so the grants stay valid.
 
-### Manual build (fallback)
+To build without installing:
 
 ```bash
-swift build -c release
+swift build
 ```
 
-The binary lands at `.build/release/MeetingCaptureCLI`. **Run the binary
-directly** — not via `swift run`. macOS ties Screen Recording permission to
-the binary path, and `swift run` invalidates that grant on every invocation.
+The binary is `.build/debug/MeetingCaptureCLI`. Run the binary itself, not
+through `swift run`: macOS ties the Screen Recording grant to the binary's path.
+
+### Desktop app
+
+```bash
+scripts/build-app.sh --install
+```
+
+This builds `.build/MeetingCapture.app` and copies it to `~/Applications`. The
+app has its own permissions, which it asks for on first run, and it downloads
+the Whisper model there with progress and Cancel. It is signed with your Apple
+Development identity if the keychain has one, otherwise ad-hoc. An ad-hoc app
+loses its permissions each time you rebuild it; it is meant for your own Mac,
+not for handing to others.
+
+### Permissions
+
+| Permission | Where | If it's missing |
+|---|---|---|
+| Screen & System Audio Recording | System Settings → Privacy & Security → Screen & System Audio Recording. Add `~/.local/bin/meetingcapture` (or `.build/debug/MeetingCaptureCLI`); the app asks for itself | Capture "succeeds" with a silent file under half a second; the tool prints a hint |
+| Microphone | Asked on first use | No prompt usually means it was denied; turn it on under Privacy & Security → Microphone |
 
 ---
 
-## Permissions (TCC)
+## Set up reports
 
-`./install.sh` handles both grants. If you built manually, do them by hand —
-both are pinned to the binary path and persist across rebuilds.
+### Subscription CLIs (default)
 
-1. **Screen Recording**
-   System Settings → Privacy & Security → **Screen Recording** → click **+**
-   and add the binary path (`~/.local/bin/meetingcapture` if you used the
-   installer, otherwise `<repo>/.build/release/MeetingCaptureCLI`).
-   *Symptom of missing grant:* the capture "succeeds" but the output WAV is
-   under 0.5 seconds and silent. The tool prints a hint when it detects this.
+Install and log in to at least one, with your own account:
 
-2. **Microphone**
-   Prompted on first mic use. If you don't see a prompt, macOS has silently
-   denied it — re-grant manually under Privacy & Security → **Microphone**.
+```bash
+claude --version
+codex --version
+```
 
----
+| | Claude Code | Codex |
+|---|---|---|
+| Log in | run `claude` once and sign in | `codex login` (ChatGPT sign-in) |
+| Cheap tier (topic and scenario) | `haiku` | `gpt-6-luna` |
+| Normal tier (sections) | `sonnet` | `gpt-6.1-sol` |
+| Frontier tier (review) | `opus` | `gpt-6-astra` |
 
-## LLM setup
+The primary CLI runs every step of a report; the other one takes over only when
+the primary's usage limit is full, and the report says so. Each CLI is capped at
+200 calls a day by default. A CLI that would bill an API key instead of your
+subscription is refused unless you set `"allowCLIAPIBilling": true` in
+`config.json`. Details, and what each limit means:
+[docs/llm-usage.md](docs/llm-usage.md).
 
-### Choose a provider
+Check that it works from the shell: **Settings → p Test CLI connection**, or in
+the app: **Settings → Summaries → Test**.
 
-Open the interactive shell → **Settings → LLM provider** and pick a preset:
+### API configurations (optional)
+
+In the shell, **Settings → 6 API configurations** keeps any number of named
+configurations, each with its own provider, model, base URL, reasoning effort
+and key:
 
 | Preset | Base URL | Default model |
 |---|---|---|
-| **Qianfan / Kimi** (default) | `https://qianfan.baidubce.com/v2/coding` | `kimi-k2.5` |
-| **OpenAI** | `https://api.openai.com/v1` | `gpt-4o-mini` |
-| **Ollama (local)** | `http://localhost:11434/v1` | `llama3.1` |
-| **Custom…** | *(you supply)* | *(you supply)* |
+| DeepSeek | `https://api.deepseek.com` | `deepseek-v4-flash` |
+| OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` |
+| Anthropic | `https://api.anthropic.com/v1` | `claude-sonnet-4-6` |
+| Ollama (local) | `http://localhost:11434/v1` | `llama3.1` |
+| Custom | yours | yours |
 
-Selecting a preset pre-fills the base URL and model; both stay editable under
-**LLM model** / **LLM base URL** (or via `--llm-model` / `--llm-base-url`).
-**Custom…** prompts for a name (e.g. "DeepSeek" — DeepSeek, Together, Groq, and
-most hosted LLMs expose an OpenAI-compatible endpoint), a base URL, and a model.
-Use **Settings → Test connection** to verify the endpoint, key, and model with a
-one-token request before recording.
-
-> The default, Qianfan, is a China-hosted service. To use it, sign up at
-> [qianfan.cloud.baidu.com](https://qianfan.cloud.baidu.com/), subscribe to the
-> coding plan (Kimi-K2.5 lives there), and create an API key in the console.
-
-### Store the key
-
-In resolution order (first hit wins):
-
-| Method | How | Notes |
-|---|---|---|
-| `--llm-api-key <key>` flag | On the command line | Visible in `ps`; use only for one-off scripting. |
-| `LLM_API_KEY` env var | `export LLM_API_KEY=…` | Legacy `QIANFAN_API_KEY` also accepted. |
-| Key file | Interactive shell → **Settings** → **LLM API key** | **Recommended.** Written to `~/.config/MeetingCapture/llm_api_key` (mode `0600`) — kept out of `config.json`. A key from an older version's Keychain entry is migrated here automatically. |
+Pick **Settings → c LLM route** to use the active API configuration instead of
+the CLIs. Keys are found in this order: `--llm-api-key`, then `$LLM_API_KEY`,
+then the key saved for that configuration in
+`~/.config/MeetingCapture/llm_api_keys.json` (mode 0600, never in
+`config.json`). On an API configuration every step uses its one model and there
+is no concept search.
 
 ---
 
-## Usage
+## Use it
 
-### Interactive shell (primary UX)
-
-```bash
-.build/debug/MeetingCaptureCLI
-```
-
-Menu-driven: **Record → Transcribe → Summarize**. Press Enter during a
-recording to stop early. All settings (Whisper model, LLM endpoint, output
-directory, default duration, LLM provider, reasoning-mode toggle) live under
-**Settings**.
-
-### Flag mode (scripting)
+### Terminal shell
 
 ```bash
-# Full pipeline: record 60 s, transcribe, summarize
-.build/debug/MeetingCaptureCLI --duration 60 --transcribe --summarize --output /tmp/m.wav
-
-# Transcribe or summarize an existing file
-.build/debug/MeetingCaptureCLI --transcribe-only /tmp/m.wav
-.build/debug/MeetingCaptureCLI --summarize-only /tmp/m.txt
-
-# Sanity-check: list what ScreenCaptureKit can see
-.build/debug/MeetingCaptureCLI --list
+meetingcapture
 ```
 
-Outputs default to `~/Documents/MeetingCapture/` — a `.wav`, a timestamped
-`.txt` transcript, and a Markdown `.md` summary per session.
+One key starts a recording. **Enter** stops it; **Space then Enter** pauses and
+resumes. When it stops, the recording is transcribed and the report written.
+
+| Key | Main menu |
+|---|---|
+| 1 | Record a meeting |
+| 2 | Transcribe a recording |
+| 3 | Summarize a `.txt` |
+| 4 | Rename or merge speakers |
+| 5 | Settings |
+| 6 | Library: open a report, transcribe again, write the report again, rename, notes, group, show in Finder, delete to the Trash |
+| 7 | Groups: reports that share context |
+
+### Desktop app
+
+Open **MeetingCapture** from `~/Applications`. Record from the toolbar (⌘R) or
+the large button; pause with ⇧⌘P, stop with ⌘. . Recordings and reports are in
+the sidebar. [docs/parity.md](docs/parity.md) lists where each feature lives in
+the app and in the shell.
+
+### Flags, for scripts
+
+```bash
+meetingcapture --help
+meetingcapture --list
+meetingcapture --duration 10 --transcribe --output /tmp/mc-demo.wav
+meetingcapture --transcribe-only /tmp/mc-demo.m4a
+meetingcapture --summarize-only Tests/Fixtures/live/meeting.txt
+meetingcapture --summarize-only Tests/Fixtures/live/meeting.txt --scenario meeting --llm-cli codex
+meetingcapture --audio-cleanup
+```
+
+`--list` shows the apps ScreenCaptureKit can see. `--audio-cleanup` lists old WAV
+recordings and converts or deletes only after you answer.
+
+---
+
+## What you get
+
+Everything goes to `~/Documents/MeetingCapture/` unless you change it
+(**Settings → 3**). For a recording named `<base>`:
+
+| File | What |
+|---|---|
+| `<base>.m4a` | The raw recording, two tracks: your mic and the system audio. Kept as WAV while recording, converted once the M4A is proven good |
+| `<base>_clean.m4a` | The same, with the speaker echo taken off your mic track, for listening |
+| `<base>.txt` | The transcript: `[hh:mm:ss] You: …`, `Speaker 1: …` |
+| `<yyyyMMdd_HHmmss>_<topic>.html` | The report: one page, works offline, light and dark, searchable transcript |
+| `<base>.md`, `<base>.report.json` | The same report as Markdown and as data |
+| `<base>.edits.json`, `<base>.notes.md` | Your title, edits and notes. A re-run never overwrites them |
+| `<base>.mcmeta.json` | Which files belong to this recording, for retention and delete |
+
+### Reports
+
+Each transcript is classified as a meeting, therapy session, interview,
+one-on-one, lecture or general conversation, and filled from that scenario's
+template. `--scenario <name>` skips the guess. Templates are JSON; a file in
+`~/.config/MeetingCapture/scenarios/` adds one or replaces a built-in. A
+frontier model reviews the draft against the transcript; if the review fails,
+the report says "Not reviewed".
+
+### Notebook
+
+A report is yours to change: rename it, keep notes beside it, edit its text (in
+the app), or move the recording to the Trash. Notes go to the model only if you
+turn that on for that report. Delete moves only the files the recording lists,
+to the Trash, never for good.
+
+### Groups
+
+Put related reports in a group (a weekly one-on-one, a course). A new report in
+a group gets the earlier reports in it as context: their titles, sections and
+items, never their transcripts or quotes, up to 24,000 characters, newest
+first. A fact that comes only from an earlier report is marked **From an earlier
+report, not said in this recording**, so you can tell the two apart. Groups
+live in `groups.json` in the output folder.
 
 ---
 
 ## Privacy
 
-- **Audio** is captured and mixed locally into a WAV file on your disk. It is
-  never uploaded anywhere.
-- **Transcription** runs entirely on-device via WhisperKit (CoreML). The
-  Whisper model is fetched from Hugging Face on first use and cached locally;
-  subsequent runs are offline.
-- **Summarization** is the only step that leaves the machine: the transcript
-  text is POSTed to whichever LLM endpoint you configured. Choose your
-  provider accordingly.
+| Step | Where it runs | What leaves the Mac |
+|---|---|---|
+| Recording | Your Mac | Nothing |
+| Echo removal, transcription, speaker turns | Your Mac (WhisperKit, SpeakerKit) | Nothing. Models are downloaded once from Hugging Face |
+| Report | `claude` or `codex` with your login, or your API configuration | The transcript text, redacted; your notes if you turned that on; a group's earlier reports, redacted |
+| Concept search | The CLI's web search | Generic concept names only, never a name, quote or personal detail |
+
+**Redaction** replaces formatted values before any model call: emails (also
+spoken ones), API keys, tokens in URLs, IBANs, card numbers, phone numbers, US
+SSNs, Chinese ID and mobile numbers. They're put back on your Mac afterwards.
+**It does not catch names**, addresses, or anything said without a fixed
+format: assume the provider sees those. Turn redaction off with **Settings → x**
+or `--no-redact`.
+
+**Retention:** audio is deleted 30 days after its transcript was saved
+(**Settings → d**; 0 keeps it forever). Only the files a recording's
+`.mcmeta.json` lists are deleted, and never audio without a transcript.
+Transcripts and reports are kept.
+
+The tool doesn't log keys, tokens or transcript text. See
+[SECURITY.md](SECURITY.md).
 
 ---
 
@@ -171,35 +254,29 @@ Outputs default to `~/Documents/MeetingCapture/` — a `.wav`, a timestamped
 
 | Symptom | Likely cause |
 |---|---|
-| WAV is 0 s / silent | Screen Recording permission missing or attached to the wrong binary path. Re-grant for `.build/debug/MeetingCaptureCLI`. |
-| No microphone prompt appeared | macOS silently denied. Grant manually under Privacy & Security → Microphone. |
-| `No display found` | ScreenCaptureKit needs an attached display. It does not work over SSH or on headless hardware. |
-| Zoom not detected | Run `--list`; look for `us.zoom.xos`. If absent, Zoom isn't running. Falls back to `--all-audio`. |
-| HTTP 401 from the LLM endpoint | API key unset or wrong. Re-enter under Settings → LLM API key, then Settings → Test connection. |
-| Echo of the other person's voice in the recording | Software AEC is on by default (Speex, 150 ms tail). If still audible, the mic may be too close to speakers or volume is very high — try headphones for critical recordings. Disable with `--no-aec` or Settings → AEC if you prefer. |
+| The recording is silent and under half a second | Screen & System Audio Recording isn't granted to this binary's path |
+| No microphone prompt | macOS denied it quietly; turn it on under Privacy & Security → Microphone |
+| `No display found` | ScreenCaptureKit needs a display; it doesn't work over SSH or headless |
+| The meeting app isn't detected | Run `meetingcapture --list`. Use **Settings → s Audio source → All system audio** or `--all-audio` |
+| "No subscription CLI is ready" | `claude` or `codex` isn't on `PATH` or isn't logged in. Run Test CLI connection |
+| A CLI is refused as "API billing" | It's logged in with an API key, not a subscription. Log in with your account, or set `allowCLIAPIBilling` in `config.json` |
+| Both CLIs are "usage full" | The daily cap or the subscription limit is reached. The transcript is kept; write the report again after the reset time shown |
+| The report says "Not reviewed" | The review step failed; the draft is shown as it was |
+| The app lost its permissions after a rebuild | It's signed ad-hoc. Grant them again, or build with an Apple Development identity |
+| You can still hear the other side faintly on your track | Echo removal works after the call and lowers it a lot, but not to zero. Headphones avoid it. `--no-aec` turns removal off |
 
 ---
 
-## Architecture
+## For developers
 
-```
-main.swift           flag parsing · shell bootstrap · flag-mode pipeline
-Shell.swift          interactive menus · orchestrates record → transcribe → summarize
-Menu.swift           arrow-key cbreak picker (+ piped-stdin fallback)
-Config.swift         persisted settings (JSON at ~/.config/MeetingCapture/)
-LLMProvider.swift    catalog of LLM provider presets (OpenAI, Ollama, Qianfan/Kimi, custom)
-APIKeyStore.swift    LLM API key file (~/.config/MeetingCapture/llm_api_key, mode 0600)
-Keychain.swift       legacy keychain read path (migrated to APIKeyStore on first use)
-AudioCapture.swift   ScreenCaptureKit stream (system audio)
-MicCapture.swift     AVAudioEngine input tap (mono, 48 kHz)
-EchoCanceller.swift  Speex-based acoustic echo cancellation (software AEC)
-MixingWriter.swift   sums mic + system into one interleaved f32 WAV
-CMSampleBuffer+PCM.swift   CMSampleBuffer → AVAudioPCMBuffer
-Transcribe.swift     WhisperKit wrapper with VAD chunking
-Summarize.swift      OpenAI-compatible POST to /chat/completions
+```bash
+scripts/setup.sh
+scripts/check.sh --unit
 ```
 
----
+`CLAUDE.md` describes the code, its gotchas, and the development rules;
+`scripts/check.sh --full` is the complete local check. Settings live in
+`~/.config/MeetingCapture/config.json`.
 
 ## License
 
