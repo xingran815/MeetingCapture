@@ -65,4 +65,11 @@ final class HelpTextTests: XCTestCase {
             XCTAssertTrue(app.contains("\"\(flag)\""), "--help lists \(flag), but App.swift never parses it")
         }
     }
+
+    /// M6 review L1: the menu is "API configurations" now.
+    func testM6ReviewL1_helpNamesAPIConfigurationsNotLLMConfigurations() throws {
+        let text = try help()
+        XCTAssertTrue(text.contains("API configurations"), text)
+        XCTAssertFalse(text.contains("LLM configurations"), text)
+    }
 }
