@@ -286,7 +286,7 @@ public enum MeetingCaptureApp {
         print(
             """
             ╔════════════════════════════════════════════╗
-            ║   MeetingCaptureCLI  ·  v0.6               ║
+            ║   MeetingCaptureCLI  ·  v0.7               ║
             ║   capture · transcribe · summarize         ║
             ╚════════════════════════════════════════════╝
             """)
