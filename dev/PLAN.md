@@ -1,5 +1,5 @@
 # Plan — MeetingCapture refactor
-Status: active · mode: 🏢 light production (adopted) · started 2026-11-06 · devkit 0.3.0
+Status: refactor done (M1–M6) · mode: 🏢 light production (adopted) · started 2026-11-06 · devkit 0.3.0
 
 ## Intention
 For its owner, a professional meeting helper (terminal and macOS app): speaker-labelled transcripts, scenario-based summaries through existing subscriptions, HTML reports, and no email or key leaks.
@@ -25,7 +25,7 @@ For its owner, a professional meeting helper (terminal and macOS app): speaker-l
 | 5 | Six designs, then the app | #9 | `m5-desktop` | yes | no | **picks a design** | done |
 | 5.1 | The report as a notebook: rename, notes, edit, delete to Trash | #22 | `m5.1-notebook` | yes | **yes** (deletes files) | no | done |
 | 5.2 | Groups that share report context | #23 | `m5.2-groups` | yes | reviewer and `/security-review` (context leaves the machine) | **compares a report with and without group context** | done (read passed, D-98) |
-| 6 | Docs, security pass, SpeexDSP removal | #10 | `m6-docs-release` | yes | **yes** | no | todo |
+| 6 | Docs, security pass, SpeexDSP removal | #10 | `m6-docs-release` | yes | **yes**, with `/security-review` | no | done |
 
 Each milestone's Done-when list is in `docs/specs/0<n>-*.md`. M3.1's is `docs/specs/03.1-faster-checks.md`. M3.2's is `docs/specs/03.2-echo.md`. M5.1's and M5.2's are `docs/specs/05.1-notebook.md` and `docs/specs/05.2-groups.md`. Its researcher, developer and reviewer subagents, and its `/goal`-style loop, apply to that milestone only (D-59).
 
