@@ -161,7 +161,9 @@ public enum MeetingCaptureApp {
                 MeetingCaptureCLI  —  capture, transcribe, summarize meetings, all local
 
                 Usage:
-                  swift run MeetingCaptureCLI [options]
+                  meetingcapture [options]          (installed by install.sh)
+                  .build/debug/MeetingCaptureCLI [options]
+                  With no options, opens the interactive shell.
 
                 Capture options:
                   --duration <sec>      Maximum capture duration          (default: 28800 = 8h safety cap)
@@ -205,9 +207,9 @@ public enum MeetingCaptureApp {
                   • Microphone (prompted on first mic use)
 
                 Examples:
-                  MeetingCaptureCLI --duration 60 --transcribe --summarize --output zoom.wav
-                  MeetingCaptureCLI --transcribe-only /tmp/with_mic.wav --summarize
-                  MeetingCaptureCLI --summarize-only /tmp/with_mic.txt
+                  meetingcapture --duration 60 --transcribe --summarize --output zoom.wav
+                  meetingcapture --transcribe-only /tmp/with_mic.wav --summarize
+                  meetingcapture --summarize-only /tmp/with_mic.txt
                 """)
             exit(0)
         }

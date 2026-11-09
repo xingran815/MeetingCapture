@@ -697,7 +697,7 @@ final class Shell {
                     key: "t", label: "CLI tier models         [\(c.claudeModels.normal) · \(c.codexModels.normal)]"),
                 MenuItem(key: "l", label: "Daily CLI call cap      [\(c.dailyCLICallCap) per CLI]"),
                 MenuItem(key: "x", label: "Redaction               [\(c.redactionEnabled ? "on" : "off")]"),
-                MenuItem(key: "k", label: "Test CLI connection"),
+                MenuItem(key: "p", label: "Test CLI connection"),
                 MenuItem(key: "6", label: "API configurations      [\(c.llmProfiles.count) saved]"),
                 .separator("   \(ledger.summaryLine(.claude, cap: c.dailyCLICallCap))"),
                 .separator("   \(ledger.summaryLine(.codex, cap: c.dailyCLICallCap))"),
@@ -733,7 +733,7 @@ final class Shell {
             case "t": promptTierModels()
             case "l": promptInt(\.dailyCLICallCap, label: "daily calls per CLI", min: 1, max: 10_000)
             case "x": toggle(\.redactionEnabled, label: "Redaction")
-            case "k": testCLIConnection()
+            case "p": testCLIConnection()
             case "a":
                 if config.micEnabled {
                     toggle(\.aecEnabled, label: "Echo removal")

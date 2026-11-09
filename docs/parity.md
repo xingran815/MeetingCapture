@@ -29,7 +29,7 @@ Spec 05: the terminal has every desktop feature, plus finer settings. Check this
 | See groups | Sidebar sections | Main menu 7, Library › g shows the group |
 | Primary CLI | Settings › Summaries | Settings › c LLM route |
 | Usage today | Settings › Summaries | Settings, the two usage lines |
-| Connection test | Settings › Summaries › Test | Settings › k Test CLI connection |
+| Connection test | Settings › Summaries › Test | Settings › p Test CLI connection |
 | Keep audio for (days) | Settings › General | Settings › d |
 | Output folder | Settings › General | Settings › 3 |
 | Whisper model | Settings › General | Settings › 1 |
