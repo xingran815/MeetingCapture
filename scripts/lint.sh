@@ -22,7 +22,6 @@ for tool in shellcheck actionlint; do
     fi
 done
 
-# Sources/Speexdsp is vendored, so it isn't ours to format.
 SWIFT_ROOTS=(Package.swift Sources/MeetingCaptureCore Sources/MeetingCaptureCLI Sources/MeetingCaptureDesktop Tests)
 
 format_failed() {

@@ -165,32 +165,6 @@ def residual_suppress(e, yh, n=1024, over=2.0, floor_db=-30, decay=0.6, guard=4.
     return y
 
 
-SPEEX_DIR = lab.REPO / "Sources/Speexdsp"
-SPEEX_BIN = lab.LAB / "bin/speex_run"
-
-
-def speex(mic, ref, tail_ms=500, preprocess=True, lag=0):
-    if not SPEEX_BIN.exists():
-        SPEEX_BIN.parent.mkdir(parents=True, exist_ok=True)
-        c = [str(p) for p in SPEEX_DIR.glob("*.c")]
-        subprocess.run(
-            ["clang", "-O2", "-DFLOATING_POINT", "-DUSE_KISS_FFT", "-DEXPORT=",
-             f"-I{SPEEX_DIR}", f"-I{SPEEX_DIR}/include",
-             str(Path(__file__).parent / "speex_run.c"), *c, "-lm", "-o", str(SPEEX_BIN)],
-            check=True,
-        )
-    n = min(len(mic), len(ref))
-    r = np.concatenate([np.zeros(lag, dtype=np.float32), ref[: n - lag]]) if lag else ref[:n]
-    with tempfile.TemporaryDirectory() as d:
-        a, b, c = Path(d, "m"), Path(d, "r"), Path(d, "o")
-        (np.clip(mic[:n], -1, 1) * 32767).astype(np.int16).tofile(a)
-        (np.clip(r, -1, 1) * 32767).astype(np.int16).tofile(b)
-        subprocess.run([str(SPEEX_BIN), str(a), str(b), str(c), str(int(tail_ms * 48)), "1" if preprocess else "0"],
-                       check=True)
-        out = np.fromfile(c, dtype=np.int16).astype(np.float64) / 32768.0
-    return np.concatenate([out, np.zeros(max(0, n - len(out)))])[:n]
-
-
 def _k(**kw):
     def run(mic, ref):
         return kalman(mic, ref, **kw)[0]
@@ -208,19 +182,8 @@ def _kr(res=None, **kw):
     return run
 
 
-def _lag_speex(tail_ms, preprocess):
-    def run(mic, ref):
-        lag = global_lag(mic, ref)
-        return speex(mic, ref, tail_ms, preprocess, max(lag - 960, 0))
-
-    return run
-
-
 METHODS = {
     "raw": lambda m, r: m.astype(np.float64),
-    "speex-live": lambda m, r: speex(m, r, 500, True),
-    "speex-nopp": lambda m, r: speex(m, r, 500, False),
-    "speex-aligned": _lag_speex(300, True),
     "kalman-24": _k(parts=24),
     "kalman-24-2pass": _k(parts=24, passes=2),
     "kalman-48": _k(parts=48),

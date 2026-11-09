@@ -95,22 +95,18 @@ scan_diff() {
             $new_left--;
             $line++;
             my $t = substr($l, 1);
-            # Vendored upstream licence headers carry public maintainer addresses.
-            my $vendored = index($path, "Sources/Speexdsp/") == 0;
-            unless ($vendored) {
-                while ($t =~ /($email)/g) {
-                    my $v = $1;
-                    next if $v =~ /\@(?:[A-Za-z0-9-]+\.)*example\.(?:com|org|cn)$/i;
-                    next if $v =~ /noreply/i;
-                    next if $v =~ /^git\@/;
-                    next if allowed("identity-email", $path, $v);
-                    hit("identity-email", $path, $line);
-                }
-                while ($t =~ m{(/Users/[A-Za-z0-9._-]+/)}g) {
-                    my $v = $1;
-                    next if $v eq "/Users/Shared/" || allowed("identity-user-path", $path, $v);
-                    hit("identity-user-path", $path, $line);
-                }
+            while ($t =~ /($email)/g) {
+                my $v = $1;
+                next if $v =~ /\@(?:[A-Za-z0-9-]+\.)*example\.(?:com|org|cn)$/i;
+                next if $v =~ /noreply/i;
+                next if $v =~ /^git\@/;
+                next if allowed("identity-email", $path, $v);
+                hit("identity-email", $path, $line);
+            }
+            while ($t =~ m{(/Users/[A-Za-z0-9._-]+/)}g) {
+                my $v = $1;
+                next if $v eq "/Users/Shared/" || allowed("identity-user-path", $path, $v);
+                hit("identity-user-path", $path, $line);
             }
             for my $r (@secret) {
                 while ($t =~ /($r->[1])/g) {
