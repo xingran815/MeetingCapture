@@ -187,8 +187,8 @@ recordings and converts or deletes only after you answer.
 ## What you get
 
 Recordings go to `~/Documents/MeetingCapture/` unless you change it
-(**Settings → 3**). In flag mode, `--output` without a folder writes to the
-current folder, which retention doesn't cover. For a recording named `<base>`:
+(**Settings → 3**). In flag mode, a recording goes to the current folder
+unless `--output` names another, and retention doesn't cover it there. For a recording named `<base>`:
 
 | File | What |
 |---|---|
