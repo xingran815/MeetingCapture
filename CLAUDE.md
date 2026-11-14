@@ -41,7 +41,7 @@ AppHome.swift        the folder holding .config/MeetingCapture; MEETINGCAPTURE_H
 DesktopAPI.swift     facade the app and shell share: AppSettings, Recorder, MeetingProcessor (stage events), Library/LibraryEntry, ModelStore, SummaryService, LaunchEnvironment (PATH for Finder launches), ReportNavigation
 Shell.swift          interactive menus: main (1 record … 6 library, 7 groups), settings, API configurations · orchestrates the pipeline
 Menu.swift           termios cbreak list picker: Menu.pick (one-shot) + Menu.run (stays open, redraws in place)
-MeetingApps.swift    catalog of conferencing apps for SCStream audio auto-detection (Zoom, Teams, Webex, Chrome, Safari)
+MeetingApps.swift    catalog of conferencing apps for SCStream audio auto-detection (Zoom, Teams, Webex, VSee, Chrome, Safari)
 Config.swift         persisted settings (JSON) · llmRoute, primaryCLI, tier models, daily cap, redaction, retention · llmProfiles + active profile · legacy-path and legacy-schema migration
 LLMProvider.swift    API presets (deepseek/openai/ollama/anthropic/custom) · LLMAPIStyle (OpenAI chat vs Anthropic Messages) · ReasoningStyle/ReasoningEffort · LLMProfile
 APIKeyStore.swift    per-profile API keys (~/.config/MeetingCapture/llm_api_keys.json, mode 0600)
@@ -97,7 +97,7 @@ All overridable in Settings (shell or app) or by flags.
 | Output dir | `~/Documents/MeetingCapture` |
 | Audio retention | 30 days after `transcribedAt`; 0 keeps forever |
 | Safety cap | 480 min; Enter stops, Space+Enter pauses; 30-min chunks |
-| Audio source | meeting-app auto-detect, all five apps; `captureAllAudio` / `--all-audio` bypasses it |
+| Audio source | meeting-app auto-detect, all six apps (an app added later starts enabled); `captureAllAudio` / `--all-audio` bypasses it |
 | Group context cap | 24,000 characters, 4,000 of notes per report, earlier reports only, newest first |
 
 **API configurations** (`config.llmProfiles`, one active via `selectedLLMProfileID`) are self-contained: provider, model, base URL, reasoning effort and format override, and their own key. `anthropic` speaks the Messages API (`x-api-key`, `anthropic-version`, required `max_tokens`, top-level `system`); everything else speaks `/chat/completions`. `apiStyle` and the reasoning format are host-aware (`api.anthropic.com` → Messages even on `custom`), with `reasoningStyleOverride` for unrecognized endpoints. On an API profile every step uses its one model, the schema is in the prompt, and there is no concept search (D-86). Key resolution per profile: `--llm-api-key` → `$LLM_API_KEY` → `APIKeyStore`. A saved Qianfan or Kimi profile is dropped on load; a pre-multi-profile config migrates to one profile with id `migrated-legacy`.

@@ -1,6 +1,6 @@
 # MeetingCapture
 
-A local-first macOS meeting helper. It records a call (Zoom, Teams, Webex, Google Meet in
+A local-first macOS meeting helper. It records a call (Zoom, Teams, Webex, VSee, Google Meet in
 Chrome or Safari, or any system audio) together with your microphone, transcribes it on your
 Mac with [WhisperKit](https://github.com/argmaxinc/WhisperKit), and writes a
 report: a self-contained HTML page plus Markdown and JSON.
@@ -264,6 +264,7 @@ The tool doesn't log keys, tokens or transcript text. See
 | No microphone prompt | macOS denied it quietly; turn it on under Privacy & Security → Microphone |
 | `No display found` | ScreenCaptureKit needs a display; it doesn't work over SSH or headless |
 | The meeting app isn't detected | Run `meetingcapture --list`. Use **Settings → s Audio source → All system audio** or `--all-audio` |
+| The transcript has only `You` lines | The call ran in an app that isn't on the list while Chrome or Safari was open, so only the browser was recorded. Use **All system audio** or `--all-audio` for that app |
 | "No subscription CLI is ready" | `claude` or `codex` isn't on `PATH` or isn't logged in. Run Test CLI connection |
 | A CLI is refused as "API billing" | It's logged in with an API key, not a subscription. Log in with your account, or set `allowCLIAPIBilling` in `config.json` |
 | Both CLIs are "usage full" | The daily cap or the subscription limit is reached. The transcript is kept; write the report again after the reset time shown |

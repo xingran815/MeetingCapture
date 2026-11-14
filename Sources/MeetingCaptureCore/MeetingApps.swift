@@ -36,6 +36,11 @@ extension MeetingApp {
                 "Cisco-Systems.Spark",
                 "com.cisco.webexmeetings",
             ]),
+        // A video-call app with no browser tab. It must come before the browsers: with a
+        // browser open as well, a browser match would scope capture to a tab that is silent.
+        MeetingApp(
+            id: "vsee", label: "VSee",
+            bundleIDs: ["com.vsee.VSee"]),
         MeetingApp(
             id: "chrome", label: "Google Chrome (Meet)",
             bundleIDs: ["com.google.Chrome"]),
@@ -49,4 +54,8 @@ extension MeetingApp {
 
     /// All catalog ids — the default "everything enabled" set.
     static var allIDs: [String] { catalog.map(\.id) }
+
+    /// The catalog before configs recorded which ids they had seen. A config without
+    /// `knownMeetingAppIDs` was saved against exactly these.
+    static let firstReleaseIDs = ["zoom", "teams", "webex", "chrome", "safari"]
 }

@@ -27,6 +27,9 @@ struct Config: Codable, Equatable {
     /// Meeting-app ids eligible for SCStream auto-detection (see MeetingApp.catalog).
     /// Empty / none-running → capture falls back to all system audio.
     var enabledMeetingAppIDs: [String] = MeetingApp.allIDs
+    /// The catalog ids this config has seen, saved so an app added to the catalog later
+    /// starts enabled instead of being read as one the user switched off.
+    private(set) var knownMeetingAppIDs: [String] = MeetingApp.allIDs
     /// When true, capture ALL system audio regardless of which meeting apps are
     /// running — the app auto-detection is bypassed entirely.
     var captureAllAudio: Bool = false
@@ -85,7 +88,7 @@ struct Config: Codable, Equatable {
     // Custom decoder provides defaults for missing keys (backward compat).
     enum CodingKeys: String, CodingKey {
         case whisperModel, whisperLanguage, defaultDurationMinutes, outputDirectory
-        case autoTranscribe, autoSummarize, aecEnabled, micEnabled, enabledMeetingAppIDs
+        case autoTranscribe, autoSummarize, aecEnabled, micEnabled, enabledMeetingAppIDs, knownMeetingAppIDs
         case captureAllAudio
         case llmProfiles, selectedLLMProfileID
         case llmRoute, primaryCLI, dailyCLICallCap, claudeModels, codexModels
@@ -116,6 +119,17 @@ struct Config: Codable, Equatable {
         aecEnabled = try c.decodeIfPresent(Bool.self, forKey: .aecEnabled) ?? true
         micEnabled = try c.decodeIfPresent(Bool.self, forKey: .micEnabled) ?? true
         enabledMeetingAppIDs = try c.decodeIfPresent([String].self, forKey: .enabledMeetingAppIDs) ?? MeetingApp.allIDs
+        // An app the catalog gained since this config was saved starts enabled; one the
+        // user had seen and switched off stays off.
+        let known = try c.decodeIfPresent([String].self, forKey: .knownMeetingAppIDs) ?? MeetingApp.firstReleaseIDs
+        let added = MeetingApp.allIDs.filter { !known.contains($0) && !enabledMeetingAppIDs.contains($0) }
+        if !added.isEmpty {
+            let enabled = Set(enabledMeetingAppIDs + added)
+            enabledMeetingAppIDs =
+                MeetingApp.allIDs.filter { enabled.contains($0) }
+                + enabledMeetingAppIDs.filter { !MeetingApp.allIDs.contains($0) }
+        }
+        knownMeetingAppIDs = MeetingApp.allIDs
         captureAllAudio = try c.decodeIfPresent(Bool.self, forKey: .captureAllAudio) ?? false
 
         llmRoute = try c.decodeIfPresent(LLMRoute.self, forKey: .llmRoute) ?? .subscription
