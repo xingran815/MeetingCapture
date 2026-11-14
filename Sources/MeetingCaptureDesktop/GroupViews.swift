@@ -8,6 +8,7 @@ import SwiftUI
 /// Make a group with the selected report in it.
 struct NewGroupSheet: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.theme) private var theme
     @Environment(\.dismiss) private var dismiss
     let entry: LibraryEntry
     @State private var name = ""
@@ -15,21 +16,18 @@ struct NewGroupSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("New Group").font(.title2.weight(.semibold))
-            TextField("Name, such as Weekly team meeting", text: $name).textFieldStyle(.roundedBorder).onSubmit(save)
+            SectionHead("new group")
+            TerminalField(prompt: "Name, such as Weekly team meeting", text: $name, submit: save)
             Text(
                 "A report written in a group gets the group's earlier reports as context: their titles, sections and items, never a transcript."
             )
-            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            if let error { Text(error).foregroundStyle(.red).font(.callout) }
-            HStack {
-                Spacer()
-                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Create") { save() }.keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent)
-            }
+            .font(.mono(11.5)).foregroundStyle(theme.dim).fixedSize(horizontal: false, vertical: true)
+            if let error { Text("! " + error).foregroundStyle(theme.rec).font(.mono(12.5)) }
+            SheetButtons(cancel: { dismiss() }, confirm: ("Create", save))
         }
         .padding(20)
-        .frame(width: 440)
+        .frame(width: 460)
+        .background(theme.ground)
     }
 
     private func save() {
@@ -47,6 +45,7 @@ struct NewGroupSheet: View {
 /// Every group: rename, the redaction switch, a pinned scenario, delete.
 struct GroupsSheet: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.theme) private var theme
     @Environment(\.dismiss) private var dismiss
     @State private var names: [String: String] = [:]
     @State private var newName = ""
@@ -58,13 +57,13 @@ struct GroupsSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Groups").font(.title2.weight(.semibold))
+            SectionHead("groups")
             Text(
                 "A report written in a group gets the group's earlier reports as context, never a transcript. Put a report in a group from More › Group."
             )
-            .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            .font(.mono(12.5)).foregroundStyle(theme.dim).fixedSize(horizontal: false, vertical: true)
             if let problem = model.groupsProblem {
-                Label(problem, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+                Text("! " + problem).font(.mono(12.5)).foregroundStyle(theme.amber)
             }
             Form {
                 ForEach(model.groups) { group in
@@ -79,15 +78,13 @@ struct GroupsSheet: View {
                     }
                 }
             }
-            .formStyle(.grouped)
-            if let error { Text(error).foregroundStyle(.red).font(.callout) }
-            HStack {
-                Spacer()
-                Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
-            }
+            .formStyle(.grouped).scrollContentBackground(.hidden)
+            if let error { Text("! " + error).foregroundStyle(theme.rec).font(.mono(12.5)) }
+            SheetButtons(cancel: nil, confirm: ("Done", { dismiss() }))
         }
         .padding(20)
         .frame(minWidth: 520, idealWidth: 560, minHeight: 420, idealHeight: 520)
+        .background(theme.ground)
         .onAppear {
             global = ReportGroups.globalRedaction
             scenarios = ReportGroups.scenarioChoices

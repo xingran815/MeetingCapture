@@ -4,6 +4,30 @@ import CoreGraphics
 import MeetingCaptureCore
 import Observation
 
+/// What the app needs from a recording. `Recorder` is the real one; tests and the
+/// E2E screenshots give a stand-in, so nothing but `Recorder` touches capture.
+@MainActor
+protocol RecordingSession: AnyObject {
+    var base: URL { get }
+    func start() async throws -> [URL]
+    @discardableResult func togglePause() -> Bool
+    /// Safe before capture is live: the real one holds the stop until then (`RecordingStopper.arm()`).
+    func stop()
+    var isLive: Bool { get }
+    var elapsedSeconds: Double { get }
+    var isPaused: Bool { get }
+    var levels: (mic: Float, system: Float) { get }
+    var sourceLabel: String { get }
+}
+
+extension Recorder: RecordingSession {}
+
+/// The three recording actions. The toolbar, the Recording menu's keys and the menu bar
+/// extra all go through `AppModel.perform`, so they can't drift apart (spec 07).
+enum RecordingCommand: CaseIterable {
+    case start, pauseResume, stop
+}
+
 /// The app's state. Every action calls into `MeetingCaptureCore`; nothing here decides
 /// how audio, transcripts or reports are made.
 @MainActor
@@ -90,8 +114,12 @@ final class AppModel {
     var micStatus: AVAuthorizationStatus = AVCaptureDevice.authorizationStatus(for: .audio)
     var screenAllowed = CGPreflightScreenCaptureAccess()
 
-    private var recorder: Recorder?
+    private var recorder: RecordingSession?
     private var meterTimer: Timer?
+    /// Makes the session `startRecording` uses. Only tests and the E2E demo change it.
+    var makeSession: () throws -> RecordingSession = { try Recorder.prepare() }
+    /// Runs after a recording ends with its parts. Tests replace it so nothing is transcribed.
+    var afterRecording: ((_ parts: [URL], _ base: URL) -> Void)?
 
     init() {
         let s = AppSettings.load()
@@ -100,6 +128,7 @@ final class AppModel {
             || AVCaptureDevice.authorizationStatus(for: .audio) != .authorized || !CGPreflightScreenCaptureAccess()
         Library.cleanOldAudio(settings: s)
         reload()
+        DemoState.applyIfAsked(to: self)
     }
 
     var selectedEntry: LibraryEntry? { entries.first { $0.id == selection } }
@@ -127,11 +156,56 @@ final class AppModel {
 
     // MARK: Recording
 
+    func canPerform(_ command: RecordingCommand) -> Bool {
+        switch command {
+        case .start: return phase == .idle && !needsSetup
+        case .pauseResume: return phase == .recording
+        case .stop: return phase != .idle
+        }
+    }
+
+    func perform(_ command: RecordingCommand) {
+        switch command {
+        case .start: startRecording()
+        case .pauseResume: togglePause()
+        case .stop: stopRecording()
+        }
+    }
+
+    /// What the app is doing, for the menu bar extra and the status line. A recording
+    /// wins over work after an earlier call, which goes on underneath.
+    enum Activity: Equatable {
+        case idle
+        case starting
+        case recording(elapsed: Double)
+        case paused(elapsed: Double)
+        /// Step `step` of `of`, such as 3 of 6, with the running step's name.
+        case processing(step: Int, of: Int, name: String)
+    }
+
+    var activity: Activity {
+        switch phase {
+        case .starting: return .starting
+        case .recording: return paused ? .paused(elapsed: elapsed) : .recording(elapsed: elapsed)
+        case .idle:
+            guard let job, !job.finished else { return .idle }
+            let index =
+                job.steps.firstIndex { $0.status == .running }
+                ?? job.steps.firstIndex { $0.status == .waiting } ?? 0
+            return .processing(step: index + 1, of: job.steps.count, name: job.steps[index].stage.title)
+        }
+    }
+
+    /// The newest recording with a report, for the menu bar's "last report".
+    var lastReport: LibraryEntry? {
+        entries.filter(\.hasReport).max { $0.createdAt < $1.createdAt }
+    }
+
     func startRecording() {
         guard phase == .idle else { return }
         recordError = nil
-        let recorder: Recorder
-        do { recorder = try Recorder.prepare() } catch {
+        let recorder: RecordingSession
+        do { recorder = try makeSession() } catch {
             recordError = "Couldn't prepare the recording: \(error.localizedDescription)"
             return
         }
@@ -170,6 +244,9 @@ final class AppModel {
         guard phase == .recording, let recorder else { return }
         paused = recorder.togglePause()
     }
+
+    /// The session being recorded, for tests.
+    var currentSession: RecordingSession? { recorder }
 
     func stopRecording() {
         recorder?.stop()
@@ -236,12 +313,23 @@ final class AppModel {
         stopMeters()
         phase = .idle
         recorder = nil
-        process(parts: parts, base: base)
+        if let afterRecording {
+            afterRecording(parts, base)
+        } else {
+            process(parts: parts, base: base)
+        }
     }
 
     // MARK: After the call
 
     var isProcessing: Bool { job.map { !$0.finished } ?? false }
+
+    /// For the E2E demo only: shows a job without running one.
+    func showDemoJob(_ job: Job) {
+        self.job = job
+        showsJob = true
+        selection = nil
+    }
 
     func process(parts: [URL], base: URL) {
         let processor = MeetingProcessor()

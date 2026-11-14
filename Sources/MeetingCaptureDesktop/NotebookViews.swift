@@ -7,6 +7,7 @@ import SwiftUI
 /// The notes beside the report, edited in place and saved a moment after typing stops.
 struct NotesInspector: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.theme) private var theme
     let entry: LibraryEntry
     @State private var text = ""
     @State private var sendToLLM = false
@@ -17,15 +18,17 @@ struct NotesInspector: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Notes").font(.headline)
+            SectionHead("notes")
             TextEditor(text: $text)
-                .font(.body)
+                .font(.mono(12.5))
                 .scrollContentBackground(.hidden)
                 .padding(6)
-                .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
+                .background(theme.ground)
+                .overlay(Rectangle().strokeBorder(theme.line2, lineWidth: 1))
                 .accessibilityLabel("Notes")
                 .onChange(of: text) { _, new in scheduleSave(new) }
             Toggle("Use notes when writing the report", isOn: $sendToLLM)
+                .font(.mono(12))
                 .onChange(of: sendToLLM) { _, on in
                     guard on != entry.sendsNotesToLLM else { return }
                     model.notebook { try entry.setSendNotesToLLM(on) }
@@ -33,7 +36,7 @@ struct NotesInspector: View {
             Text(
                 "Notes stay on this Mac unless this is on. When it is, they go to the model with the transcript, redacted the same way."
             )
-            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            .font(.mono(11.5)).foregroundStyle(theme.dim).fixedSize(horizontal: false, vertical: true)
         }
         .padding(12)
         .onAppear(perform: load)
@@ -83,12 +86,13 @@ struct NotesInspector: View {
 /// Says when edits no longer match the report, and lets the user keep or drop them.
 struct StaleEditsBanner: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.theme) private var theme
     let entry: LibraryEntry
     let count: Int
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
+            Text("! EDITS").fontWeight(.bold).foregroundStyle(theme.amber)
             Text(
                 count == 1
                     ? "1 edit no longer matches the report, so it isn't shown."
@@ -96,11 +100,15 @@ struct StaleEditsBanner: View {
             )
             Spacer()
             Button("Keep") { model.notebook { try entry.resolveStaleEdits(keep: true) } }
+                .buttonStyle(.terminal(.quiet))
                 .help("Put your edits back over the text that's there now")
             Button("Drop") { model.notebook { try entry.resolveStaleEdits(keep: false) } }
+                .buttonStyle(.terminal(.quiet))
         }
+        .font(.mono(12.5))
         .padding(.horizontal, 14).padding(.vertical, 8)
-        .background(.orange.opacity(0.12))
+        .background(theme.amberWash)
+        .overlay(Rectangle().strokeBorder(theme.amber, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
     }
 }
 
@@ -108,6 +116,7 @@ struct StaleEditsBanner: View {
 /// set back to the model's words loses its edit.
 struct EditReportSheet: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.theme) private var theme
     @Environment(\.dismiss) private var dismiss
     let entry: LibraryEntry
     @State private var fields: [EditableField] = []
@@ -116,11 +125,11 @@ struct EditReportSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Edit Report").font(.title2.weight(.semibold))
+            SectionHead("edit report")
             Text(
                 "Your edits are kept beside the report. If the report is written again, an edit applies only where the text it replaced is still there."
             )
-            .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            .font(.mono(12.5)).foregroundStyle(theme.dim).fixedSize(horizontal: false, vertical: true)
             Form {
                 ForEach(sections, id: \.self) { section in
                     Section(fields.first { $0.section == section }?.sectionTitle ?? section) {
@@ -130,16 +139,13 @@ struct EditReportSheet: View {
                     }
                 }
             }
-            .formStyle(.grouped)
-            if let error { Text(error).foregroundStyle(.red).font(.callout) }
-            HStack {
-                Spacer()
-                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Save") { save() }.keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent)
-            }
+            .formStyle(.grouped).scrollContentBackground(.hidden)
+            if let error { Text("! " + error).foregroundStyle(theme.rec).font(.mono(12.5)) }
+            SheetButtons(cancel: { dismiss() }, confirm: ("Save", save))
         }
         .padding(20)
         .frame(minWidth: 560, idealWidth: 640, minHeight: 480, idealHeight: 620)
+        .background(theme.ground)
         .onAppear {
             fields = entry.editableFields()
             values = Dictionary(uniqueKeysWithValues: fields.map { ($0.id, $0.current) })
@@ -156,13 +162,13 @@ struct EditReportSheet: View {
         let binding = Binding(get: { values[field.id] ?? field.current }, set: { values[field.id] = $0 })
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text(field.field == .text ? "Item \(field.item + 1)" : field.field.label)
-                    .font(.caption).foregroundStyle(.secondary)
+                Text(field.field == .text ? "item \(field.item + 1)" : field.field.label.lowercased())
+                    .font(.mono(11.5)).foregroundStyle(theme.dim)
                 if binding.wrappedValue != field.modelText {
-                    Text("Edited").font(.caption2.weight(.semibold)).foregroundStyle(.orange)
+                    Text("* edited").font(.mono(11, .semibold)).foregroundStyle(theme.amber)
                     Spacer()
-                    Button("Reset") { values[field.id] = field.modelText }
-                        .buttonStyle(.link).font(.caption)
+                    Button("reset") { values[field.id] = field.modelText }
+                        .buttonStyle(.terminal(.quiet))
                 }
             }
             if field.isMultiline {
@@ -188,23 +194,21 @@ struct EditReportSheet: View {
 /// Rename: an empty title goes back to the report's own topic.
 struct RenameSheet: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.theme) private var theme
     @Environment(\.dismiss) private var dismiss
     let entry: LibraryEntry
     @State private var title = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Rename").font(.title2.weight(.semibold))
-            TextField("Title", text: $title).textFieldStyle(.roundedBorder).onSubmit(save)
-            Text("Leave it empty to use the report's own title.").font(.caption).foregroundStyle(.secondary)
-            HStack {
-                Spacer()
-                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Rename") { save() }.keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent)
-            }
+            SectionHead("rename")
+            TerminalField(prompt: "Title", text: $title, submit: save)
+            Text("Leave it empty to use the report's own title.").font(.mono(11.5)).foregroundStyle(theme.dim)
+            SheetButtons(cancel: { dismiss() }, confirm: ("Rename", save))
         }
         .padding(20)
-        .frame(width: 420)
+        .frame(width: 440)
+        .background(theme.ground)
         .onAppear { title = entry.userTitle ?? entry.topic ?? "" }
     }
 
@@ -217,41 +221,66 @@ struct RenameSheet: View {
 /// What a delete moves, asked before anything moves.
 struct TrashConfirmation: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.theme) private var theme
     @Environment(\.dismiss) private var dismiss
     let entry: LibraryEntry
     let plan: TrashPlan
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Move to the Trash?").font(.title2.weight(.semibold))
+            SectionHead("move to the trash?")
             Text(
                 "These \(plan.files.count) files of this recording go to the Trash. Nothing is deleted for good; you can put them back from the Trash."
             )
-            .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            .font(.mono(12.5)).foregroundStyle(theme.dim).fixedSize(horizontal: false, vertical: true)
             ScrollView {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(plan.files, id: \.self) { url in
-                        Text(url.lastPathComponent).font(.callout.monospaced()).textSelection(.enabled)
+                        Text("  " + url.lastPathComponent).font(.mono(12)).textSelection(.enabled)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(maxHeight: 180)
+            .padding(8)
+            .overlay(Rectangle().strokeBorder(theme.line, lineWidth: 1))
             ForEach(plan.notes, id: \.self) { note in
-                Label(note, systemImage: "info.circle").font(.callout).foregroundStyle(.secondary)
+                Text("-- " + note).font(.mono(12)).foregroundStyle(theme.dim)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            HStack {
-                Spacer()
-                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Move to Trash", role: .destructive) {
-                    dismiss()
-                    model.moveToTrash(entry, confirmed: plan)
-                }
-                .keyboardShortcut(.defaultAction)
-            }
+            SheetButtons(
+                cancel: { dismiss() },
+                confirm: (
+                    "Move to Trash",
+                    {
+                        dismiss()
+                        model.moveToTrash(entry, confirmed: plan)
+                    }
+                ), destructive: true)
         }
         .padding(20)
-        .frame(width: 460)
+        .frame(width: 480)
+        .background(theme.ground)
+    }
+}
+
+/// A one-line text field drawn as `> text` in a box.
+struct TerminalField: View {
+    @Environment(\.theme) private var theme
+    let prompt: String
+    @Binding var text: String
+    var submit: () -> Void = {}
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(">").foregroundStyle(theme.accent).fontWeight(.bold)
+            TextField(prompt, text: $text)
+                .textFieldStyle(.plain)
+                .onSubmit(submit)
+        }
+        .font(.mono(13))
+        .padding(.horizontal, 10).padding(.vertical, 7)
+        .background(theme.ground2)
+        .overlay(Rectangle().strokeBorder(theme.line2, lineWidth: 1))
     }
 }

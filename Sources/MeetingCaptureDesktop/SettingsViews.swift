@@ -4,19 +4,50 @@ import SwiftUI
 
 /// Settings (⌘,). The terminal has every one of these, plus finer ones (spec 05's table).
 struct SettingsView: View {
+    @Environment(\.theme) private var theme
     var body: some View {
         TabView {
             Tab("General", systemImage: "gearshape") { GeneralSettings() }
+            Tab("Look", systemImage: "terminal") { LookSettings() }
             Tab("Recording", systemImage: "mic") { RecordingSettings() }
             Tab("Summaries", systemImage: "doc.text") { SummarySettings() }
-            Tab("Terminal", systemImage: "terminal") { TerminalSettings() }
+            Tab("Terminal", systemImage: "apple.terminal") { TerminalSettings() }
         }
-        .frame(width: 560, height: 420)
+        .scrollContentBackground(.hidden)
+        .background(theme.ground)
+        .frame(width: 580, height: 440)
+    }
+}
+
+/// M7: the theme and the menu bar extra. Desktop only, so they live in the app's
+/// defaults, not the shared config the terminal reads.
+private struct LookSettings: View {
+    @Environment(\.theme) private var theme
+    @AppStorage(ThemeChoice.storageKey) private var themeChoice = ThemeChoice.system.rawValue
+    @AppStorage(MenuBarPreference.key) private var showsMenuBarExtra = true
+
+    var body: some View {
+        Form {
+            Picker("Theme", selection: $themeChoice) {
+                ForEach(ThemeChoice.allCases) { Text($0.label).tag($0.rawValue) }
+            }
+            .pickerStyle(.radioGroup)
+            Text("Phosphor is green on black, Paper is ink on cream. Following the Mac picks one by its appearance.")
+                .font(.mono(11.5)).foregroundStyle(theme.dim)
+            Toggle("Show MeetingCapture in the menu bar", isOn: $showsMenuBarExtra)
+            Text(
+                "Its icon shows whether the app is recording, and it can start, pause and stop. Closing the window never stops a recording."
+            )
+            .font(.mono(11.5)).foregroundStyle(theme.dim)
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
     }
 }
 
 private struct GeneralSettings: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.theme) private var theme
     private let retention = [7, 14, 30, 90, 365, 0]
 
     var body: some View {
@@ -34,7 +65,7 @@ private struct GeneralSettings: View {
                     Text(days == 0 ? "Forever" : "\(days) days").tag(days)
                 }
             }
-            Text("Transcripts and reports are always kept.").font(.caption).foregroundStyle(.secondary)
+            Text("Transcripts and reports are always kept.").font(.mono(11.5)).foregroundStyle(.secondary)
             Picker("Speech model", selection: $model.settings.whisperModel) {
                 ForEach(modelChoices, id: \.id) { m in
                     Text(
@@ -44,11 +75,12 @@ private struct GeneralSettings: View {
             }
             if !ModelStore.hasWhisperModel(model.settings.whisperModel) {
                 Text("This model isn't downloaded yet; it downloads before the next transcript.")
-                    .font(.caption).foregroundStyle(.orange)
+                    .font(.mono(11.5)).foregroundStyle(theme.amber)
             }
-            if let error = model.settingsError { Text(error).foregroundStyle(.red) }
+            if let error = model.settingsError { Text("! " + error).foregroundStyle(theme.rec) }
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
         .onChange(of: model.settings) { _, _ in model.saveSettings() }
     }
 
@@ -109,6 +141,7 @@ private struct RecordingSettings: View {
             Toggle("Record my microphone", isOn: $model.settings.micEnabled)
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
         .onChange(of: model.settings) { _, _ in model.saveSettings() }
     }
 }
@@ -126,13 +159,13 @@ private struct SummarySettings: View {
             }
             .pickerStyle(.segmented)
             Text("Uses your subscription through its command-line tool. If it's full, the other one takes over.")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.mono(11.5)).foregroundStyle(.secondary)
             LabeledContent("Used today") {
                 let usage = SummaryService.usageToday(cli: model.settings.primaryCLI)
                 VStack(alignment: .trailing, spacing: 4) {
                     ProgressView(value: Double(min(usage.count, usage.cap)), total: Double(max(usage.cap, 1)))
                         .frame(width: 180)
-                    Text("\(usage.count) of \(usage.cap) calls").font(.caption).foregroundStyle(.secondary)
+                    Text("\(usage.count) of \(usage.cap) calls").font(.mono(11.5)).foregroundStyle(.secondary)
                         .monospacedDigit()
                 }
             }
@@ -148,6 +181,7 @@ private struct SummarySettings: View {
                 .foregroundStyle(.secondary)
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
         .onChange(of: model.settings) { _, _ in model.saveSettings() }
         .onChange(of: model.settings.primaryCLI) { _, _ in testResult = nil }
     }
@@ -195,6 +229,7 @@ private struct TerminalSettings: View {
 /// First run: the two models, then the two permissions, each explained before macOS asks.
 struct SetupView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.theme) private var theme
     @State private var step = 1
     @State private var whisper = 0.0
     @State private var speaker = 0.0
@@ -210,12 +245,11 @@ struct SetupView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 14) {
-                Image(systemName: "waveform").font(.system(size: 26, weight: .semibold)).foregroundStyle(.white)
-                    .frame(width: 52, height: 52)
-                    .background(RoundedRectangle(cornerRadius: 13).fill(Color.red.gradient))
-                VStack(alignment: .leading) {
-                    Text(step == 1 ? "Get the speech models" : "Let it hear the call").font(.title.weight(.bold))
-                    Text("Step \(step) of 2 · Audio and transcripts stay on this Mac").foregroundStyle(.secondary)
+                BrandMark().frame(width: 52, height: 52)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(step == 1 ? "Get the speech models" : "Let it hear the call").font(.mono(24, .heavy))
+                    Text("step \(step)/2 · audio and transcripts stay on this Mac").font(.mono(12.5))
+                        .foregroundStyle(.secondary)
                 }
             }
             if step == 1 { models } else { permissions }
@@ -252,7 +286,7 @@ struct SetupView: View {
                 ? "If you quit, the download picks up where it stopped next time."
                 : "Sizes are about; the download says how far it is as it goes."
         )
-        .font(.caption).foregroundStyle(.secondary)
+        .font(.mono(11.5)).foregroundStyle(.secondary)
         Spacer()
         HStack {
             if downloading {
@@ -260,10 +294,10 @@ struct SetupView: View {
             }
             Spacer()
             if modelsReady {
-                Button("Continue") { step = 2 }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
+                Button("Continue") { step = 2 }.buttonStyle(.terminal(.go)).keyboardShortcut(.defaultAction)
             } else {
                 Button(downloading ? "Downloading…" : (whisper > 0 ? "Resume Download" : "Download")) { download() }
-                    .buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction).disabled(downloading)
+                    .buttonStyle(.terminal(.go)).keyboardShortcut(.defaultAction).disabled(downloading)
             }
         }
     }
@@ -302,14 +336,14 @@ struct SetupView: View {
                 ? "Turn on MeetingCapture in Privacy & Security › Screen & System Audio Recording, then press Check Again. macOS may ask you to reopen the app."
                 : "You can change both later in System Settings › Privacy & Security."
         )
-        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        .font(.mono(11.5)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         Spacer()
         HStack {
             Button("Back") { step = 1 }
             Spacer()
             Button("Later") { model.needsSetup = false }
             Button("Start Using MeetingCapture") { model.needsSetup = false }
-                .buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
+                .buttonStyle(.terminal(.go)).keyboardShortcut(.defaultAction)
                 .disabled(!(model.micStatus == .authorized && model.screenAllowed))
         }
     }
@@ -384,11 +418,11 @@ struct SetupView: View {
                 Image(systemName: icon).font(.title2).foregroundStyle(.tint).frame(width: 28)
                 VStack(alignment: .leading) {
                     Text(title).fontWeight(.semibold)
-                    Text(detail).font(.caption).foregroundStyle(.secondary)
+                    Text(detail).font(.mono(11.5)).foregroundStyle(.secondary)
                 }
                 Spacer()
                 if allowed {
-                    Label("Allowed", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                    Text("✓ allowed").fontWeight(.bold).foregroundStyle(.tint)
                 } else {
                     Button(action.0, action: action.1)
                 }

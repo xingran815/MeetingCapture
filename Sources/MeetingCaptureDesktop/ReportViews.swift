@@ -5,14 +5,15 @@ import WebKit
 /// A recording picked in the library: its report, or what can be done without one.
 struct EntryDetail: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.theme) private var theme
     let entry: LibraryEntry
 
     var body: some View {
         HStack(spacing: 0) {
             content
             if model.showsNotes {
-                Divider()
-                NotesInspector(entry: entry).frame(width: 300)
+                Rectangle().fill(theme.line2).frame(width: 1)
+                NotesInspector(entry: entry).frame(width: 300).background(theme.ground2)
             }
         }
     }
@@ -24,26 +25,47 @@ struct EntryDetail: View {
             VStack(spacing: 0) {
                 let stale = entry.staleEditCount()
                 if stale > 0 { StaleEditsBanner(entry: entry, count: stale) }
-                ReportWebView(html: html)
+                ReportWebView(html: ReportTheme.apply(theme, to: html), background: theme.palette.ground)
             }
         } else {
-            VStack(spacing: 12) {
-                Image(systemName: entry.isUnfinished ? "exclamationmark.circle" : "doc.text")
-                    .font(.system(size: 40)).foregroundStyle(.tertiary)
-                Text(headline).font(.title2.weight(.semibold))
-                Text(explanation).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 420)
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 8) {
+                    Text(entry.isUnfinished ? "!" : "--").foregroundStyle(
+                        entry.isUnfinished ? theme.amber : theme.faint)
+                    Text(headline.uppercased()).tracking(0.8)
+                }
+                .font(.mono(14, .bold))
+                Text(explanation).font(.mono(12.5)).foregroundStyle(theme.dim)
+                    .frame(maxWidth: 480, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
                 HStack {
                     if entry.isUnfinished {
-                        Button("Process Now") { model.processUnfinished(entry) }.buttonStyle(.borderedProminent)
+                        Button {
+                            model.processUnfinished(entry)
+                        } label: {
+                            KeyedLabel("▶ Process now", inverted: true)
+                        }
+                        .buttonStyle(.terminal(.go))
                     } else if entry.hasTranscript {
-                        Button("Write the Report") { model.writeReportAgain(entry) }.buttonStyle(.borderedProminent)
+                        Button {
+                            model.writeReportAgain(entry)
+                        } label: {
+                            KeyedLabel("▶ Write the report", inverted: true)
+                        }
+                        .buttonStyle(.terminal(.go))
                     } else if !entry.audioFiles.isEmpty {
-                        Button("Transcribe") { model.transcribeAgain(entry) }.buttonStyle(.borderedProminent)
+                        Button {
+                            model.transcribeAgain(entry)
+                        } label: {
+                            KeyedLabel("▶ Transcribe", inverted: true)
+                        }
+                        .buttonStyle(.terminal(.go))
                     }
                 }
                 .disabled(model.isProcessing)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.horizontal, 30).padding(.vertical, 26)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
     }
 
@@ -68,6 +90,8 @@ struct EntryDetail: View {
 /// link to the browser.
 struct ReportWebView: NSViewRepresentable {
     let html: String
+    /// The theme's ground, so the page never flashes another colour while it loads.
+    var background: UInt32 = TerminalPalette.phosphor.ground
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -80,12 +104,14 @@ struct ReportWebView: NSViewRepresentable {
         view.navigationDelegate = context.coordinator
         view.uiDelegate = context.coordinator
         view.setValue(false, forKey: "drawsBackground")
+        view.underPageBackgroundColor = NSColor(Color(hex: background))
         view.loadHTMLString(html, baseURL: nil)
         context.coordinator.loaded = html
         return view
     }
 
     func updateNSView(_ view: WKWebView, context: Context) {
+        view.underPageBackgroundColor = NSColor(Color(hex: background))
         guard context.coordinator.loaded != html else { return }
         context.coordinator.loaded = html
         view.loadHTMLString(html, baseURL: nil)
@@ -128,6 +154,7 @@ struct ReportWebView: NSViewRepresentable {
 /// Rename or merge speakers, as the terminal's "Rename or merge speakers" does.
 struct SpeakersSheet: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.theme) private var theme
     @Environment(\.dismiss) private var dismiss
     let entry: LibraryEntry
     @State private var names: [String: String] = [:]
@@ -136,26 +163,23 @@ struct SpeakersSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Speakers").font(.title2.weight(.semibold))
+            SectionHead("speakers")
             Text(
                 "Give a speaker a name. Using another speaker's name merges the two. This changes the transcript; write the report again to use the new names."
             )
-            .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            .font(.mono(12.5)).foregroundStyle(theme.dim).fixedSize(horizontal: false, vertical: true)
             Form {
                 ForEach(speakers, id: \.self) { speaker in
                     TextField(speaker, text: Binding(get: { names[speaker] ?? speaker }, set: { names[speaker] = $0 }))
                 }
             }
-            .formStyle(.grouped)
-            if let error { Text(error).foregroundStyle(.red).font(.callout) }
-            HStack {
-                Spacer()
-                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Save") { save() }.keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent)
-            }
+            .formStyle(.grouped).scrollContentBackground(.hidden)
+            if let error { Text("! " + error).foregroundStyle(theme.rec).font(.mono(12.5)) }
+            SheetButtons(cancel: { dismiss() }, confirm: ("Save", save))
         }
         .padding(20)
         .frame(width: 460, height: 420)
+        .background(theme.ground)
         .onAppear { speakers = entry.speakers() }
     }
 
@@ -172,6 +196,29 @@ struct SpeakersSheet: View {
             dismiss()
         } catch {
             self.error = "Couldn't save: \(error.localizedDescription)"
+        }
+    }
+}
+
+/// Cancel and the sheet's one action, as keyed terminal buttons.
+struct SheetButtons: View {
+    var cancel: (() -> Void)?
+    var confirm: (title: String, action: () -> Void)
+    var destructive = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Spacer()
+            if let cancel {
+                Button(action: cancel) { KeyedLabel("Cancel", keys: "esc") }
+                    .buttonStyle(.terminal)
+                    .keyboardShortcut(.cancelAction)
+            }
+            Button(action: confirm.action) {
+                KeyedLabel(confirm.title, keys: "⏎", inverted: !destructive)
+            }
+            .buttonStyle(.terminal(destructive ? .stop : .go))
+            .keyboardShortcut(.defaultAction)
         }
     }
 }

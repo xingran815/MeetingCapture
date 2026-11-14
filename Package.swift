@@ -30,6 +30,13 @@ let package = Package(
             dependencies: ["MeetingCaptureCore"],
             path: "Sources/MeetingCaptureDesktop"
         ),
+        // M7: the app's own logic (theme tokens, menu bar states, one command path).
+        // `@testable import MeetingCaptureDesktop` works on an executable target.
+        .testTarget(
+            name: "MeetingCaptureDesktopTests",
+            dependencies: ["MeetingCaptureDesktop", "MeetingCaptureCore"],
+            path: "Tests/MeetingCaptureDesktopTests"
+        ),
         .testTarget(
             name: "MeetingCaptureCoreTests",
             dependencies: ["MeetingCaptureCore"],

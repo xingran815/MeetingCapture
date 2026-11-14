@@ -6,27 +6,32 @@ struct MeetingCaptureDesktopApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @State private var model = AppModel()
     @FocusedValue(\.notebookActions) private var notebook
+    /// D-102: on by default, and the user can hide it in Settings.
+    @AppStorage(MenuBarPreference.key) private var showsMenuBarExtra = true
 
     var body: some Scene {
         Window("MeetingCapture", id: "main") {
             ContentView()
                 .environment(model)
-                .frame(minWidth: 860, minHeight: 560)
+                .terminalThemed()
+                .frame(minWidth: 900, minHeight: 580)
                 .task { delegate.model = model }
         }
+        // The top bar draws the path where the title was (D-101); the window buttons stay.
+        .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1160, height: 740)
         .commands {
             CommandGroup(replacing: .newItem) {}
             CommandMenu("Recording") {
-                Button(model.phase == .idle ? "Record" : "Recording…") { model.startRecording() }
+                Button(model.phase == .idle ? "Record" : "Recording…") { model.perform(.start) }
                     .keyboardShortcut("r", modifiers: .command)
-                    .disabled(model.phase != .idle || model.needsSetup)
-                Button(model.paused ? "Resume" : "Pause") { model.togglePause() }
+                    .disabled(!model.canPerform(.start))
+                Button(model.paused ? "Resume" : "Pause") { model.perform(.pauseResume) }
                     .keyboardShortcut("p", modifiers: [.command, .shift])
-                    .disabled(model.phase != .recording)
-                Button("Stop") { model.stopRecording() }
+                    .disabled(!model.canPerform(.pauseResume))
+                Button("Stop") { model.perform(.stop) }
                     .keyboardShortcut(".", modifiers: .command)
-                    .disabled(model.phase == .idle)
+                    .disabled(!model.canPerform(.stop))
                 Divider()
                 Button("Transcribe Again") { if let e = model.selectedEntry { model.transcribeAgain(e) } }
                     .disabled(model.selectedEntry?.audioFiles.isEmpty ?? true || model.isProcessing)
@@ -52,7 +57,15 @@ struct MeetingCaptureDesktopApp: App {
         Settings {
             SettingsView()
                 .environment(model)
+                .terminalThemed()
         }
+
+        MenuBarExtra(isInserted: $showsMenuBarExtra) {
+            MenuBarMenu().environment(model)
+        } label: {
+            MenuBarLabel().environment(model)
+        }
+        .menuBarExtraStyle(.menu)
     }
 }
 
