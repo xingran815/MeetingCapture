@@ -25,6 +25,7 @@ private struct LookSettings: View {
     @Environment(\.theme) private var theme
     @AppStorage(ThemeChoice.storageKey) private var themeChoice = ThemeChoice.system.rawValue
     @AppStorage(MenuBarPreference.key) private var showsMenuBarExtra = true
+    @AppStorage(MenuBarPreference.showsTextKey) private var showsMenuBarText = false
 
     var body: some View {
         Form {
@@ -37,6 +38,12 @@ private struct LookSettings: View {
             Toggle("Show MeetingCapture in the menu bar", isOn: $showsMenuBarExtra)
             Text(
                 "Its icon shows whether the app is recording, and it can start, pause and stop. Closing the window never stops a recording."
+            )
+            .font(.mono(11.5)).foregroundStyle(theme.dim)
+            Toggle("Show the time beside the icon", isOn: $showsMenuBarText)
+                .disabled(!showsMenuBarExtra)
+            Text(
+                "Off by default: on a Mac with a notch, a wider icon can be hidden by macOS while recording. The menu always shows the time."
             )
             .font(.mono(11.5)).foregroundStyle(theme.dim)
         }

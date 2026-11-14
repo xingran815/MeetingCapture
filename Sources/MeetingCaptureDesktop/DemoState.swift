@@ -157,7 +157,7 @@ enum MenuBarSnapshot {
                     ForEach([false, true], id: \.self) { dark in
                         HStack(spacing: 4) {
                             Image(nsImage: MenuBarGlyph(state).image).renderingMode(.template)
-                            if let text = MenuBarText.label(state) { Text(text).monospacedDigit() }
+                            if let text = MenuBarText.barText(state, showsText: false) { Text(text).monospacedDigit() }
                         }
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(dark ? Color.white : Color.black)

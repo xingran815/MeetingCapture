@@ -79,7 +79,15 @@ enum MenuBarGlyph: String, CaseIterable {
 
 /// The words the extra and its menu show. Pure, so tests can check every state.
 enum MenuBarText {
-    /// Beside the glyph: the clock while recording or paused, `3/6` while working.
+    /// Beside the glyph, only with `showsText` (Settings › Look, off by default): on a Mac
+    /// with a notch the extras share the space right of it, and macOS hides the leftmost
+    /// one that doesn't fit. A recording also brings macOS's own screen-recording
+    /// indicator, so a wider label made the glyph vanish exactly while recording.
+    static func barText(_ activity: AppModel.Activity, showsText: Bool) -> String? {
+        showsText ? label(activity) : nil
+    }
+
+    /// The clock while recording or paused, `3/6` while working.
     static func label(_ activity: AppModel.Activity) -> String? {
         switch activity {
         case .idle, .starting: return nil
@@ -166,13 +174,14 @@ struct MenuBarItem: Identifiable, Equatable {
 /// What sits in the menu bar: the glyph, and the clock or step count when there is one.
 struct MenuBarLabel: View {
     @Environment(AppModel.self) private var model
+    @AppStorage(MenuBarPreference.showsTextKey) private var showsText = false
 
     var body: some View {
         let activity = model.activity
         let glyph = MenuBarGlyph(activity)
         HStack(spacing: 4) {
             Image(nsImage: glyph.image)
-            if let text = MenuBarText.label(activity) {
+            if let text = MenuBarText.barText(activity, showsText: showsText) {
                 Text(text).monospacedDigit()
             }
         }
@@ -254,4 +263,7 @@ enum MenuBarPreference {
     /// Desktop-only (UserDefaults). Off hides the extra; the app still keeps running when
     /// its window closes, as before M7, and the Dock icon brings the window back.
     static let key = "showsMenuBarExtra"
+    /// Desktop-only: the clock or step count beside the glyph. Off by default (see
+    /// `MenuBarText.barText`); the menu's first line always has it.
+    static let showsTextKey = "menuBarShowsText"
 }

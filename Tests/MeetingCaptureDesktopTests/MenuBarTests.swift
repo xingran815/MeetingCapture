@@ -78,6 +78,29 @@ final class MenuBarTests: XCTestCase {
         MenuBarItem.items(recording: recording, paused: paused, enabled: { _ in enabled }, lastReport: last)
     }
 
+    /// Finding: on a Mac with a notch the clock beside the glyph widened the item while
+    /// recording, and macOS hid it. The bar shows the glyph only unless the user opts in.
+    func testNotchFindingBarShowsGlyphOnlyByDefault() {
+        XCTAssertEqual(MenuBarPreference.showsTextKey, "menuBarShowsText")
+        let all: [Activity] = [
+            .idle, .starting, .recording(elapsed: 724), .paused(elapsed: 724),
+            .processing(step: 3, of: 6, name: "Transcribing"),
+        ]
+        for activity in all {
+            XCTAssertNil(MenuBarText.barText(activity, showsText: false), "\(activity)")
+            XCTAssertEqual(
+                MenuBarText.barText(activity, showsText: true), MenuBarText.label(activity),
+                "\(activity)")
+        }
+        XCTAssertNil(MenuBarText.barText(.idle, showsText: true))
+        XCTAssertNil(MenuBarText.barText(.starting, showsText: true))
+        XCTAssertEqual(MenuBarText.barText(.recording(elapsed: 724), showsText: true), "12:04")
+        XCTAssertEqual(MenuBarText.barText(.paused(elapsed: 724), showsText: true), "12:04")
+        XCTAssertEqual(
+            MenuBarText.barText(.processing(step: 3, of: 6, name: "Transcribing"), showsText: true),
+            "3/6")
+    }
+
     func testIdleStartsFirst() {
         let list = items()
         XCTAssertEqual(list.first?.action, .command(.start))
