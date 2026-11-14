@@ -22,7 +22,7 @@ Not verified: the exact macOS 26 text-style sizes (the typography table didn't c
 
 ## The mock-ups
 
-Published as one private Design canvas (link in `dev/NOW.md`); the sources are in `dev/evidence/m5-mockups/`. Each option is one artboard with a bar on top to switch screens (Idle, Recording, Processing, Report, Settings, First run) and Light/Dark. Report, Settings and First run are shared pieces imported into every option, so the shapes differ only where the spec's table says they should. Data is invented.
+Published as one private Design canvas (https://claude.ai/artifact/MGkWWcLXwvs1q3WBqsg73A). The sources were taken out of the public repo on 2026-11-14; a local copy is in `dev/tmp/m5-mockups/` (gitignored). Each option is one artboard with a bar on top to switch screens (Idle, Recording, Processing, Report, Settings, First run) and Light/Dark. Report, Settings and First run are shared pieces imported into every option, so the shapes differ only where the spec's table says they should. Data is invented.
 
 | # | Shape | Idea |
 |---|---|---|
