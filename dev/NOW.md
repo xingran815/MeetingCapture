@@ -1,8 +1,8 @@
 # Now
-Updated: 2026-11-09 · **M6 done; the refactor (M1–M6) is complete.** M6 on branch `m6-docs-release` (issue 10): SpeexDSP removed, README and CLAUDE.md rewritten, `SECURITY.md` and `docs/llm-usage.md` added, a final security pass. Report: `dev/evidence/2026-11-09-m6-report.md`.
+Updated: 2026-11-14 · **M7 planned: Terminal Native UI, menu bar extra, logo (issue 29).** Branch `m7-terminal-ui` holds the spec and the brand assets; no app code yet. The mock-ups are kept out of the public repo: private artifact https://claude.ai/artifact/6VmJqJ96EW555iCdLGwJ7y, local copy `dev/tmp/m7-mockups/`. The refactor (M1–M6) is complete; M6 report: `dev/evidence/2026-11-09-m6-report.md`.
 
-**Next step:** no milestone is planned. New work starts from the open loops below; the user picks. Candidates: the M6 lows (D-100), turning on GitHub's private vulnerability reporting (the user's call, D-99), and the App lows left from M5.
-**How to check M6:** the report has each Done-when and every finding with its test; the README's commands are the quickest end-to-end check.
+**Next step:** start M7 in a new session on branch `m7-terminal-ui`. Read `docs/specs/07-terminal-ui.md`, open the mock-ups (`dev/tmp/m7-mockups/round1-directions/c02-terminal.html` and `logos-round2.html` card 2, or the artifact if that folder is gone), then begin with the theme tokens (Phosphor and Paper) as one SwiftUI file the views read from, before restyling any view. Next: the menu bar extra (its "Unsure" items first), then the views. Issue 28 (meeting-start prompt) waits until M7 is merged.
+**How to check M7 so far:** `scripts/make-brand.sh` rebuilds `packaging/AppIcon.icns`; `scripts/build-app.sh` shows the icon. The spec lists Done-when, with one 👤 check.
 
 Open loops:
 - **Checks:** pre-push is sweeps only. CI skips `…SlowTests` classes. `check.sh` runs unit tests on 4 workers (D-77, D-79); don't run other heavy jobs alongside. `MicCaptureRestartTests` uses the real audio engine and can fail if another job uses the mic.
