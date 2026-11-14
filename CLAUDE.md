@@ -23,7 +23,7 @@ scripts/build-app.sh [--install]               # .build/MeetingCapture.app, opti
 
 Run the compiled binary, never `swift run`: TCC (Screen Recording) is keyed to the binary path. The app has its own TCC identity (`com.meetingcapture.desktop`); signed ad-hoc it loses its grants on every rebuild (D-92).
 
-Automated tests: `scripts/check.sh` (see the devkit block). Capture changes also get a check by hand: record, inspect with `afinfo`, read the `.txt`, `.md` and HTML outputs. App screenshots in tests: launch with `MEETINGCAPTURE_E2E=1 MEETINGCAPTURE_HOME=<temp home>` and invented files.
+Automated tests: `scripts/check.sh` (see the devkit block). Capture changes also get a check by hand: record, inspect with `afinfo`, read the `.txt`, `.md` and HTML outputs. App screenshots: `scripts/app-snapshots.sh` (the app draws itself under `MEETINGCAPTURE_E2E=1` with `scripts/app-demo-home.sh`'s invented library and `MEETINGCAPTURE_DEMO=recording|paused|processing|library`).
 
 ## Permissions
 
@@ -72,11 +72,11 @@ Notebook.swift       the user's layer (`<base>.edits.json`, `<base>.notes.md`) m
 Groups.swift         `groups.json` (manual groups by base name, flock'd) · GroupContextBuilder: allow-listed, capped context from a group's earlier reports, never a transcript · ReportInputs gathers notes, context and a pinned scenario for every route (D-94, D-96, D-97)
 Diagnostics.swift    live checks that spend usage; only `check.sh --live` and `scripts/quality-compare.sh` run them
 
-MeetingCaptureDesktop/   SwiftUI app on DesktopAPI: AppModel, ContentView (sidebar + toolbar), RecordViews, ReportViews (WKWebView, non-persistent store), NotebookViews, GroupViews, SettingsViews
+MeetingCaptureDesktop/   SwiftUI app on DesktopAPI: AppModel (one command path: perform/canPerform, activity), ContentView (top bar, library tree, status line), RecordViews, ReportViews (WKWebView, non-persistent store, theme laid over the page in the app only), NotebookViews, GroupViews, SettingsViews, Theme (Phosphor and Paper tokens, the shared terminal shapes), MenuBar (the extra: glyphs drawn from packaging/brand coordinates, items), DemoState (E2E-only demo states and snapshots)
 
 scripts/             check.sh, ci.sh, sweeps (sweep.sh, identity.sh), e2e, build-app.sh, live and quality scripts
 scripts/echo-lab/    M3.2's measuring tools: metrics, candidate methods, word scoring. Real calls only through real_counts.py, which prints counts
-Tests/               MeetingCaptureCoreTests, FakeBin (fake claude/codex), Fixtures (invented only)
+Tests/               MeetingCaptureCoreTests, MeetingCaptureDesktopTests (@testable import of the app target), FakeBin (fake claude/codex), Fixtures (invented only)
 install.sh           build (release) → install to ~/.local/bin → hooks → trigger TCC prompts
 ```
 

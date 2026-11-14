@@ -160,9 +160,20 @@ resumes. When it stops, the recording is transcribed and the report written.
 
 ### Desktop app
 
-Open **MeetingCapture** from `~/Applications`. Record from the toolbar (⌘R) or
-the large button; pause with ⇧⌘P, stop with ⌘. . Recordings and reports are in
-the sidebar. [docs/parity.md](docs/parity.md) lists where each feature lives in
+Open **MeetingCapture** from `~/Applications`. It looks like the terminal it
+grew from: monospace, boxed panels, every action with its key, and the state in
+words in the status line at the bottom. Two themes, **Phosphor** (dark) and
+**Paper** (light), follow the Mac's appearance, or pin one in **Settings → Look**.
+
+![The app in Phosphor: the library tree and a report (invented data)](docs/images/app-phosphor.png)
+
+![The app in Paper while recording (invented data)](docs/images/app-paper.png)
+
+Record with the ● RECORD key (⌘R); pause with ⇧⌘P, stop with ⌘. . Recordings and
+reports are in the sidebar tree, groups first. A menu bar icon, a speech bubble
+holding `>_`, shows what the app is doing by its shape (`>_` ready, ● recording,
+‖ paused, ··· working) and can start, pause and stop a recording, so closing the
+window never stops one. Hide it in **Settings → Look**. [docs/parity.md](docs/parity.md) lists where each feature lives in
 the app and in the shell.
 
 ### Flags, for scripts

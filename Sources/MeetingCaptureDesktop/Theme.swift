@@ -51,7 +51,7 @@ struct TerminalPalette: Equatable {
     static let phosphor = TerminalPalette(
         ground: 0x0a0d0b, ground2: 0x0f1411, ground3: 0x151c17, line: 0x2a3a2f, line2: 0x3d5444,
         text: 0xd6f5df, dim: 0x8fa696, faint: 0x5d7264, accent: 0x4dff9a, amber: 0xffb340, rec: 0xff5c5c,
-        selection: 0x173322, onAccent: 0x0a0d0b, onRec: 0xffffff, onAmber: 0x1b1206)
+        selection: 0x173322, onAccent: 0x0a0d0b, onRec: 0x0a0d0b, onAmber: 0x1b1206)
 
     static let paper = TerminalPalette(
         ground: 0xf2eee2, ground2: 0xe9e4d4, ground3: 0xded8c4, line: 0xb9b19a, line2: 0x8f876f,
