@@ -13,6 +13,10 @@ protocol RecordingSession: AnyObject {
     @discardableResult func togglePause() -> Bool
     /// Safe before capture is live: the real one holds the stop until then (`RecordingStopper.arm()`).
     func stop()
+    /// Stop and mark the recording thrown away; `start()` still returns its parts.
+    func abort()
+    /// Moves an aborted recording's files to the Trash; returns what moved.
+    @discardableResult func discard(parts: [URL]) throws -> [URL]
     var isLive: Bool { get }
     var elapsedSeconds: Double { get }
     var isPaused: Bool { get }
@@ -22,10 +26,11 @@ protocol RecordingSession: AnyObject {
 
 extension Recorder: RecordingSession {}
 
-/// The three recording actions. The toolbar, the Recording menu's keys and the menu bar
+/// The recording actions. The toolbar, the Recording menu's keys and the menu bar
 /// extra all go through `AppModel.perform`, so they can't drift apart (spec 07).
+/// `abort` stops and moves the recording to the Trash, after the user confirms.
 enum RecordingCommand: CaseIterable {
-    case start, pauseResume, stop
+    case start, pauseResume, stop, abort
 }
 
 /// The app's state. Every action calls into `MeetingCaptureCore`; nothing here decides
@@ -118,6 +123,10 @@ final class AppModel {
     private var meterTimer: Timer?
     /// Makes the session `startRecording` uses. Only tests and the E2E demo change it.
     var makeSession: () throws -> RecordingSession = { try Recorder.prepare() }
+    /// Asks before an abort throws the recording away. Tests replace it.
+    var confirmAbort: () -> Bool = AppModel.askToAbort
+    /// Set once the user confirmed an abort, until the files are in the Trash.
+    private(set) var aborting = false
     /// Runs after a recording ends with its parts. Tests replace it so nothing is transcribed.
     var afterRecording: ((_ parts: [URL], _ base: URL) -> Void)?
 
@@ -160,7 +169,7 @@ final class AppModel {
         switch command {
         case .start: return phase == .idle && !needsSetup
         case .pauseResume: return phase == .recording
-        case .stop: return phase != .idle
+        case .stop, .abort: return phase != .idle && !aborting
         }
     }
 
@@ -169,6 +178,7 @@ final class AppModel {
         case .start: startRecording()
         case .pauseResume: togglePause()
         case .stop: stopRecording()
+        case .abort: abortRecording()
         }
     }
 
@@ -220,6 +230,11 @@ final class AppModel {
         Task {
             do {
                 let parts = try await recorder.start()
+                if aborting {
+                    discarded(recorder, parts: parts)
+                    if let quit = quitWhenStopped { quit() }
+                    return
+                }
                 if let quit = quitWhenStopped {
                     // The files are closed; the next launch offers them as unfinished.
                     quit()
@@ -227,6 +242,11 @@ final class AppModel {
                 }
                 finishedRecording(parts: parts, base: recorder.base)
             } catch {
+                if aborting {
+                    discarded(recorder, parts: [])
+                    if let quit = quitWhenStopped { quit() }
+                    return
+                }
                 stopMeters()
                 phase = .idle
                 self.recorder = nil
@@ -245,11 +265,55 @@ final class AppModel {
         paused = recorder.togglePause()
     }
 
+    /// True when the window shows the recording page: a recording is on and the user
+    /// hasn't picked a report or the job to read meanwhile.
+    var showsRecording: Bool { phase != .idle && selection == nil && !showsJob }
+
+    /// Back to the recording page from a report read during the recording.
+    func showRecordingPage() {
+        selection = nil
+        showsJob = false
+    }
+
     /// The session being recorded, for tests.
     var currentSession: RecordingSession? { recorder }
 
     func stopRecording() {
         recorder?.stop()
+    }
+
+    /// Stops the recording and moves it to the Trash, once the user says so. Nothing is
+    /// transcribed. Before capture is live the stop is held, as with Stop.
+    func abortRecording() {
+        guard canPerform(.abort), let recorder, confirmAbort() else { return }
+        // The recording may have ended on its own while the question was open.
+        guard self.recorder === recorder, phase != .idle else { return }
+        aborting = true
+        recorder.abort()
+    }
+
+    private func discarded(_ recorder: RecordingSession, parts: [URL]) {
+        stopMeters()
+        phase = .idle
+        paused = false
+        self.recorder = nil
+        aborting = false
+        do { try recorder.discard(parts: parts) } catch {
+            recordError = "The recording was stopped but not fully moved to the Trash: \(error.localizedDescription)"
+        }
+        reload()
+    }
+
+    private static func askToAbort() -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "Abort this recording?"
+        alert.informativeText =
+            "The recording stops and its audio goes to the Trash. Nothing is transcribed and no report is written."
+        alert.addButton(withTitle: "Abort Recording")
+        alert.addButton(withTitle: "Keep Recording")
+        alert.buttons.first?.hasDestructiveAction = true
+        alert.alertStyle = .warning
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     /// Quitting: a recording is stopped and its files closed first, then `done` runs.

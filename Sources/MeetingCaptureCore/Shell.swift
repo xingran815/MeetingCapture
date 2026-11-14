@@ -117,22 +117,41 @@ final class Shell {
             """
 
             🔴  Recording → \(recorder.base.appendingPathExtension("wav").path)\(modeHint)
-                Space+Enter to pause/resume · Enter to stop.
+                Space+Enter to pause/resume · Enter to stop · x+Enter to abort (to the Trash).
             """)
 
-        RecordingKeys.install(on: recorder.audioCapture)
+        RecordingKeys.install(on: recorder.audioCapture) { recorder.abort() }
         defer { RecordingKeys.remove() }
 
         let wavFiles: [URL]
         do {
             wavFiles = try await recorder.start()
         } catch {
+            if recorder.wasAborted {
+                discardFlow(recorder, parts: [])
+                return
+            }
             print("❌  Capture failed: \(error.localizedDescription)")
+            return
+        }
+        if recorder.wasAborted {
+            discardFlow(recorder, parts: wavFiles)
             return
         }
 
         await finishRecording(parts: wavFiles, base: recorder.base)
         cleanOldAudio()
+    }
+
+    /// Abort: the recording goes to the Trash and nothing is transcribed.
+    private func discardFlow(_ recorder: Recorder, parts: [URL]) {
+        do {
+            let moved = try recorder.discard(parts: parts)
+            let word = moved.count == 1 ? "file" : "files"
+            print("🗑  Recording aborted: \(moved.count) \(word) moved to the Trash.")
+        } catch {
+            print("❌  \(error.localizedDescription)")
+        }
     }
 
     /// Transcribes, encodes, then summarizes, through the same `MeetingProcessor` the app

@@ -17,6 +17,11 @@ final class FakeSession: RecordingSession {
     private(set) var startCalls = 0
     private(set) var pauseCalls = 0
     private(set) var stopCalls = 0
+    private(set) var abortCalls = 0
+    private(set) var discardCalls: [[URL]] = []
+    var discardError: Error?
+    /// When set, start() throws this once ended (a capture that failed after an abort).
+    var failStart: Error?
     private(set) var endedCount = 0
     private let stopper = RecordingStopper()
     private var continuation: CheckedContinuation<[URL], Error>?
@@ -45,9 +50,24 @@ final class FakeSession: RecordingSession {
         if stopper.claimStop() { end() }
     }
 
+    func abort() {
+        abortCalls += 1
+        if stopper.claimStop() { end() }
+    }
+
+    func discard(parts: [URL]) throws -> [URL] {
+        discardCalls.append(parts)
+        if let discardError { throw discardError }
+        return parts
+    }
+
     private func end() {
         endedCount += 1
-        continuation?.resume(returning: [base.appendingPathExtension("wav")])
+        if let failStart {
+            continuation?.resume(throwing: failStart)
+        } else {
+            continuation?.resume(returning: [base.appendingPathExtension("wav")])
+        }
         continuation = nil
     }
 }
@@ -284,5 +304,137 @@ final class WindowAndDemoTests: XCTestCase {
         XCTAssertEqual(DemoState.requested, "recording")
         unsetenv("MEETINGCAPTURE_DEMO")
         XCTAssertNil(DemoState.requested)
+    }
+}
+
+/// Abort (x+Enter, Abort… in the menus): confirm, stop, move to the Trash, no report.
+final class AbortTests: AppModelTestCase {
+    private func startLive() {
+        session.armImmediately = true
+        model.perform(.start)
+        wait("recording") { self.model.phase == .recording }
+    }
+
+    func testCanAbortOnlyWhileARecordingIsOn() {
+        XCTAssertFalse(model.canPerform(.abort))
+        startLive()
+        XCTAssertTrue(model.canPerform(.abort))
+        model.confirmAbort = { true }
+        model.perform(.abort)
+        XCTAssertFalse(model.canPerform(.abort), "already aborting")
+        wait("idle") { self.model.phase == .idle }
+        XCTAssertFalse(model.canPerform(.abort))
+    }
+
+    func testDeclinedConfirmationDoesNothing() {
+        startLive()
+        var asked = 0
+        model.confirmAbort = {
+            asked += 1
+            return false
+        }
+        model.perform(.abort)
+        settle(0.2)
+        XCTAssertEqual(asked, 1)
+        XCTAssertEqual(session.abortCalls, 0)
+        XCTAssertEqual(model.phase, .recording)
+        XCTAssertTrue(model.canPerform(.abort))
+        model.perform(.stop)
+        wait("idle") { self.model.phase == .idle }
+    }
+
+    func testConfirmedAbortDiscardsPartsAndSkipsProcessing() {
+        startLive()
+        model.confirmAbort = { true }
+        model.perform(.abort)
+        wait("idle after abort") { self.model.phase == .idle }
+        XCTAssertEqual(session.abortCalls, 1)
+        XCTAssertEqual(session.discardCalls, [[session.base.appendingPathExtension("wav")]])
+        XCTAssertTrue(finished.isEmpty, "an aborted recording is never processed")
+        XCTAssertNil(model.currentSession)
+        XCTAssertNil(model.recordError)
+        XCTAssertFalse(model.paused)
+        XCTAssertTrue(model.canPerform(.start))
+    }
+
+    func testAbortBeforeLiveIsHeldThenDiscarded() {
+        model.confirmAbort = { true }
+        model.perform(.start)
+        wait("start called") { self.session.startCalls == 1 }
+        model.perform(.abort)
+        settle(0.3)
+        XCTAssertEqual(session.abortCalls, 1)
+        XCTAssertEqual(session.endedCount, 0)
+        session.goLive()
+        wait("idle") { self.model.phase == .idle }
+        XCTAssertEqual(session.discardCalls.count, 1)
+        XCTAssertTrue(finished.isEmpty)
+    }
+
+    func testStartThrowingAfterAbortDiscardsNothingListed() {
+        startLive()
+        session.failStart = NSError(domain: "capture", code: 7)
+        model.confirmAbort = { true }
+        model.perform(.abort)
+        wait("idle") { self.model.phase == .idle }
+        XCTAssertEqual(session.discardCalls, [[]])
+        XCTAssertTrue(finished.isEmpty)
+        XCTAssertNil(model.recordError, "the user asked for this; no capture error is shown")
+    }
+
+    func testFailingDiscardSetsRecordError() {
+        startLive()
+        session.discardError = NSError(domain: "trash", code: 1)
+        model.confirmAbort = { true }
+        model.perform(.abort)
+        wait("idle") { self.model.phase == .idle }
+        XCTAssertNotNil(model.recordError)
+        XCTAssertTrue(model.recordError?.contains("Trash") == true)
+        XCTAssertTrue(finished.isEmpty)
+    }
+
+    func testMenuBarOffersAbortAfterStopOnlyWhileRecording() {
+        XCTAssertNil(menuAction(.abort))
+        startLive()
+        let titles = MenuBarItem.items(for: model).compactMap { item -> String? in
+            if case .command = item.action { return item.title } else { return nil }
+        }
+        XCTAssertEqual(titles, ["Pause", "Stop", "Abort…"])
+        XCTAssertEqual(menuAction(.abort)?.keys, "⌥⌘.")
+        XCTAssertEqual(menuAction(.abort)?.enabled, true)
+        model.perform(.stop)
+        wait("idle") { self.model.phase == .idle }
+    }
+}
+
+/// The recording page stays reachable while the user reads a report.
+final class RecordingPageTests: AppModelTestCase {
+    func testShowsRecordingFollowsSelectionAndJob() {
+        XCTAssertFalse(model.showsRecording, "idle")
+        session.armImmediately = true
+        model.perform(.start)
+        wait("recording") { self.model.phase == .recording }
+        XCTAssertTrue(model.showsRecording)
+
+        model.selection = "/tmp/mc-fake/some-report"
+        XCTAssertFalse(model.showsRecording)
+        settle(0.1)
+        XCTAssertEqual(model.phase, .recording)
+        XCTAssertEqual(session.stopCalls, 0, "reading a report must not stop the recording")
+        XCTAssertEqual(session.endedCount, 0)
+
+        model.showRecordingPage()
+        XCTAssertNil(model.selection)
+        XCTAssertTrue(model.showsRecording)
+
+        model.showsJob = true
+        XCTAssertFalse(model.showsRecording)
+        model.showRecordingPage()
+        XCTAssertFalse(model.showsJob)
+        XCTAssertTrue(model.showsRecording)
+
+        model.perform(.stop)
+        wait("idle") { self.model.phase == .idle }
+        XCTAssertFalse(model.showsRecording)
     }
 }

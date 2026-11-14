@@ -90,13 +90,17 @@ struct ContentView: View {
         }
     }
 
+    /// A recording keeps running while the user reads another report (picked in the
+    /// library); the recording row at the top of the library brings the page back.
     @ViewBuilder private var detail: some View {
-        if model.phase != .idle {
+        if model.showsRecording {
             RecordingView()
         } else if model.showsJob, model.job != nil {
             ProcessingView()
         } else if let entry = model.selectedEntry {
             EntryDetail(entry: entry)
+        } else if model.phase != .idle {
+            RecordingView()
         } else {
             IdleView()
         }
@@ -104,7 +108,7 @@ struct ContentView: View {
 
     /// The recording whose tools the top bar shows, if the report pane is showing.
     private var toolsEntry: LibraryEntry? {
-        guard let entry = model.selectedEntry, model.phase == .idle, !model.showsJob else { return nil }
+        guard let entry = model.selectedEntry, !model.showsRecording, !model.showsJob else { return nil }
         return entry
     }
 
@@ -117,7 +121,7 @@ struct ContentView: View {
     }
 
     private var notebookActions: NotebookActions? {
-        guard let entry = model.selectedEntry, model.phase == .idle, !model.showsJob else { return nil }
+        guard let entry = model.selectedEntry, !model.showsRecording, !model.showsJob else { return nil }
         return NotebookActions(
             rename: { showRename = true },
             edit: entry.hasReport && !model.isBusy(entry) ? { showEdit = true } : nil,
@@ -128,7 +132,7 @@ struct ContentView: View {
     }
 
     private var title: String {
-        if model.phase != .idle { return "recording…" }
+        if model.showsRecording { return "recording…" }
         if model.showsJob, let job = model.job { return job.title }
         if let e = model.selectedEntry { return e.topic ?? AppModel.title(for: e.base) }
         return "new recording"
@@ -165,14 +169,13 @@ struct TopBar: View {
             Spacer(minLength: 12)
             if let entry = tools {
                 toolRow(entry)
-            } else if model.phase != .idle || model.showsJob {
+            } else if model.showsJob {
                 Button {
                     model.showsJob = false
                 } label: {
                     tool("⌘O", "library")
                 }
                 .buttonStyle(.plain)
-                .disabled(model.phase != .idle)
             }
         }
         .font(.mono(12))
@@ -339,7 +342,8 @@ struct StatusLine: View {
     private var keys: String {
         switch model.phase {
         case .idle: return "⌘R rec · ⇧⌘P pause · ⌘. stop · ⌘, settings"
-        case .starting, .recording: return model.paused ? "⇧⌘P resume · ⌘. stop" : "⇧⌘P pause · ⌘. stop"
+        case .starting, .recording:
+            return model.paused ? "⇧⌘P resume · ⌘. stop · ⌥⌘. abort" : "⇧⌘P pause · ⌘. stop · ⌥⌘. abort"
         }
     }
 }
@@ -357,6 +361,10 @@ struct LibrarySidebar: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
+                        if model.phase != .idle {
+                            RecordingRow(selected: model.showsRecording)
+                                .padding(.bottom, model.job.map { $0.finished } ?? true ? 10 : 2)
+                        }
                         if let job = model.job, !job.finished {
                             JobRow(job: job, selected: model.showsJob)
                                 .padding(.bottom, 10)
@@ -494,6 +502,32 @@ struct RecordKey: View {
         case .starting, .recording: return "Stop recording"
         case .paused: return "Resume recording"
         }
+    }
+}
+
+/// The recording in progress, in the tree, while the user reads another report.
+struct RecordingRow: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.theme) private var theme
+    let selected: Bool
+
+    var body: some View {
+        Button {
+            model.showRecordingPage()
+        } label: {
+            HStack(spacing: 6) {
+                Text(model.paused ? "‖" : "●").foregroundStyle(model.paused ? theme.amber : theme.rec)
+                Text(model.paused ? "paused" : "recording").foregroundStyle(theme.text)
+                Spacer()
+                Text(MenuBarText.clock(model.elapsed)).foregroundStyle(theme.dim).monospacedDigit()
+            }
+            .font(.mono(12.5))
+            .padding(.horizontal, 14).padding(.vertical, 5)
+            .background(selected ? theme.selection : .clear)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(model.paused ? "Paused recording, show it" : "Recording in progress, show it")
     }
 }
 

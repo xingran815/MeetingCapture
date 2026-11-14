@@ -29,6 +29,19 @@ cp "$bin" "$app/Contents/MacOS/MeetingCapture"
 cp packaging/Info.plist "$app/Contents/Info.plist"
 [[ -f packaging/AppIcon.icns ]] && cp packaging/AppIcon.icns "$app/Contents/Resources/AppIcon.icns" \
     && /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string AppIcon" "$app/Contents/Info.plist"
+# macOS 26 sets an .icns-only icon on a grey plate. With Xcode's actool, compile the
+# Icon Composer source into Assets.car (plus a matching .icns) and name it in the plist.
+if [[ -d packaging/AppIcon.icon ]] && xcrun --find actool >/dev/null 2>&1; then
+    icon_tmp="$(mktemp -d)"
+    if xcrun actool packaging/AppIcon.icon --compile "$icon_tmp" --app-icon AppIcon --platform macosx \
+        --minimum-deployment-target 26.0 --output-partial-info-plist "$icon_tmp/partial.plist" >/dev/null; then
+        cp "$icon_tmp/Assets.car" "$icon_tmp/AppIcon.icns" "$app/Contents/Resources/"
+        /usr/libexec/PlistBuddy -c "Add :CFBundleIconName string AppIcon" "$app/Contents/Info.plist"
+    else
+        echo "build-app: actool failed; the app keeps the plain .icns icon" >&2
+    fi
+    rm -rf "$icon_tmp"
+fi
 # WhisperKit and SpeakerKit ship no resource bundles we need; models download at first run.
 
 identity="${MC_SIGN_IDENTITY:-}"

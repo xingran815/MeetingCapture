@@ -152,6 +152,14 @@ struct RecordingView: View {
                         KeyedLabel("■ Stop & write report", keys: "⌘.")
                     }
                     .buttonStyle(.terminal(.stop))
+                    Button {
+                        model.perform(.abort)
+                    } label: {
+                        KeyedLabel("✕ Abort", keys: "⌥⌘.")
+                    }
+                    .buttonStyle(.terminal)
+                    .disabled(!model.canPerform(.abort))
+                    .help("Stop and move this recording to the Trash, without a transcript or report")
                 }
                 .padding(.vertical, 20)
 

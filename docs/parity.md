@@ -7,6 +7,7 @@ Spec 05: the terminal has every desktop feature, plus finer settings. Check this
 | Record | ● RECORD key in the sidebar, menu bar extra, ⌘R | Main menu 1 |
 | Pause, resume | Pause button, menu bar extra, ⇧⌘P | Space then Enter while recording |
 | Stop | Stop button, menu bar extra, ⌘. | Enter while recording |
+| Abort (stop, audio to the Trash, nothing transcribed) | Abort button, menu bar extra, ⌥⌘. (asks first) | x then Enter while recording |
 | Audio source: meeting apps or all audio, which apps, mic | Settings › Recording | Settings › s Audio source, m Mic capture |
 | Library | Sidebar | Main menu 6 |
 | Open a report | Select it in the sidebar | Library › o Open report |
@@ -38,6 +39,6 @@ Spec 05: the terminal has every desktop feature, plus finer settings. Check this
 
 Desktop only: editing the report's text (More › Edit Report…), and keeping or dropping edits that no longer match (D-93). The terminal shows edits and says when some no longer match.
 
-Desktop only (M7, D-101, D-102): the menu bar extra, whose icon shows ready, recording, paused or working by its shape and whose menu starts, pauses and stops a recording, opens the last report, the window and Settings; and the theme (Settings › Look: Phosphor, Paper, or follow the Mac). The terminal already is a terminal, so it needs neither; closing the app's window never stops a recording.
+Desktop only (M7, D-101, D-102): the menu bar extra, whose icon shows ready, recording, paused or working by its shape and whose menu starts, pauses and stops a recording, opens the last report, the window and Settings; and the theme (Settings › Look: Phosphor, Paper, or follow the Mac). The terminal already is a terminal, so it needs neither; closing the app's window never stops a recording. While a recording runs, the app can show other reports from the library; the recording row at the top of the library brings the recording back.
 
 Terminal only: per-tier CLI models, reasoning, API profiles, `--scenario`, language pin, echo removal settings, chunk length, daily call cap, safety cap, auto-transcribe and auto-summarize, flags for scripting.

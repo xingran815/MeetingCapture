@@ -89,7 +89,11 @@ final class MenuBarTests: XCTestCase {
         XCTAssertEqual(list[0].action, .command(.pauseResume))
         XCTAssertEqual(list[0].title, "Pause")
         XCTAssertEqual(list[1].action, .command(.stop))
-        XCTAssertEqual(list.filter(\.isRecordingCommand).count, 2)
+        XCTAssertEqual(list[2].action, .command(.abort))
+        XCTAssertEqual(list[2].title, "Abort…")
+        XCTAssertEqual(list[2].keys, "⌥⌘.")
+        XCTAssertEqual(list.filter(\.isRecordingCommand).count, 3)
+        XCTAssertFalse(items().contains { $0.action == .command(.abort) }, "no Abort while idle")
     }
 
     func testPausedOffersResume() {

@@ -73,6 +73,10 @@ final class DemoSession: RecordingSession {
         stopped = nil
     }
 
+    func abort() { stop() }
+    /// The demo writes no files, so there is nothing to move.
+    func discard(parts: [URL]) throws -> [URL] { [] }
+
     var isLive: Bool { true }
     var elapsedSeconds: Double { 12 * 60 + 4 }
     var levels: (mic: Float, system: Float) {

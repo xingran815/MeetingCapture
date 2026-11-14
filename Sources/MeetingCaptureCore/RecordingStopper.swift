@@ -51,15 +51,21 @@ final class RecordingStopper {
 }
 
 /// Enter stops a recording and Space+Enter pauses it, in both the shell and flag mode.
+/// x+Enter aborts in the shell (to the Trash); flag mode treats it as a stop.
 enum RecordingKeys {
 
     enum Action: Equatable {
         case pauseToggle
         case stop
+        /// x+Enter: stop and throw the recording away (to the Trash).
+        case abort
     }
 
     static func action(for input: Data) -> Action {
-        input.filter { $0 != 0x0A && $0 != 0x0D } == Data([0x20]) ? .pauseToggle : .stop
+        let line = input.filter { $0 != 0x0A && $0 != 0x0D }
+        if line == Data([0x20]) { return .pauseToggle }
+        if line == Data([0x78]) || line == Data([0x58]) { return .abort }
+        return .stop
     }
 
     /// Finding from the deep review: in a script, stdin is the script's input, not
@@ -68,8 +74,9 @@ enum RecordingKeys {
         isatty(fileDescriptor) == 1
     }
 
+    /// Without `abort` (flag mode, which has no Trash step), x+Enter just stops.
     @available(macOS 13.0, *)
-    static func install(on capture: AudioCapture) {
+    static func install(on capture: AudioCapture, abort: (() -> Void)? = nil) {
         guard isInteractive(fileDescriptor: STDIN_FILENO) else { return }
         FileHandle.standardInput.readabilityHandler = { handle in
             let data = handle.availableData
@@ -81,6 +88,7 @@ enum RecordingKeys {
             switch action(for: data) {
             case .pauseToggle: capture.pauseToggle()
             case .stop: capture.manualStop()
+            case .abort: if let abort { abort() } else { capture.manualStop() }
             }
         }
     }

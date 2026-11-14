@@ -44,6 +44,26 @@ done
     echo '</svg>'
 } >"$out/app-icon.svg"
 
+# The macOS 26 icon (Icon Composer format): a solid fill and the mark as one layer. The
+# system draws the shape and the glass; an .icns alone is shrunk onto a grey plate on
+# macOS 26. build-app.sh compiles it with actool when Xcode is there.
+icon=packaging/AppIcon.icon
+mkdir -p "$icon/Assets"
+{
+    echo '<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">'
+    printf '<g transform="translate(112 112) scale(12.5)">'
+    mark '#4dff9a'
+    echo '</g>'
+    echo '</svg>'
+} >"$icon/Assets/mark.svg"
+cat >"$icon/icon.json" <<'JSON'
+{
+  "fill" : { "solid" : "srgb:0.05098,0.07059,0.05882,1.00000" },
+  "groups" : [ { "layers" : [ { "image-name" : "mark.svg", "name" : "mark" } ] } ],
+  "supported-platforms" : { "squares" : [ "macOS" ] }
+}
+JSON
+
 bubble='<path d="M1.6 2 H16.4 V12.4 H7.2 L3.9 15.8 V12.4 H1.6 Z" fill="none" stroke="#000" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"/>'
 glyph() { # $1 = state, $2 = inner shapes
     printf '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18">%s%s</svg>\n' \

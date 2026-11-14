@@ -201,6 +201,25 @@ public final class Recorder {
     /// Safe to call more than once, and before capture is live: the stop is held until then.
     public func stop() { capture.manualStop() }
 
+    private let abortLock = NSLock()
+    private var abortAsked = false
+    /// Stops the recording and marks it thrown away: `start()` still returns its parts,
+    /// and the caller passes them to `discard(parts:)` instead of processing them.
+    /// Safe from any thread and before capture is live, like `stop()`.
+    public func abort() {
+        abortLock.withLock { abortAsked = true }
+        capture.manualStop()
+    }
+    /// True once `abort()` was called.
+    public var wasAborted: Bool { abortLock.withLock { abortAsked } }
+
+    /// Abort's second half: moves this recording's audio and sidecar to the Trash, the
+    /// sidecar last (`RecordingDiscard`). Returns what moved.
+    @discardableResult
+    public func discard(parts: [URL]) throws -> [URL] {
+        try RecordingDiscard.trash(base: base, parts: parts)
+    }
+
     public var elapsedSeconds: Double { capture.elapsedSeconds }
     public var isPaused: Bool { capture.isPaused }
     public var isLive: Bool { capture.isLive }
@@ -210,7 +229,7 @@ public final class Recorder {
     public var sourceLabel: String { capture.targetLabel }
     public var micEnabled: Bool { config.micEnabled }
     public var captureAllAudio: Bool { config.captureAllAudio }
-    /// For the terminal's keys (Space+Enter pauses, Enter stops).
+    /// For the terminal's keys (Space+Enter pauses, Enter stops, x+Enter aborts).
     var audioCapture: AudioCapture { capture }
 
     public enum RecorderError: Error, LocalizedError {

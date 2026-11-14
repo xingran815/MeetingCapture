@@ -1,0 +1,5 @@
+{
+  "fill" : { "solid" : "srgb:0.05098,0.07059,0.05882,1.00000" },
+  "groups" : [ { "layers" : [ { "image-name" : "mark.svg", "name" : "mark" } ] } ],
+  "supported-platforms" : { "squares" : [ "macOS" ] }
+}

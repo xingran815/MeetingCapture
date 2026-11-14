@@ -243,4 +243,14 @@ final class SpeakerRenameTests: AudioTestCase {
         XCTAssertEqual(RecordingKeys.action(for: Data("\r\n".utf8)), .stop)
         XCTAssertEqual(RecordingKeys.action(for: Data("  \n".utf8)), .stop)
     }
+
+    func testAbortIsOnlyAnXAndEnter() {
+        XCTAssertEqual(RecordingKeys.action(for: Data("x\n".utf8)), .abort)
+        XCTAssertEqual(RecordingKeys.action(for: Data("X\r\n".utf8)), .abort)
+        XCTAssertEqual(RecordingKeys.action(for: Data("x".utf8)), .abort)
+        XCTAssertEqual(RecordingKeys.action(for: Data("xx\n".utf8)), .stop)
+        XCTAssertEqual(RecordingKeys.action(for: Data("stop\n".utf8)), .stop)
+        XCTAssertEqual(RecordingKeys.action(for: Data("\n".utf8)), .stop)
+        XCTAssertEqual(RecordingKeys.action(for: Data(" x\n".utf8)), .stop)
+    }
 }

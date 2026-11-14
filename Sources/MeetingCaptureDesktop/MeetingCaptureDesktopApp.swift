@@ -32,6 +32,9 @@ struct MeetingCaptureDesktopApp: App {
                 Button("Stop") { model.perform(.stop) }
                     .keyboardShortcut(".", modifiers: .command)
                     .disabled(!model.canPerform(.stop))
+                Button("Abort Recording…") { model.perform(.abort) }
+                    .keyboardShortcut(".", modifiers: [.command, .option])
+                    .disabled(!model.canPerform(.abort))
                 Divider()
                 Button("Transcribe Again") { if let e = model.selectedEntry { model.transcribeAgain(e) } }
                     .disabled(model.selectedEntry?.audioFiles.isEmpty ?? true || model.isProcessing)

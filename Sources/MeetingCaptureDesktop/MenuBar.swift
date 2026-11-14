@@ -128,7 +128,7 @@ struct MenuBarItem: Identifiable, Equatable {
         return false
     }
 
-    /// Start, or Pause/Resume and Stop; then the last report, Open, Settings and Quit.
+    /// Start, or Pause/Resume, Stop and Abort; then the last report, Open, Settings and Quit.
     @MainActor
     static func items(for model: AppModel) -> [MenuBarItem] {
         items(
@@ -150,6 +150,8 @@ struct MenuBarItem: Identifiable, Equatable {
                     title: paused ? "Resume" : "Pause", keys: "⇧⌘P", enabled: enabled(.pauseResume),
                     action: .command(.pauseResume)))
             items.append(MenuBarItem(title: "Stop", keys: "⌘.", enabled: enabled(.stop), action: .command(.stop)))
+            items.append(
+                MenuBarItem(title: "Abort…", keys: "⌥⌘.", enabled: enabled(.abort), action: .command(.abort)))
         }
         if let lastReport {
             items.append(MenuBarItem(title: "↳ " + lastReport, keys: nil, enabled: true, action: .openLastReport))
@@ -239,6 +241,7 @@ struct MenuBarMenu: View {
             case "⌘R": content.keyboardShortcut("r", modifiers: .command)
             case "⇧⌘P": content.keyboardShortcut("p", modifiers: [.command, .shift])
             case "⌘.": content.keyboardShortcut(".", modifiers: .command)
+            case "⌥⌘.": content.keyboardShortcut(".", modifiers: [.command, .option])
             case "⌘,": content.keyboardShortcut(",", modifiers: .command)
             case "⌘Q": content.keyboardShortcut("q", modifiers: .command)
             default: content

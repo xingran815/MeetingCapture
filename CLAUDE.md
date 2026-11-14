@@ -51,6 +51,7 @@ MicStartGate.swift   holds the mic until system audio starts
 TrackWriter.swift    two tracks (ch1 mic, ch2 system), int16 WAV; 30-min chunk rotation; pause/resume
 CMSampleBuffer+PCM.swift  CMSampleBuffer → AVAudioPCMBuffer (handles non-interleaved ABL)
 RecordingStopper.swift  lets exactly one stop through; arm() holds early stops until capture is live
+RecordingDiscard.swift  Abort: an unwanted recording's own parts and sidecar to the Trash, never by name matching beyond its base, sidecar last
 RecordingFiles.swift  how a recording's parts relate (meeting.wav, meeting_part2.wav, …; WAV or M4A)
 EchoRemover.swift    after-the-call echo removal: lag and clock drift → sliding least squares → residual suppressor · EchoEvidence, the delay-and-level check on each mic line
 Transcribe.swift     WhisperKit wrapper · language from the loudest 30 s · timestamped segments
@@ -96,7 +97,7 @@ All overridable in Settings (shell or app) or by flags.
 | Echo removal | on (`--no-aec` off) |
 | Output dir | `~/Documents/MeetingCapture` |
 | Audio retention | 30 days after `transcribedAt`; 0 keeps forever |
-| Safety cap | 480 min; Enter stops, Space+Enter pauses; 30-min chunks |
+| Safety cap | 480 min; Enter stops, Space+Enter pauses, x+Enter aborts to the Trash (shell only; flag mode stops); 30-min chunks |
 | Audio source | meeting-app auto-detect, all six apps (an app added later starts enabled); `captureAllAudio` / `--all-audio` bypasses it |
 | Group context cap | 24,000 characters, 4,000 of notes per report, earlier reports only, newest first |
 
