@@ -425,6 +425,7 @@ enum QualityCompare {
                     "| \(fixture.id) | \(fixture.kind) | \(redacted.scenario) / \(plain.scenario) | \(sameTopic ? "same" : "differs") | \(coverage(redacted)) / \(coverage(plain)) | \(kept.kept)/\(keptRaw.kept) of \(fixture.facts?.count ?? 0) | \(tokensOK ? "yes" : "no") | \(unsureCount(redacted)) / \(unsureCount(plain)) | \(redacted.reviewed && plain.reviewed ? "both" : "not both") |"
                 )
                 print("  topics: \(redacted.topic) / \(plain.topic)")
+                print("  ratings (with regex/without): \(ratingText)")
             } catch {
                 print("\(fixture.id): stopped, \(error.localizedDescription)")
                 problems.append("\(fixture.id): didn't finish: \(error.localizedDescription)")

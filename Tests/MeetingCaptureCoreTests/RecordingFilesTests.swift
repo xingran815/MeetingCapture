@@ -6,7 +6,7 @@ import XCTest
 final class RecordingFilesTests: AudioTestCase {
 
     private var caseInsensitiveDisk: Bool {
-        try? touch("Probe.tmp")
+        _ = try? touch("Probe.tmp")
         defer { try? FileManager.default.removeItem(at: url("Probe.tmp")) }
         return exists("PROBE.TMP")
     }

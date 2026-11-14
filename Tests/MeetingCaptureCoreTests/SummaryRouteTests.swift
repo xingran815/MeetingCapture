@@ -249,7 +249,7 @@ final class SummaryRouteTests: GuardedTestCase {
         config.llmRoute = .apiProfile
         config.llmProfiles = [profile]
         config.selectedLLMProfileID = "p1"
-        try await withEnvironment("LLM_API_KEY", nil) {
+        await withEnvironment("LLM_API_KEY", nil) {
             do {
                 _ = try await SummaryRoute.backend(config: config)
                 XCTFail("there's no key")

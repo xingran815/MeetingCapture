@@ -285,7 +285,7 @@ final class ReportReviewFindingTests: GuardedTestCase {
     func testDeepReviewM4Recheck_1_CLIOnlyRefusesTheAPIRoute() async throws {
         let config = routeConfig(llmRoute: .apiProfile)
         try await withLoggedOutClaude {
-            try await withEnvironment("MEETINGCAPTURE_CLI_ONLY", "1") {
+            await withEnvironment("MEETINGCAPTURE_CLI_ONLY", "1") {
                 do {
                     _ = try await SummaryRoute.backend(config: config)
                     XCTFail("an API backend was returned")
@@ -300,7 +300,7 @@ final class ReportReviewFindingTests: GuardedTestCase {
     func testDeepReviewM4Recheck_1_CLIOnlyRefusesTheNoCLIFallback() async throws {
         let config = routeConfig(llmRoute: .subscription)
         try await withLoggedOutClaude {
-            try await withEnvironment("MEETINGCAPTURE_CLI_ONLY", "1") {
+            await withEnvironment("MEETINGCAPTURE_CLI_ONLY", "1") {
                 do {
                     _ = try await SummaryRoute.backend(config: config)
                     XCTFail("the fallback returned an API backend")
@@ -337,7 +337,7 @@ final class ReportReviewFindingTests: GuardedTestCase {
         var config = routeConfig(llmRoute: .subscription)
         config.allowCLIAPIBilling = true
         try await withAPIKeyClaude {
-            try await withEnvironment("MEETINGCAPTURE_CLI_ONLY", "1") {
+            await withEnvironment("MEETINGCAPTURE_CLI_ONLY", "1") {
                 do {
                     let backend = try await SummaryRoute.backend(config: config)
                     XCTFail("a backend was returned: \(type(of: backend))")
@@ -359,7 +359,7 @@ final class ReportReviewFindingTests: GuardedTestCase {
         config.llmRoute = .subscription
         config.llmProfiles = []
         try await withLoggedOutClaude {
-            try await withEnvironment("MEETINGCAPTURE_CLI_ONLY", "1") {
+            await withEnvironment("MEETINGCAPTURE_CLI_ONLY", "1") {
                 do {
                     _ = try await SummaryRoute.backend(config: config)
                     XCTFail("a backend was returned")
