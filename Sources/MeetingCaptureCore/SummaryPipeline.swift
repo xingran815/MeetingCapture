@@ -16,6 +16,8 @@ struct BackendReply {
     let model: String
 }
 
+/// Every call to a backend checks for cancellation first: a cancelled job (Cancel, or an
+/// Abort confirmed after the call ended) makes no new model call (M7 deep review).
 protocol SummaryBackend: AnyObject {
     var label: String { get }
     /// Things the report should say, such as a switch to the other CLI.
@@ -202,6 +204,7 @@ struct SummaryPipeline {
         let sectionsSystem =
             Self.sectionsPrompt(template, language: Self.safeLanguage(language), earlier: earlier) + suffix
         let draft = try await withOneRetry(step: "sections") { retryNote in
+            try Task.checkCancellation()
             let reply = try await backend.complete(
                 tier: .normal, system: sectionsSystem, input: redacted.text + notesInput + contextInput + retryNote,
                 schema: sectionsSchema)
@@ -224,6 +227,7 @@ struct SummaryPipeline {
             if !names.isEmpty {
                 onStep(.lookingUpConcepts)
                 do {
+                    try Task.checkCancellation()
                     if let reply = try await backend.searchConcepts(Array(names.prefix(8)), schema: Self.conceptSchema)
                     {
                         let found = Self.decodeConcepts(reply.text)
@@ -269,6 +273,7 @@ struct SummaryPipeline {
                     Self.reviewInput(numbered: numbered, draft: sections, template: template, topic: topic)
                     + contextInput
                 let result = try await withOneRetry(step: "review") { retryNote in
+                    try Task.checkCancellation()
                     let reply = try await backend.complete(
                         tier: .frontier, system: system, input: input + retryNote, schema: reviewSchema)
                     return Self.decodeSections(reply.text, template: template).map { ($0, reply.model) }
@@ -426,6 +431,7 @@ struct SummaryPipeline {
 
     private func classify(_ text: String, suffix: String) async throws -> Classification {
         let schema = Self.classifySchema(catalog.names)
+        try Task.checkCancellation()
         let reply = try await backend.complete(
             tier: .cheap, system: Self.classifyPrompt(catalog) + suffix,
             input: Self.classifierSample(text), schema: schema)

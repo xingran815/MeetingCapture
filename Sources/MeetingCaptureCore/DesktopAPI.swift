@@ -366,6 +366,14 @@ public final class MeetingProcessor {
         transcript: String, source: URL, keepEdits: Bool = true, into result: inout Result,
         onEvent: @escaping (Event) -> Void
     ) async {
+        // A cancelled job (Cancel, or an Abort confirmed after the call ended) must not
+        // send the transcript to a model, even if transcription ran to its end without
+        // noticing. From the M7 reviews.
+        if Task.isCancelled {
+            result.failure = "Cancelled before the report was written. The transcript is kept."
+            result.failedStage = .writingReport
+            return
+        }
         onEvent(.stage(.writingReport, part: 1, parts: 1))
         do {
             let backend = try await SummaryRoute.backend(config: config)

@@ -295,7 +295,7 @@ final class AppModel {
             let stopped = cancelWork(for: recorder.base)
             recordError =
                 stopped
-                ? "The recording had already stopped, so it wasn't moved to the Trash. Its processing is cancelled; delete it from the library if you don't want it."
+                ? "The recording had already stopped, so it wasn't moved to the Trash. Its processing is cancelled: no further model call is made, though one already under way finishes. Delete it from the library if you don't want it."
                 : "The recording had already stopped and been processed, so it wasn't moved to the Trash. Delete it from the library if you don't want it."
             return
         }
