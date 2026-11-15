@@ -384,7 +384,7 @@ struct BrandMark: View {
 enum ReportTheme {
     static func apply(_ theme: TerminalTheme, to html: String) -> String {
         let style = "<style id=\"mc-theme\">\(css(theme))</style>"
-        guard let head = html.range(of: "</head>", options: [.caseInsensitive, .backwards]) else {
+        guard let head = html.range(of: "</head>", options: .caseInsensitive) else {
             return style + html
         }
         var out = html

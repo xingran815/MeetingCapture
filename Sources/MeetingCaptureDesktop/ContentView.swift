@@ -176,6 +176,7 @@ struct TopBar: View {
                     tool("⌘O", "library")
                 }
                 .buttonStyle(.plain)
+                .keyboardShortcut("o", modifiers: .command)
             }
         }
         .font(.mono(12))
@@ -341,7 +342,7 @@ struct StatusLine: View {
 
     private var keys: String {
         switch model.phase {
-        case .idle: return "⌘R rec · ⇧⌘P pause · ⌘. stop · ⌘, settings"
+        case .idle: return "⌘R rec · ⌘, settings"
         case .starting, .recording:
             return model.paused ? "⇧⌘P resume · ⌘. stop · ⌥⌘. abort" : "⇧⌘P pause · ⌘. stop · ⌥⌘. abort"
         }

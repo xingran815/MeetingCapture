@@ -7,7 +7,7 @@ Spec 05: the terminal has every desktop feature, plus finer settings. Check this
 | Record | ● RECORD key in the sidebar, menu bar extra, ⌘R | Main menu 1 |
 | Pause, resume | Pause button, menu bar extra, ⇧⌘P | Space then Enter while recording |
 | Stop | Stop button, menu bar extra, ⌘. | Enter while recording |
-| Abort (stop, audio to the Trash, nothing transcribed) | Abort button, menu bar extra, ⌥⌘. (asks first) | x then Enter while recording |
+| Abort (stop, audio to the Trash, nothing transcribed) | Abort button, menu bar extra, ⌥⌘. (asks first) | x then Enter while recording (no question: the Trash keeps it, and a deliberate key is needed) |
 | Audio source: meeting apps or all audio, which apps, mic | Settings › Recording | Settings › s Audio source, m Mic capture |
 | Library | Sidebar | Main menu 6 |
 | Open a report | Select it in the sidebar | Library › o Open report |

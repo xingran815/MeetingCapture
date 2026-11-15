@@ -174,6 +174,7 @@ final class AppModel {
     }
 
     func perform(_ command: RecordingCommand) {
+        guard canPerform(command) else { return }
         switch command {
         case .start: startRecording()
         case .pauseResume: togglePause()
@@ -286,10 +287,33 @@ final class AppModel {
     /// transcribed. Before capture is live the stop is held, as with Stop.
     func abortRecording() {
         guard canPerform(.abort), let recorder, confirmAbort() else { return }
-        // The recording may have ended on its own while the question was open.
-        guard self.recorder === recorder, phase != .idle else { return }
+        // The modal question runs the main queue, so the recording may have ended while it
+        // was open (Stop, the safety cap, an error) and its processing begun. The user said
+        // to throw it away: stop that work before the transcript can go to a model, and
+        // say so. From the M7 deep review.
+        guard self.recorder === recorder, phase != .idle else {
+            let stopped = cancelWork(for: recorder.base)
+            recordError =
+                stopped
+                ? "The recording had already stopped, so it wasn't moved to the Trash. Its processing is cancelled; delete it from the library if you don't want it."
+                : "The recording had already stopped and been processed, so it wasn't moved to the Trash. Delete it from the library if you don't want it."
+            return
+        }
         aborting = true
         recorder.abort()
+    }
+
+    /// Cancels the running or queued work on `base`. Returns true if there was some.
+    private func cancelWork(for base: URL) -> Bool {
+        let before = waiting.count
+        waiting.removeAll { $0.base == base }
+        var stopped = waiting.count != before
+        if let job, !job.finished, job.base == base {
+            jobTask?.cancel()
+            stopped = true
+        }
+        if stopped { reload() }
+        return stopped
     }
 
     private func discarded(_ recorder: RecordingSession, parts: [URL]) {
@@ -305,6 +329,8 @@ final class AppModel {
     }
 
     private static func askToAbort() -> Bool {
+        // From the menu bar with the window closed, the question must come to the front.
+        NSApp.activate()
         let alert = NSAlert()
         alert.messageText = "Abort this recording?"
         alert.informativeText =
@@ -331,6 +357,9 @@ final class AppModel {
 
     /// What the quit question should say, or nil when quitting loses nothing.
     var quitWarning: String? {
+        if aborting {
+            return "The aborted recording is being moved to the Trash. That finishes first, then the app quits."
+        }
         if phase != .idle {
             return
                 "A recording is in progress. It stops now, the audio so far is kept, and the app offers to finish it next time."
@@ -478,8 +507,11 @@ final class AppModel {
             return
         }
         job = Job(kind: kind, base: base, title: title, steps: stages.map { StepState(stage: $0) })
-        showsJob = true
-        selection = nil
+        // During a recording the window stays where the user put it (M7 review).
+        if phase == .idle {
+            showsJob = true
+            selection = nil
+        }
         jobTask = Task {
             let result = await run { event in
                 Task { @MainActor [weak self] in self?.apply(event) }
@@ -535,7 +567,7 @@ final class AppModel {
             return
         }
         reload()
-        if result.failure == nil, result.reportJSON != nil {
+        if result.failure == nil, result.reportJSON != nil, phase == .idle {
             showsJob = false
             selection = job.base.path
         }

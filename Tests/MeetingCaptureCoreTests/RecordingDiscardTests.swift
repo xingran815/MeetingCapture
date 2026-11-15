@@ -85,17 +85,67 @@ final class RecordingDiscardTests: XCTestCase {
         XCTAssertTrue(fm.fileExists(atPath: foreign.path))
     }
 
-    func testSymlinksAndDirectoriesAreSkipped() throws {
+    func testSymlinkOrDirectoryPartIsLeftAndKeepsTheSidecar() throws {
+        // Review: an own part that isn't a plain file is left, the sidecar stays, so the
+        // rest is still offered as unfinished; other own regular parts still move.
         let target = try touch("precious.wav")
         let link = dir.appendingPathComponent("20261114_090000.wav")
         try fm.createSymbolicLink(at: link, withDestinationURL: target)
         let folder = dir.appendingPathComponent("20261114_090000_part2.wav")
         try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        let ok = try touch("20261114_090000_part3.wav")
         try sidecar()
         let r = Recorder()
+        XCTAssertThrowsError(
+            try RecordingDiscard.trash(base: base, parts: [link, folder, ok], pid: getpid(), remover: r.callAsFunction)
+        ) {
+            guard case .partLeft(let file)? = $0 as? RecordingDiscard.DiscardError else { return XCTFail("\($0)") }
+            XCTAssertTrue(["20261114_090000.wav", "20261114_090000_part2.wav"].contains(file))
+        }
+        XCTAssertEqual(r.urls.map(\.lastPathComponent), ["20261114_090000_part3.wav"])
+        XCTAssertTrue(fm.fileExists(atPath: RecordingSidecar.url(forBase: base).path), "sidecar stays")
+        XCTAssertTrue(fm.fileExists(atPath: target.path))
+    }
+
+    func testReviewSymlinkPartAloneKeepsSidecarAndMovesNothing() throws {
+        let target = try touch("precious.wav")
+        let link = dir.appendingPathComponent("20261114_090000.wav")
+        try fm.createSymbolicLink(at: link, withDestinationURL: target)
+        try sidecar()
+        let r = Recorder()
+        XCTAssertThrowsError(
+            try RecordingDiscard.trash(base: base, parts: [link], pid: getpid(), remover: r.callAsFunction)
+        ) { XCTAssertEqual($0 as? RecordingDiscard.DiscardError, .partLeft("20261114_090000.wav")) }
+        XCTAssertTrue(r.urls.isEmpty)
+        XCTAssertTrue(fm.fileExists(atPath: RecordingSidecar.url(forBase: base).path))
+    }
+
+    func testReviewSymlinkWithEmptyPartsIsLeftToo() throws {
+        let target = try touch("precious.wav")
+        try fm.createSymbolicLink(
+            at: dir.appendingPathComponent("20261114_090000.wav"), withDestinationURL: target)
+        try sidecar()
+        let r = Recorder()
+        XCTAssertThrowsError(
+            try RecordingDiscard.trash(base: base, parts: [], pid: getpid(), remover: r.callAsFunction)
+        ) { XCTAssertEqual($0 as? RecordingDiscard.DiscardError, .partLeft("20261114_090000.wav")) }
+        XCTAssertTrue(fm.fileExists(atPath: RecordingSidecar.url(forBase: base).path))
+    }
+
+    func testReviewPartSpelledDifferentlyForTheSameFolderStillMoves() throws {
+        let a = try touch("20261114_090000.wav")
+        _ = a
+        let b = try touch("20261114_090000_part2.wav")
+        _ = b
+        try sidecar()
+        let dotted = URL(fileURLWithPath: dir.path + "/./20261114_090000.wav")
+        let relative = URL(fileURLWithPath: "20261114_090000_part2.wav", relativeTo: dir)
+        let r = Recorder()
         let moved = try RecordingDiscard.trash(
-            base: base, parts: [link, folder], pid: getpid(), remover: r.callAsFunction)
-        XCTAssertEqual(moved.map(\.lastPathComponent), ["20261114_090000.mcmeta.json"])
+            base: base, parts: [dotted, relative], pid: getpid(), remover: r.callAsFunction)
+        XCTAssertEqual(
+            moved.map(\.lastPathComponent),
+            ["20261114_090000.wav", "20261114_090000_part2.wav", "20261114_090000.mcmeta.json"])
     }
 
     func testFilesAnotherSidecarListsAreSkipped() throws {
@@ -155,13 +205,23 @@ final class RecordingDiscardTests: XCTestCase {
         XCTAssertTrue(fm.fileExists(atPath: w.path))
     }
 
-    func testEmptyPartsTriesOnlyFirstWav() throws {
+    func testReviewEmptyPartsFindsEveryOwnPartAndNoOthers() throws {
         try touch("20261114_090000.wav")
         try touch("20261114_090000_part2.wav")
+        try touch("20261114_090000_part3.wav")
+        let other = try touch("20261114_100000_part2.wav")
+        let near = try touch("20261114_090000x_part2.wav")
         try sidecar()
         let r = Recorder()
         let moved = try RecordingDiscard.trash(base: base, parts: [], pid: getpid(), remover: r.callAsFunction)
-        XCTAssertEqual(moved.map(\.lastPathComponent), ["20261114_090000.wav", "20261114_090000.mcmeta.json"])
+        XCTAssertEqual(
+            moved.map(\.lastPathComponent),
+            [
+                "20261114_090000.wav", "20261114_090000_part2.wav", "20261114_090000_part3.wav",
+                "20261114_090000.mcmeta.json",
+            ])
+        XCTAssertFalse(r.urls.contains(other))
+        XCTAssertFalse(r.urls.contains(near))
     }
 
     func testEmptyPartsWithNoWavStillMovesSidecar() throws {

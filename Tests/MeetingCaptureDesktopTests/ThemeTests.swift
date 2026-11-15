@@ -127,14 +127,15 @@ final class ReportThemeTests: XCTestCase {
         XCTAssertEqual(count("mc-theme", in: out), 1)
     }
 
-    func testUppercaseHeadAndLastHeadWins() {
+    func testUppercaseHeadAndFirstHeadWins() {
         let html = "<HTML><HEAD></HEAD><body>text &lt;/head&gt; </body></HTML>"
         let out = ReportTheme.apply(.phosphor, to: html)
         XCTAssertTrue(out.contains("</style></HEAD>"))
-        // A `</head>` inside the body text must not move the insertion point.
+        // Review: the real head closes first; a `</head>` later in the body must not move the insertion point.
         let body = "<html><head></head><body><pre></head></pre></body></html>"
         let out2 = ReportTheme.apply(.phosphor, to: body)
-        XCTAssertTrue(out2.contains("</style></head></pre>"), "backwards search takes the last one")
+        XCTAssertTrue(out2.contains("</style></head><body>"), "forward search takes the first one")
+        XCTAssertFalse(out2.contains("</style></head></pre>"))
     }
 
     func testCSSHoldsPaletteAndCannotBreakOut() {

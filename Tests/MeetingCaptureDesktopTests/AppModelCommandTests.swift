@@ -438,3 +438,144 @@ final class RecordingPageTests: AppModelTestCase {
         XCTAssertFalse(model.showsRecording)
     }
 }
+
+/// Findings from the M7 reviews and deep review.
+final class DesktopReviewFindingTests: AppModelTestCase {
+    private func startLive() {
+        session.armImmediately = true
+        model.perform(.start)
+        wait("recording") { self.model.phase == .recording }
+    }
+
+    private func entry(_ name: String) -> LibraryEntry {
+        LibraryEntry(
+            base: URL(fileURLWithPath: "/tmp/mc-fake/\(name)"), createdAt: Date(), topic: nil, scenarioTitle: nil,
+            durationSeconds: nil, hasTranscript: false, hasReport: false, isUnfinished: false, audioFiles: [])
+    }
+
+    func testReviewPerformIsGuardedByCanPerform() {
+        // Idle: stop and pause reach nothing.
+        model.perform(.stop)
+        model.perform(.pauseResume)
+        model.perform(.abort)
+        XCTAssertEqual(session.stopCalls + session.pauseCalls + session.abortCalls, 0)
+        // Setup first: start is refused.
+        model.needsSetup = true
+        model.perform(.start)
+        XCTAssertEqual(session.startCalls, 0)
+        XCTAssertEqual(model.phase, .idle)
+        model.needsSetup = false
+        // Before capture is live pause is refused.
+        model.perform(.start)
+        wait("start called") { self.session.startCalls == 1 }
+        model.perform(.pauseResume)
+        XCTAssertEqual(session.pauseCalls, 0)
+        session.goLive()
+        wait("recording") { self.model.phase == .recording }
+        // Already aborting: a second abort does nothing.
+        model.confirmAbort = { true }
+        model.perform(.abort)
+        model.perform(.abort)
+        XCTAssertEqual(session.abortCalls, 1)
+        wait("idle") { self.model.phase == .idle }
+    }
+
+    func testDeepReviewAbortConfirmedAfterRecordingAlreadyEndedSaysSo() {
+        startLive()
+        var asked = 0
+        model.confirmAbort = { [unowned self] in
+            asked += 1
+            self.session.stop()  // the recording ends while the question is open
+            self.wait("idle while the question is open") { self.model.phase == .idle }
+            return true
+        }
+        model.perform(.abort)
+        XCTAssertEqual(asked, 1)
+        XCTAssertEqual(session.abortCalls, 0, "nothing left to abort")
+        XCTAssertTrue(session.discardCalls.isEmpty, "never moved to the Trash")
+        XCTAssertEqual(finished.count, 1, "it was handed on to processing")
+        XCTAssertTrue(
+            model.recordError?.contains("already stopped and been processed") == true,
+            "\(String(describing: model.recordError))")
+        XCTAssertTrue(model.canPerform(.start))
+    }
+
+    func testDeepReviewAbortConfirmedAfterEndCancelsItsRunningWork() {
+        // The hook stands in for the job that processing began: unfinished, on this base.
+        // (A real queued job would run the transcriber; this drives the same cancel path.)
+        model.afterRecording = { [unowned self] parts, base in
+            self.finished.append((parts, base))
+            var job = self.demoJob(running: 0)
+            job.base = base
+            self.model.showDemoJob(job)
+        }
+        startLive()
+        model.confirmAbort = { [unowned self] in
+            self.session.stop()
+            self.wait("idle while the question is open") { self.model.phase == .idle }
+            return true
+        }
+        model.perform(.abort)
+        XCTAssertEqual(session.abortCalls, 0)
+        XCTAssertTrue(session.discardCalls.isEmpty)
+        XCTAssertTrue(
+            model.recordError?.contains("processing is cancelled") == true, "\(String(describing: model.recordError))")
+    }
+
+    func testDeepReviewQuitWarningWhileAbortingMentionsTheTrash() {
+        model.confirmAbort = { true }
+        model.perform(.start)
+        wait("start called") { self.session.startCalls == 1 }
+        model.perform(.abort)  // held: capture isn't live, so the session stays un-ended
+        settle(0.2)
+        XCTAssertEqual(session.abortCalls, 1)
+        XCTAssertEqual(session.endedCount, 0)
+        let warning = model.quitWarning
+        XCTAssertTrue(warning?.contains("Trash") == true, "\(String(describing: warning))")
+        XCTAssertFalse(warning?.contains("kept") == true)
+        session.goLive()
+        wait("idle") { self.model.phase == .idle }
+        XCTAssertNil(model.quitWarning)
+    }
+
+    func testReviewAJobNeverTakesTheWindowOffALiveRecording() {
+        startLive()
+        XCTAssertTrue(model.showsRecording)
+        // A missing transcript fails at once and runs nothing real.
+        model.writeReportAgain(entry("20260101_000000"))
+        XCTAssertFalse(model.showsJob, "a job started during a recording must not take the window")
+        XCTAssertNil(model.selection)
+        XCTAssertTrue(model.showsRecording)
+        wait("job to finish") { self.model.job?.finished == true }
+        XCTAssertEqual(model.job?.failure != nil, true)
+        settle(0.1)
+        XCTAssertNil(model.selection, "a finished job never selects a report during a recording")
+        XCTAssertTrue(model.showsRecording)
+        XCTAssertEqual(session.stopCalls, 0)
+        model.perform(.stop)
+        wait("idle") { self.model.phase == .idle }
+    }
+
+    func testReviewAJobStartedWhileIdleStillShowsItself() {
+        model.writeReportAgain(entry("20260101_000001"))
+        XCTAssertTrue(model.showsJob)
+        XCTAssertNil(model.selection)
+        wait("job to finish") { self.model.job?.finished == true }
+    }
+
+    func testReviewAbortThenQuitDiscardsOnceThenCallsDone() {
+        model.confirmAbort = { true }
+        model.perform(.start)
+        wait("start called") { self.session.startCalls == 1 }
+        model.perform(.abort)
+        var order: [String] = []
+        model.stopEverythingForQuit { [unowned self] in order.append("done:\(self.session.discardCalls.count)") }
+        XCTAssertTrue(order.isEmpty, "quit waits for the discard")
+        session.goLive()
+        wait("done called") { !order.isEmpty }
+        settle(0.2)
+        XCTAssertEqual(order, ["done:1"], "discard ran once, before done")
+        XCTAssertEqual(session.discardCalls.count, 1)
+        XCTAssertTrue(finished.isEmpty)
+    }
+}
