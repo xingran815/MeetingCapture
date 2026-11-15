@@ -1,10 +1,11 @@
 # Now
-Updated: 2026-11-14 · **M7 planned: Terminal Native UI, menu bar extra, logo (issue 29).** Branch `m7-terminal-ui` holds the spec and the brand assets; no app code yet. The mock-ups are kept out of the public repo: private artifact https://claude.ai/artifact/6VmJqJ96EW555iCdLGwJ7y, local copy `dev/tmp/m7-mockups/`. The refactor (M1–M6) is complete; M6 report: `dev/evidence/2026-11-09-m6-report.md`.
+Updated: 2026-11-15 · **M7 done: Terminal Native UI, menu bar extra, logo, Abort (issue 29).** Report: `dev/evidence/2026-11-15-m7-report.md`. Decisions D-101 to D-105.
 
-**Next step:** start M7 in a new session on branch `m7-terminal-ui`. Read `docs/specs/07-terminal-ui.md`, open the mock-ups (`dev/tmp/m7-mockups/round1-directions/c02-terminal.html` and `logos-round2.html` card 2, or the artifact if that folder is gone), then begin with the theme tokens (Phosphor and Paper) as one SwiftUI file the views read from, before restyling any view. Next: the menu bar extra (its "Unsure" items first), then the views. Issue 28 (meeting-start prompt) waits until M7 is merged.
-**How to check M7 so far:** `scripts/make-brand.sh` rebuilds `packaging/AppIcon.icns`; `scripts/build-app.sh` shows the icon. The spec lists Done-when, with one 👤 check.
+**Next step:** start issue 28, the "Transcribe this meeting?" prompt when a call starts, in a new session on a new branch from `main`. It has no spec yet: write `docs/specs/08-meeting-prompt.md` first (the mock-up is `dev/tmp/m7-mockups/meeting-prompt-issue28.html`, kept out of the repo), ask the user the open questions, then build on the menu bar extra and `AppModel.perform`. Keep the menu bar item narrow (D-104): a notch hides a wider one.
+**How to check M7:** `scripts/app-snapshots.sh` draws both themes and the menu bar states with invented data; `scripts/build-app.sh --install` builds the app with the macOS 26 icon.
 
 Open loops:
+- **M7 lows left:** a CLI call already under way isn't stopped when its job is cancelled (subprocess change, needs a security review); the shell's x+Enter doesn't ask; untested: cancelling a late-aborted job still queued, and a successful job finishing during a recording.
 - **Checks:** pre-push is sweeps only. CI skips `…SlowTests` classes. `check.sh` runs unit tests on 4 workers (D-77, D-79); don't run other heavy jobs alongside. `MicCaptureRestartTests` uses the real audio engine and can fail if another job uses the mic.
 - **Reviews run before the push** on local commits that passed `check.sh` (D-89), all needed ones in parallel; fix after all have finished.
 - **Reports are built to skim** by the user's rules (D-87, D-88).
