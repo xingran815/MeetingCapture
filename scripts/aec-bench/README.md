@@ -27,6 +27,14 @@ $B/.venv/bin/python -I scripts/aec-bench/eval.py $B .build/debug/MeetingCaptureC
 | `eval_lib.py` | Scoring shared by all: AECMOS v4 (16 kHz, scenario-aware), ERLE, PESQ-WB |
 | `res_lab.py` | Tries residual suppressors in Python on the dumped linear stage |
 | `search.py` | Random search over `res_lab.py`'s soft suppressor on the dev clips |
+| `train_data.py` | Builds training features from the challenge's `train` split and real far-end + near-end mixes, none of the bench clips; runs the binary's linear stage, two jobs at a time |
+| `nres.py` | The neural suppressor (a 0.4 M-weight GRU mask, 0-8 kHz): `nres.py train <bench>` writes `<bench>/nres.pt`; features stay memory-mapped, about 1.3 GB peak |
+| `export_nres.py` | Writes `nres.pt` into `Sources/MeetingCaptureCore/EchoSuppressorWeights.swift` (half precision, base64), which `EchoSuppressor.swift` reads |
+
+To retrain and ship new weights: `train_data.py`, `nres.py train`, `res_lab.py <bench> 'blend:geo:0.5+cn' dev`
+to check it, `export_nres.py`, `swift build`, then `eval.py ... test` for the Swift numbers.
+Needs `torch` in the venv. The weights come from AEC-Challenge audio, whose clips carry their
+own licences (see the challenge's README); check that before publishing new weights.
 
 Each synthetic clip is scored twice: as far-end single talk (the echo alone as the mic) and as
 double talk (the challenge's mic, with the clean near-end voice for PESQ).

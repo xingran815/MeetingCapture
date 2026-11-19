@@ -13,9 +13,8 @@ import Foundation
 //      clock, crossfaded. The user's speech isn't correlated with the reference at these
 //      lags, so it barely bends the fit, and there's no adaptation to go wrong in double
 //      talk. A repeat of the far side's words is later than the filter reaches.
-//   3. Residual: a per-bin gain from how much of what's left the echo estimate explains.
-//      When the user talks over the far side, what's left isn't coherent with the
-//      estimate, so the gain stays near one.
+//   3. Residual: `EchoSuppressor`, a classical per-bin gain blended with a small neural
+//      mask, plus comfort noise at the room's level (issue 31).
 //
 // Nothing here looks at words. Audio in memory is bounded by one window; the line-check
 // levels grow with length, at about 262 MB at peak for 30 minutes.
@@ -45,8 +44,6 @@ enum EchoRemover {
     /// The voice estimate takes off this many times the echo estimate's power per bin, so
     /// little echo is left in it to be subtracted with the voice.
     static let voiceEstimateOverSubtraction = 2.0
-    static let overSuppression = 16.0
-    static let gainFloorDB = -50.0
     /// A fit needs far more reference than it has taps, or it can reproduce the user's voice
     /// and subtract it. So a window with less reuses the last good filter, which holds
     /// while the room stays the same. From the M3.2 deep review.
@@ -91,7 +88,8 @@ enum EchoRemover {
             else { return nil }
         }
         let writer = try MonoWriter(output)
-        let suppressor = ResidualSuppressor(writer: writer)
+        let stage = try LinearStageFile()
+        defer { stage.remove() }
         var evidence = EvidenceBuilder()
         let errorDump = try linearStage.map { try MonoWriter($0.error) }
         let estimateDump = try linearStage.map { try MonoWriter($0.estimate) }
@@ -101,15 +99,15 @@ enum EchoRemover {
             evidence.add(mic: micChunk, estimate: estimate)
             try errorDump?.write(left)
             try estimateDump?.write(estimate)
-            try suppressor.push(error: left, estimate: estimate)
+            try stage.append(error: left, estimate: estimate)
         }
-        try suppressor.finish(totalFrames: frames)
-        writer.close()
         errorDump?.close()
         estimateDump?.close()
+        let cleanPower = try EchoSuppressor.run(stage: stage, writer: writer)
+        writer.close()
         return Result(
             cleaned: output, lagSeconds: Double(lag ?? 0) / Double(sampleRate), driftPPM: drift,
-            evidence: evidence.build(cleanPower: suppressor.cleanPower),
+            evidence: evidence.build(cleanPower: cleanPower),
             lagMoved: lagMoved(track, ppm: drift))
     }
 
@@ -552,121 +550,6 @@ struct EvidenceBuilder {
     }
 
     private func decibels(_ power: Float) -> Float { 10 * log10(max(power, 1e-12)) }
-}
-
-// MARK: - Residual suppression
-
-/// One frame at a time, keeping only the smoothing state.
-final class ResidualSuppressor {
-    private static let size = 1024
-    private static let hop = 512
-    private static let bins = size / 2 + 1
-
-    private let writer: MonoWriter
-    private let fft = RealFFT(atLeast: size)
-    private let window: [Double] = EchoRemover.hann(size).map { $0.squareRoot() }
-    private let floorGain = pow(10, EchoRemover.gainFloorDB / 20)
-
-    private var errorInput: [Double] = []
-    private var estimateInput: [Double] = []
-    private var overlap = [Double](repeating: 0, count: ResidualSuppressor.size)
-    private var crossRe = [Double](repeating: 0, count: bins)
-    private var crossIm = [Double](repeating: 0, count: bins)
-    private var errorSmooth = [Double](repeating: 0, count: bins)
-    private var estimateSmooth = [Double](repeating: 0, count: bins)
-    private var errorFast = [Double](repeating: 0, count: bins)
-    private var tail = [Double](repeating: 0, count: bins)
-    private var written = 0
-    private var limit = Int.max
-    private var powerSum = 0.0
-    private var powerFilled = 0
-    private let powerFrame = Int(EchoEvidence.frameSeconds * Double(EchoRemover.sampleRate))
-    private(set) var cleanPower: [Float] = []
-
-    init(writer: MonoWriter) { self.writer = writer }
-
-    func push(error: [Double], estimate: [Double]) throws {
-        errorInput += error
-        estimateInput += estimate
-        var used = 0
-        while errorInput.count - used >= Self.size {
-            try runFrame(at: used)
-            used += Self.hop
-        }
-        errorInput.removeFirst(used)
-        estimateInput.removeFirst(used)
-    }
-
-    /// Pads out the last frame, and writes exactly as many frames as went in.
-    func finish(totalFrames: Int) throws {
-        limit = totalFrames
-        let padding = [Double](repeating: 0, count: Self.size)
-        try push(error: padding, estimate: padding)
-        if written < totalFrames {
-            try write(Array(overlap.prefix(totalFrames - written)))
-        }
-    }
-
-    private func runFrame(at start: Int) throws {
-        let n = Self.size
-        var e = [Double](repeating: 0, count: n)
-        var d = [Double](repeating: 0, count: n)
-        errorInput.withUnsafeBufferPointer { p in
-            vDSP_vmulD(p.baseAddress! + start, 1, window, 1, &e, 1, vDSP_Length(n))
-        }
-        estimateInput.withUnsafeBufferPointer { p in
-            vDSP_vmulD(p.baseAddress! + start, 1, window, 1, &d, 1, vDSP_Length(n))
-        }
-        var errorSpectrum = fft.forward(e)
-        let estimateSpectrum = fft.forward(d)
-        let gains = updateGains(error: errorSpectrum, estimate: estimateSpectrum)
-        errorSpectrum.applyGains(gains)
-        let y = fft.inverse(errorSpectrum)
-        for i in 0..<n { overlap[i] += y[i] * window[i] }
-        try write(Array(overlap[0..<Self.hop]))
-        overlap.replaceSubrange(0..<Self.hop, with: overlap[Self.hop..<n])
-        for i in Self.hop..<n { overlap[i] = 0 }
-    }
-
-    /// How much of what's left the echo estimate explains, per bin. See `EchoRemover`.
-    private func updateGains(error: RealFFT.Spectrum, estimate: RealFFT.Spectrum) -> [Double] {
-        var gains = [Double](repeating: 1, count: Self.bins)
-        for k in 0..<Self.bins {
-            let er = error.real(at: k)
-            let ei = error.imaginary(at: k)
-            let dr = estimate.real(at: k)
-            let di = estimate.imaginary(at: k)
-            let pe = er * er + ei * ei
-            let pd = dr * dr + di * di
-            crossRe[k] = 0.9 * crossRe[k] + 0.1 * (er * dr + ei * di)
-            crossIm[k] = 0.9 * crossIm[k] + 0.1 * (ei * dr - er * di)
-            errorSmooth[k] = 0.9 * errorSmooth[k] + 0.1 * pe
-            estimateSmooth[k] = 0.9 * estimateSmooth[k] + 0.1 * pd
-            errorFast[k] = 0.5 * errorFast[k] + 0.5 * pe
-            tail[k] = max(pd, tail[k] * 0.6)
-            let cross = crossRe[k] * crossRe[k] + crossIm[k] * crossIm[k]
-            let coherence = cross / (errorSmooth[k] * estimateSmooth[k] + 1e-20)
-            let leak = min(cross / (estimateSmooth[k] * estimateSmooth[k] + 1e-20), 1)
-            let residual = EchoRemover.overSuppression * leak * tail[k] * min(coherence * 4, 1)
-            gains[k] = max(1 - residual / (errorFast[k] + 1e-20), floorGain)
-        }
-        return gains
-    }
-
-    private func write(_ all: [Double]) throws {
-        let samples = Array(all.prefix(max(limit - written, 0)))
-        for sample in samples {
-            powerSum += sample * sample
-            powerFilled += 1
-            if powerFilled == powerFrame {
-                cleanPower.append(Float(powerSum / Double(powerFrame)))
-                powerSum = 0
-                powerFilled = 0
-            }
-        }
-        try writer.write(samples)
-        written += samples.count
-    }
 }
 
 // MARK: - Files
