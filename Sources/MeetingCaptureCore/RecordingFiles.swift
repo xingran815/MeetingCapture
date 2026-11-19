@@ -47,13 +47,16 @@ enum RecordingFiles {
         name.replacingOccurrences(of: "_part\\d+$", with: "", options: .regularExpression)
     }
 
-    /// The recording a file stem belongs to, counting its cleaned mic: `meeting_clean` and
-    /// `meeting_part2_clean` both belong to `meeting`. Only an exact `_clean` ending counts,
-    /// so `meeting_clean_notes` is someone else's file.
+    /// The recording a file stem belongs to, counting its cleaned mic and the echo debug
+    /// copies: `meeting_clean`, `meeting_part2_clean` and `meeting_part2_mic_after` all belong
+    /// to `meeting`. Only an exact ending counts, so `meeting_clean_notes` is someone else's file.
     static func ownerBase(of stem: String) -> String {
-        let suffix = "_clean"
-        return baseName(of: stem.hasSuffix(suffix) ? String(stem.dropLast(suffix.count)) : stem)
+        let suffix = derivedSuffixes.first { stem.hasSuffix($0) && stem.count > $0.count }
+        return baseName(of: suffix.map { String(stem.dropLast($0.count)) } ?? stem)
     }
+
+    /// Endings of files made from a part: the listening copy and the echo debug pair (M8).
+    static let derivedSuffixes = ["_clean", "_mic_before", "_mic_after"]
 
     /// Why a new recording can't be written here, or nil if it can. Reusing a name
     /// would truncate a WAV that may be the only copy, overwrite the transcript and

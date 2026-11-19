@@ -23,6 +23,9 @@ struct Config: Codable, Equatable {
     var autoTranscribe: Bool = true
     var autoSummarize: Bool = true
     var aecEnabled: Bool = true
+    /// Also keeps each part's mic before and after echo removal, as mono WAVs beside the
+    /// recording, to compare by ear. Off by default: two more uncompressed files per part.
+    var aecDebugAudio: Bool = false
     var micEnabled: Bool = true
     /// Meeting-app ids eligible for SCStream auto-detection (see MeetingApp.catalog).
     /// Empty / none-running → capture falls back to all system audio.
@@ -88,7 +91,8 @@ struct Config: Codable, Equatable {
     // Custom decoder provides defaults for missing keys (backward compat).
     enum CodingKeys: String, CodingKey {
         case whisperModel, whisperLanguage, defaultDurationMinutes, outputDirectory
-        case autoTranscribe, autoSummarize, aecEnabled, micEnabled, enabledMeetingAppIDs, knownMeetingAppIDs
+        case autoTranscribe, autoSummarize, aecEnabled, aecDebugAudio, micEnabled
+        case enabledMeetingAppIDs, knownMeetingAppIDs
         case captureAllAudio
         case llmProfiles, selectedLLMProfileID
         case llmRoute, primaryCLI, dailyCLICallCap, claudeModels, codexModels
@@ -117,6 +121,7 @@ struct Config: Codable, Equatable {
         autoTranscribe = try c.decodeIfPresent(Bool.self, forKey: .autoTranscribe) ?? true
         autoSummarize = try c.decodeIfPresent(Bool.self, forKey: .autoSummarize) ?? true
         aecEnabled = try c.decodeIfPresent(Bool.self, forKey: .aecEnabled) ?? true
+        aecDebugAudio = try c.decodeIfPresent(Bool.self, forKey: .aecDebugAudio) ?? false
         micEnabled = try c.decodeIfPresent(Bool.self, forKey: .micEnabled) ?? true
         enabledMeetingAppIDs = try c.decodeIfPresent([String].self, forKey: .enabledMeetingAppIDs) ?? MeetingApp.allIDs
         // An app the catalog gained since this config was saved starts enabled; one the

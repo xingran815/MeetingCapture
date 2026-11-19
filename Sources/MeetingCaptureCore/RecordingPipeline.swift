@@ -75,6 +75,8 @@ struct RecordingPipeline {
         var cleanedAudio: [URL] = []
         /// Start times of mic lines left out as leftover echo, across the whole recording.
         var leftOutLines: [String] = []
+        /// Each cleaned part's mic before and after echo removal, if the debug copies were asked for.
+        var echoDebugAudio: [URL] = []
         var formatted: String { SpeakerLabels.format(segments) }
     }
 
@@ -82,6 +84,10 @@ struct RecordingPipeline {
     let detector: SpeakerDetecting?
     /// Off for `--no-aec` and the AEC setting.
     var removeEcho = true
+    /// Keeps each part's mic before and after echo removal (`<part>_mic_before.wav`,
+    /// `<part>_mic_after.wav`) so the two can be compared by ear. Only with `keepingCleanedAudio`,
+    /// so only a new recording's files are written, and only where echo was removed (M8).
+    var keepEchoDebugAudio = false
     /// Told as each stage starts, with the part number (1-based) and the part count.
     /// The app shows it; the terminal leaves it nil.
     var onStage: ((ProcessingStage, Int, Int) -> Void)? = nil
@@ -112,6 +118,8 @@ struct RecordingPipeline {
         var cleanedAudio: [URL] = []
         var leftOutLines: [String] = []
         var pendingClean: [(mic: URL, system: URL, to: URL)] = []
+        var pendingDebug: [(from: URL, to: URL)] = []
+        var echoDebugAudio: [URL] = []
         for (index, part) in parts.enumerated() {
             // A crashed WAV reads as empty until its header is repaired. Nothing else
             // about the file changes, and a healthy one isn't touched.
@@ -176,6 +184,10 @@ struct RecordingPipeline {
                 }
                 if keepingCleanedAudio, source != url, let system = tracks.system {
                     pendingClean.append((source, system, Self.cleanedURL(for: part)))
+                    if keepEchoDebugAudio {
+                        let urls = Self.echoDebugURLs(for: part)
+                        pendingDebug += [(url, urls.before), (source, urls.after)]
+                    }
                 }
             }
             if let url = tracks.system {
@@ -227,6 +239,18 @@ struct RecordingPipeline {
                 try? FileManager.default.removeItem(at: clean.to)
             }
         }
+        // The debug pair, after every part went through, for the same reason as above. Copies
+        // of this run's own temporary files, so the raw part is never touched, and never
+        // over a file that's already there.
+        for debug in pendingDebug where !FileManager.default.fileExists(atPath: debug.to.path) {
+            do {
+                try FileManager.default.copyItem(at: debug.from, to: debug.to)
+                echoDebugAudio.append(debug.to)
+            } catch {
+                try? FileManager.default.removeItem(at: debug.to)
+                notes.append("Couldn't keep \(debug.to.lastPathComponent): \(error.localizedDescription)")
+            }
+        }
         if parts.count > 1 && detectedSpeakers {
             notes.append(
                 "This recording has \(parts.count) parts, and speakers are detected separately in each. "
@@ -234,7 +258,7 @@ struct RecordingPipeline {
         }
         return Transcript(
             segments: all, notes: notes, hasDoubtfulTrack: hasDoubtfulTrack, cleanedAudio: cleanedAudio,
-            leftOutLines: leftOutLines)
+            leftOutLines: leftOutLines, echoDebugAudio: echoDebugAudio)
     }
 
     private static func clock(_ seconds: Double) -> String {
@@ -251,6 +275,17 @@ struct RecordingPipeline {
         part.deletingLastPathComponent()
             .appendingPathComponent(part.deletingPathExtension().lastPathComponent + "_clean")
             .appendingPathExtension("wav")
+    }
+
+    /// The echo debug pair for a part: `meeting.wav` gives `meeting_mic_before.wav` and
+    /// `meeting_mic_after.wav`. Mono, at the recording's rate, never compressed.
+    static func echoDebugURLs(for part: URL) -> (before: URL, after: URL) {
+        let dir = part.deletingLastPathComponent()
+        let stem = part.deletingPathExtension().lastPathComponent
+        return (
+            dir.appendingPathComponent(stem + "_mic_before").appendingPathExtension("wav"),
+            dir.appendingPathComponent(stem + "_mic_after").appendingPathExtension("wav")
+        )
     }
 
     /// Encodes each WAV to M4A, keeping any WAV whose M4A can't be proven good.
@@ -301,7 +336,10 @@ struct RecordingPipeline {
         // The cleaned mic is extra, made from the raw part, which is archived on its own
         // above. So a problem here can't cost the recording, or block retention's proof.
         let cleaned = archive(parts: transcript?.cleanedAudio ?? [], encoder: encoder)
-        sidecar.audioFiles = (archived.files + cleaned.files).map(\.lastPathComponent)
+        // The debug pair stays WAV, to compare without a codec in between, and is listed so
+        // retention and the Trash take it with the rest.
+        sidecar.audioFiles = (archived.files + cleaned.files + (transcript?.echoDebugAudio ?? [])).map(
+            \.lastPathComponent)
         // Lasts past the terminal. Retention isn't held for these, as it is for a doubtful
         // track: most calls have some, so it would never run (D-73).
         sidecar.leftOutLines = transcript?.leftOutLines

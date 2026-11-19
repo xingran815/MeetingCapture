@@ -418,6 +418,7 @@ public final class MeetingProcessor {
     private func makePipeline(_ transcriber: Transcriber, onEvent: @escaping (Event) -> Void) -> RecordingPipeline {
         var pipeline = RecordingPipeline(
             transcriber: transcriber, detector: SpeakerKitDetector(), removeEcho: config.aecEnabled)
+        pipeline.keepEchoDebugAudio = config.aecDebugAudio
         pipeline.onStage = { onEvent(.stage($0, part: $1, parts: $2)) }
         return pipeline
     }

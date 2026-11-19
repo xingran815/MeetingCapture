@@ -173,6 +173,8 @@ public enum MeetingCaptureApp {
                   --all-audio           Capture ALL system audio          (default: meeting app only)
                   --no-mic              Disable mic capture               (default: mic on its own track)
                   --no-aec              Skip removing speaker echo after the call (default: on)
+                  --aec-debug-audio     Also keep each part's mic before and after echo removal,
+                                         as <part>_mic_before.wav and <part>_mic_after.wav (default: off)
 
                 Transcription options:
                   --transcribe          Transcribe the recording after capture
@@ -235,6 +237,7 @@ public enum MeetingCaptureApp {
         let allAudio = args.flag("--all-audio")
         let noMic = args.flag("--no-mic")
         let noAec = args.flag("--no-aec")
+        let aecDebugAudio = args.flag("--aec-debug-audio")
         let listMode = args.flag("--list")
         let transcribeFlag = args.flag("--transcribe")
         let transcribeOnly = args.option("--transcribe-only")
@@ -387,6 +390,7 @@ public enum MeetingCaptureApp {
                     pipeline = RecordingPipeline(
                         transcriber: transcriber, detector: SpeakerKitDetector(),
                         removeEcho: !noAec && persistedConfig.aecEnabled)
+                    pipeline?.keepEchoDebugAudio = aecDebugAudio || persistedConfig.aecDebugAudio
                 }
                 let result = try await RecordingPipeline.finish(parts: wavFiles, base: base, pipeline: pipeline)
                 cleanOldAudio(persistedConfig)
@@ -425,7 +429,18 @@ public enum MeetingCaptureApp {
                 fputs("❌  \(path) doesn't have both tracks.\n", stderr)
                 return 1
             }
-            guard let result = try EchoRemover.clean(mic: mic, system: system, to: URL(fileURLWithPath: out)) else {
+            // The lab can ask for the linear stage too, to try residual suppressors on it.
+            let linear = ProcessInfo.processInfo.environment["MEETINGCAPTURE_AEC_LINEAR_DIR"].map { dir in
+                let base = URL(fileURLWithPath: out).deletingPathExtension().lastPathComponent
+                return (
+                    error: URL(fileURLWithPath: dir).appendingPathComponent("\(base)_linear_error.wav"),
+                    estimate: URL(fileURLWithPath: dir).appendingPathComponent("\(base)_linear_estimate.wav")
+                )
+            }
+            guard
+                let result = try EchoRemover.clean(
+                    mic: mic, system: system, to: URL(fileURLWithPath: out), linearStage: linear)
+            else {
                 print("No echo found, so nothing was written.")
                 return 0
             }

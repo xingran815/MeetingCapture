@@ -49,7 +49,11 @@ enum EchoRemover {
     /// Writes the cleaned mic to `output`, or returns nil if no echo shows in the mic at
     /// all, such as on headphones, where filtering could only harm the voice, or if the far
     /// side never talks enough to fit a filter, where the output would just be the raw mic.
-    static func clean(mic: URL, system: URL, to output: URL) throws -> Result? {
+    /// `linearStage`, for the echo lab only, also gets the linear stage's output and its echo
+    /// estimate, before residual suppression, as two mono files.
+    static func clean(mic: URL, system: URL, to output: URL, linearStage: (error: URL, estimate: URL)? = nil) throws
+        -> Result?
+    {
         let micReader = try MonoReader(mic)
         let systemReader = try MonoReader(system)
         let frames = min(micReader.length, systemReader.length)
@@ -67,14 +71,20 @@ enum EchoRemover {
         let writer = try MonoWriter(output)
         let suppressor = ResidualSuppressor(writer: writer)
         var evidence = EvidenceBuilder()
+        let errorDump = try linearStage.map { try MonoWriter($0.error) }
+        let estimateDump = try linearStage.map { try MonoWriter($0.estimate) }
         try fitAndSubtract(mic: micReader, reference: reference, frames: frames, seed: seed) { micChunk, estimate in
             var left = [Double](repeating: 0, count: micChunk.count)
             vDSP_vsubD(estimate, 1, micChunk, 1, &left, 1, vDSP_Length(micChunk.count))
             evidence.add(mic: micChunk, estimate: estimate)
+            try errorDump?.write(left)
+            try estimateDump?.write(estimate)
             try suppressor.push(error: left, estimate: estimate)
         }
         try suppressor.finish(totalFrames: frames)
         writer.close()
+        errorDump?.close()
+        estimateDump?.close()
         return Result(
             cleaned: output, lagSeconds: Double(lag) / Double(sampleRate), driftPPM: drift,
             evidence: evidence.build(cleanPower: suppressor.cleanPower),

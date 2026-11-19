@@ -722,6 +722,7 @@ final class Shell {
                 .separator("   \(ledger.summaryLine(.codex, cap: c.dailyCLICallCap))"),
                 .separator("── Audio ────────────────────────────"),
                 MenuItem(key: "a", label: "Echo removal            [\(aecDesc)]"),
+                MenuItem(key: "e", label: "Echo debug audio        [\(c.aecDebugAudio ? "on" : "off")]"),
                 MenuItem(key: "m", label: "Mic capture             [\(c.micEnabled ? "on" : "off")]"),
                 MenuItem(key: "s", label: "Audio source            [\(appsDesc)]"),
                 MenuItem(
@@ -759,6 +760,7 @@ final class Shell {
                 } else {
                     print("Echo removal has no effect while mic is off — enable mic first.")
                 }
+            case "e": toggle(\.aecDebugAudio, label: "Echo debug audio")
             case "m": toggle(\.micEnabled, label: "Mic capture")
             case "s": promptMeetingApps()
             case "d":
