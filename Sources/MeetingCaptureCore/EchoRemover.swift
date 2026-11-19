@@ -37,6 +37,14 @@ enum EchoRemover {
     /// off the mic where the far side talks: an echo under 2 ms is still an echo (issue 31,
     /// `real8`), and a fit that removes little is only shaping the user's voice.
     static let unshiftedMinimumReductionDB = 6.0
+    /// Double talk: the user's voice is noise to the fit, and with 9,600 taps on 8 s it costs
+    /// a lot (AEC-Challenge synthetic: 14.4 dB of echo removed without double talk, 8.9 with).
+    /// So each window is fitted again on the mic minus an estimate of the voice, twice; that
+    /// gave 12.0 dB with double talk and no change without (issue 31).
+    static let voiceRefits = 2
+    /// The voice estimate takes off this many times the echo estimate's power per bin, so
+    /// little echo is left in it to be subtracted with the voice.
+    static let voiceEstimateOverSubtraction = 2.0
     static let overSuppression = 16.0
     static let gainFloorDB = -50.0
     /// A fit needs far more reference than it has taps, or it can reproduce the user's voice
@@ -242,7 +250,7 @@ enum EchoRemover {
             let x = try reference.read(from: a, count: b - a)
             guard activeSamples(x) >= Int(minimumActiveSeconds * Double(sampleRate)) else { continue }
             let y = try mic.read(from: a, count: b - a)
-            if let taps = solveFilter(x: x, y: y, taps: filterTaps, fft: fft) { return taps }
+            if let taps = solveAroundVoice(x: x, y: y, taps: filterTaps, fft: fft) { return taps }
         }
         return nil
     }
@@ -292,7 +300,7 @@ enum EchoRemover {
             let x = try reference.read(from: a, count: b - a)
             if activeSamples(x) >= Int(minimumActiveSeconds * Double(sampleRate)) {
                 let y = try mic.read(from: a, count: b - a)
-                if let taps = solveFilter(x: x, y: y, taps: taps, fft: fft) {
+                if let taps = solveAroundVoice(x: x, y: y, taps: taps, fft: fft) {
                     filter = fft.forward(taps)
                 }
             }
@@ -334,6 +342,58 @@ enum EchoRemover {
         // The crossfade's weight reaches almost zero at the very end, where the estimate
         // has shrunk by the same factor, so only an exact zero needs guarding.
         (0..<count).map { weight[offset + $0] > 1e-12 ? values[offset + $0] / weight[offset + $0] : 0 }
+    }
+
+    /// A fit, then `voiceRefits` more, each on the mic minus the voice the last one leaves.
+    static func solveAroundVoice(x: [Double], y: [Double], taps: Int, fft: RealFFT) -> [Double]? {
+        guard var filter = solveFilter(x: x, y: y, taps: taps, fft: fft) else { return nil }
+        for _ in 0..<voiceRefits {
+            let estimate = Array(fft.inverse(fft.forward(x).multiplied(by: fft.forward(filter))).prefix(y.count))
+            var left = [Double](repeating: 0, count: y.count)
+            vDSP_vsubD(estimate, 1, y, 1, &left, 1, vDSP_Length(y.count))
+            let voice = voiceEstimate(left: left, echo: estimate)
+            var target = [Double](repeating: 0, count: y.count)
+            vDSP_vsubD(voice, 1, y, 1, &target, 1, vDSP_Length(y.count))
+            guard let next = solveFilter(x: x, y: target, taps: taps, fft: fft) else { break }
+            filter = next
+        }
+        return filter
+    }
+
+    /// What's left after the echo estimate, with a per-bin gain of
+    /// max(1 - k·|echo|²/|left|², 0): mostly the user's voice, little echo.
+    static func voiceEstimate(left: [Double], echo: [Double]) -> [Double] {
+        let size = 1024
+        let hop = size / 2
+        let fft = RealFFT(atLeast: size)
+        let window = hann(size).map { $0.squareRoot() }
+        var out = [Double](repeating: 0, count: left.count + size)
+        var e = [Double](repeating: 0, count: size)
+        var d = [Double](repeating: 0, count: size)
+        var start = -hop
+        while start < left.count {
+            for i in 0..<size {
+                let j = start + i
+                let inside = j >= 0 && j < left.count
+                e[i] = inside ? left[j] * window[i] : 0
+                d[i] = inside ? echo[j] * window[i] : 0
+            }
+            var spectrum = fft.forward(e)
+            let echoSpectrum = fft.forward(d)
+            var gains = [Double](repeating: 0, count: size / 2 + 1)
+            for k in gains.indices {
+                let pe = pow(spectrum.real(at: k), 2) + pow(spectrum.imaginary(at: k), 2)
+                let pd = pow(echoSpectrum.real(at: k), 2) + pow(echoSpectrum.imaginary(at: k), 2)
+                gains[k] = max(1 - voiceEstimateOverSubtraction * pd / (pe + 1e-20), 0)
+            }
+            spectrum.applyGains(gains)
+            let y = fft.inverse(spectrum)
+            for i in 0..<size where start + i >= 0 && start + i < left.count {
+                out[start + i] += y[i] * window[i]
+            }
+            start += hop
+        }
+        return Array(out.prefix(left.count))
     }
 
     /// The FIR filter that best turns x into y, by the normal equations.
