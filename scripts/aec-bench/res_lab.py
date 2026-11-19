@@ -163,7 +163,38 @@ def soft_res(E, D, pct=50, os_=1.0, c_db=0.0, slope=0.5, release=0.8, frame_floo
 METHODS = {"shipped": shipped, "linear": none}
 
 
+def nn_res(E, D, weights=None, hi="edge"):
+    """The neural mask on 0-8 kHz; above that, the mask's top bins carried on."""
+    import nres
+    weights = weights or str(BENCH / "nres.pt")
+    lg = lambda X: np.log(np.abs(X[:, :nres.BINS]) ** 2 + 1e-10)
+    m = nres.mask_for(lg(E), lg(D), weights)
+    G = np.empty(E.shape)
+    G[:, :nres.BINS] = m
+    G[:, nres.BINS:] = m[:, -20:].mean(axis=1, keepdims=True)
+    return G
+
+
+VOICE_SAFE = dict(pct=45.61, os_=1.6, c_db=-1.62, slope=0.95, release=0.96, frame_floor_db=-21.27,
+                  floor_db=-22.31, decay=0.68, ahead=4)
+
+
+def blend(E, D, how, a=0.5):
+    n, c = nn_res(E, D), soft_res(E, D, **VOICE_SAFE)
+    if how == "max":
+        return np.maximum(n, c)
+    if how == "min":
+        return np.minimum(n, c)
+    return n ** a * c ** (1 - a)
+
+
 def soft_from(name):
+    if name.startswith("blend"):
+        parts = name.split(":")
+        return lambda E, D, p=None: blend(E, D, parts[1], float(parts[2]) if len(parts) > 2 else 0.5)
+    if name.startswith("nn"):
+        w = name.split(":", 1)[1] if ":" in name else None
+        return lambda E, D, p=None: nn_res(E, D, w)
     # name like soft:pct=50,os_=1,...
     kw = dict(kv.split("=") for kv in name.split(":", 1)[1].split(",")) if ":" in name else {}
     kw = {k: float(v) for k, v in kw.items()}
