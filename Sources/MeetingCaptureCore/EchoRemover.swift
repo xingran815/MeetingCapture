@@ -29,6 +29,14 @@ enum EchoRemover {
     static let fitHopSeconds = 2.0
     static let filterTaps = 9_600
     static let leadSeconds = 0.03
+    /// The delay is the first tap at least this share of the strongest. A reflection can
+    /// outdo the direct path, and aligning on it put the start of the echo before the
+    /// filter's reach (issue 31, `syn5`).
+    static let earliestPeakShare = 0.5
+    /// With no delay found, a fit at no shift is kept only if it takes at least this much
+    /// off the mic where the far side talks: an echo under 2 ms is still an echo (issue 31,
+    /// `real8`), and a fit that removes little is only shaping the user's voice.
+    static let unshiftedMinimumReductionDB = 6.0
     static let overSuppression = 16.0
     static let gainFloorDB = -50.0
     /// A fit needs far more reference than it has taps, or it can reproduce the user's voice
@@ -59,15 +67,21 @@ enum EchoRemover {
         let frames = min(micReader.length, systemReader.length)
         guard frames > 0 else { return nil }
         let track = try lagTrack(mic: micReader, system: systemReader, frames: frames)
-        guard let lag = medianLag(track) else { return nil }
-        let drift = driftPPM(track)
+        let lag = medianLag(track)
+        let drift = lag == nil ? 0 : driftPPM(track)
 
         // The warp pivots at the file's start, so the shift has to be the lag there, not the
         // median, or a fast mic clock moves the echo ahead of what the filter can reach.
-        let lagAtStart = lagAtFileStart(track, ppm: drift)
-        let reference = try WarpedReference(
-            reader: systemReader, ppm: drift, shift: max(lagAtStart - Int(leadSeconds * Double(sampleRate)), 0))
+        // No delay found leaves the far side unshifted, and the fit then has to prove itself.
+        let shift = lag == nil ? 0 : max(lagAtFileStart(track, ppm: drift) - Int(leadSeconds * Double(sampleRate)), 0)
+        let reference = try WarpedReference(reader: systemReader, ppm: drift, shift: shift)
         guard let seed = try firstFilter(mic: micReader, reference: reference, frames: frames) else { return nil }
+        if lag == nil {
+            guard
+                try reduction(of: seed, mic: micReader, reference: reference, frames: frames)
+                    >= unshiftedMinimumReductionDB
+            else { return nil }
+        }
         let writer = try MonoWriter(output)
         let suppressor = ResidualSuppressor(writer: writer)
         var evidence = EvidenceBuilder()
@@ -86,7 +100,7 @@ enum EchoRemover {
         errorDump?.close()
         estimateDump?.close()
         return Result(
-            cleaned: output, lagSeconds: Double(lag) / Double(sampleRate), driftPPM: drift,
+            cleaned: output, lagSeconds: Double(lag ?? 0) / Double(sampleRate), driftPPM: drift,
             evidence: evidence.build(cleanPower: suppressor.cleanPower),
             lagMoved: lagMoved(track, ppm: drift))
     }
@@ -159,7 +173,11 @@ enum EchoRemover {
         vDSP_maxviD(magnitudes, 1, &peak, &index, vDSP_Length(magnitudes.count))
         let median = magnitudes.sorted()[magnitudes.count / 2]
         guard peak > 15 * (median + 1e-12) else { return nil }
-        return lowest + Int(index)
+        // The direct path, not the loudest reflection: the first tap that's clearly part of the
+        // echo. It must clear the same bar as the peak, so noise before the echo can't count.
+        let bar = max(earliestPeakShare * peak, 15 * (median + 1e-12))
+        let first = magnitudes[0...Int(index)].firstIndex { $0 >= bar } ?? Int(index)
+        return lowest + first
     }
 
     static func medianLag(_ track: [LagPoint]) -> Int? {
@@ -227,6 +245,30 @@ enum EchoRemover {
             if let taps = solveFilter(x: x, y: y, taps: filterTaps, fft: fft) { return taps }
         }
         return nil
+    }
+
+    /// How much `taps` takes off the mic, in dB, over the first window with enough far side.
+    private static func reduction(of taps: [Double], mic: MonoReader, reference: WarpedReference, frames: Int) throws
+        -> Double
+    {
+        let window = Int(fitWindowSeconds * Double(sampleRate))
+        let hop = Int(fitHopSeconds * Double(sampleRate))
+        let fft = RealFFT(atLeast: window + taps.count)
+        let filter = fft.forward(taps)
+        for centre in stride(from: 0, to: frames, by: hop) {
+            let a = max(centre - window / 2, 0)
+            let b = min(centre + window / 2, frames)
+            let x = try reference.read(from: a, count: b - a)
+            guard activeSamples(x) >= Int(minimumActiveSeconds * Double(sampleRate)) else { continue }
+            let context = max(a - taps.count, 0)
+            let input = try reference.read(from: context, count: b - context)
+            let estimate = fft.inverse(fft.forward(input).multiplied(by: filter))
+            let y = try mic.read(from: a, count: b - a)
+            var left = [Double](repeating: 0, count: y.count)
+            for i in 0..<y.count { left[i] = y[i] - estimate[i + a - context] }
+            return 10 * log10(meanPower(y) / max(meanPower(left), 1e-20))
+        }
+        return 0
     }
 
     private static func fitAndSubtract(
