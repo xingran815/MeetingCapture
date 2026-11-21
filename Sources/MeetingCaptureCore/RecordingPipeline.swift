@@ -240,14 +240,25 @@ struct RecordingPipeline {
             }
         }
         // The debug pair, after every part went through, for the same reason as above. Copies
-        // of this run's own temporary files, so the raw part is never touched, and never
-        // over a file that's already there.
-        for debug in pendingDebug where !FileManager.default.fileExists(atPath: debug.to.path) {
+        // of this run's own temporary files, so the raw part is never touched, moved in whole
+        // and never over a file that's already there. A name already taken may be an earlier
+        // run's copy that never got listed (a crash before the sidecar was saved); it isn't
+        // claimed, because it could be anyone's, so the note says it's left as it is.
+        for debug in pendingDebug {
+            guard !FileManager.default.fileExists(atPath: debug.to.path) else {
+                notes.append(
+                    "\(debug.to.lastPathComponent) was already there, so it was left as it is; "
+                        + "it isn't removed with this recording.")
+                continue
+            }
+            let scratch = work.appendingPathComponent(UUID().uuidString + ".wav")
             do {
-                try FileManager.default.copyItem(at: debug.from, to: debug.to)
+                try FileManager.default.copyItem(at: debug.from, to: scratch)
+                try FileManager.default.moveItem(at: scratch, to: debug.to)
                 echoDebugAudio.append(debug.to)
             } catch {
-                try? FileManager.default.removeItem(at: debug.to)
+                // Only this run's scratch copy: a move that fails never wrote the target.
+                try? FileManager.default.removeItem(at: scratch)
                 notes.append("Couldn't keep \(debug.to.lastPathComponent): \(error.localizedDescription)")
             }
         }

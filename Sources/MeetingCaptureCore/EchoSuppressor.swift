@@ -24,7 +24,7 @@ import Foundation
 /// double talk a little more. The bench is 10 s clips and 10 real sessions; the M3.2 takes and
 /// one real call are the only whole calls of the user's tried.
 ///
-/// The linear stage waits in a temp file between the passes (about 690 MB for a 30-minute
+/// The linear stage waits in a temp file between the passes (about 345 MB for a 30-minute
 /// part); memory stays at a few histograms and one frame.
 enum EchoSuppressor {
     static let size = 1024
@@ -216,8 +216,8 @@ struct LogHistogram {
     }
 }
 
-/// The linear stage's error and echo estimate, as float32 pairs in a private temp file,
-/// read back as windowed spectra. Deleted by `remove()`; a crash leaves it in the user's own
+/// The linear stage's error and echo estimate, as int16 pairs in a private temp file (about
+/// 345 MB for a 30-minute part), read back as windowed spectra. Deleted by `remove()`; a crash leaves it in the user's own
 /// temp folder, which macOS clears.
 final class LinearStageFile {
     let url: URL
@@ -226,9 +226,24 @@ final class LinearStageFile {
     private let fft = RealFFT(atLeast: EchoSuppressor.size)
     private let window: [Double] = EchoRemover.hann(EchoSuppressor.size).map { $0.squareRoot() }
 
-    init() throws {
+    /// Free space left on the temp volume after the file, so a recording still being made on
+    /// the same disk isn't starved by echo removal (M8 deep review).
+    static let spareBytes: Int64 = 1 << 30
+
+    /// Refuses, before writing anything, when `frames` pairs plus `spareBytes` won't fit in the
+    /// space `available` reports; nil (unknown) goes ahead. Echo removal then fails, and the
+    /// raw mic is transcribed with a note, as for any other failure.
+    init(frames: Int, available: Int64? = LinearStageFile.availableBytes()) throws {
+        if let available, available < Int64(frames) * 4 + Self.spareBytes {
+            throw CocoaError(
+                .fileWriteOutOfSpace,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "not enough free disk space for echo removal (\(available / 1_000_000) MB free)"
+                ])
+        }
         url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("meetingcapture-echo-\(UUID().uuidString).f32")
+            .appendingPathComponent("meetingcapture-echo-\(UUID().uuidString).s16")
         guard FileManager.default.createFile(atPath: url.path, contents: nil, attributes: [.posixPermissions: 0o600])
         else { throw CocoaError(.fileWriteUnknown, userInfo: [NSFilePathErrorKey: url.path]) }
         handle = try FileHandle(forUpdating: url)
@@ -236,24 +251,36 @@ final class LinearStageFile {
 
     deinit { remove() }
 
+    /// Space the temp folder's volume can still give, or nil if macOS won't say.
+    static func availableBytes() -> Int64? {
+        let values = try? FileManager.default.temporaryDirectory
+            .resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+        return values?.volumeAvailableCapacityForImportantUsage
+    }
+
     /// Both signals are rounded to 16 bits, as the lab's linear-stage dumps are (MonoWriter), so
     /// the neural mask sees the features it was trained on. Without it, a far-silent frame's
     /// estimate falls far under the int16 floor the network learned, and networks trained on
     /// real calls took 20 dB off the user's voice (issue 31). The rounding itself is at -96 dB.
     func append(error: [Double], estimate: [Double]) throws {
         guard let handle else { return }
-        var pairs = [Float](repeating: 0, count: 2 * error.count)
+        var pairs = [Int16](repeating: 0, count: 2 * error.count)
         for i in error.indices {
-            pairs[2 * i] = Self.int16(error[i])
-            pairs[2 * i + 1] = Self.int16(estimate[i])
+            pairs[2 * i] = Self.code(error[i])
+            pairs[2 * i + 1] = Self.code(estimate[i])
         }
         try pairs.withUnsafeBytes { try handle.write(contentsOf: Data($0)) }
         frames += error.count
     }
 
     /// A sample as an int16 WAV stores it: scaled by 32768, rounded, clipped.
+    static func code(_ x: Double) -> Int16 {
+        Int16(min(max((x * 32768).rounded(), -32768), 32767))
+    }
+
+    /// The value a stored code stands for, as `MonoReader` reads an int16 WAV.
     static func int16(_ x: Double) -> Float {
-        Float(min(max((x * 32768).rounded(), -32768), 32767) / 32768)
+        Float(code(x)) / 32768
     }
 
     func remove() {
@@ -283,15 +310,15 @@ final class LinearStageFile {
             let start = t * hop
             let count = min(block, total - t)
             let wanted = (count - 1) * hop + size
-            try handle.seek(toOffset: UInt64(start * 8))
-            let data = try handle.read(upToCount: wanted * 8) ?? Data()
-            var samples = [Float](repeating: 0, count: 2 * wanted)
+            try handle.seek(toOffset: UInt64(start * 4))
+            let data = try handle.read(upToCount: wanted * 4) ?? Data()
+            var samples = [Int16](repeating: 0, count: 2 * wanted)
             samples.withUnsafeMutableBytes { _ = data.copyBytes(to: $0) }
             for j in 0..<count {
                 let o = j * hop
                 for i in 0..<size {
-                    e[i] = Double(samples[2 * (o + i)]) * window[i]
-                    d[i] = Double(samples[2 * (o + i) + 1]) * window[i]
+                    e[i] = Double(samples[2 * (o + i)]) / 32768 * window[i]
+                    d[i] = Double(samples[2 * (o + i) + 1]) / 32768 * window[i]
                 }
                 let es = fft.forward(e)
                 let ds = fft.forward(d)
@@ -414,7 +441,8 @@ struct NeuralMask {
                 var target = vImage_Buffer(
                     data: dst.baseAddress!, height: 1, width: vImagePixelCount(EchoSuppressorWeights.count),
                     rowBytes: dst.count)
-                _ = vImageConvert_Planar16FtoPlanarF(&source, &target, 0)
+                let error = vImageConvert_Planar16FtoPlanarF(&source, &target, 0)
+                precondition(error == kvImageNoError, "EchoSuppressorWeights didn't decode (\(error))")
             }
         }
         return out

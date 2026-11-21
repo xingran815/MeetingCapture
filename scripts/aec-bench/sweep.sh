@@ -11,6 +11,7 @@
 # calls. Each run writes runs/<name>.pt and runs/<name>.log; a run with both a .pt and a
 # "best val" line is skipped, so the sweep can be restarted. One at a time: the VM has 2 cores.
 set -euo pipefail
+set -f  # the run list's arguments are split on spaces, never globbed
 dir=$1
 list=$(cd "$(dirname "$2")" && pwd)/$(basename "$2")
 cd "$dir"

@@ -87,9 +87,10 @@ enum EchoRemover {
                     >= unshiftedMinimumReductionDB
             else { return nil }
         }
-        let writer = try MonoWriter(output)
-        let stage = try LinearStageFile()
+        // The stage file first: it refuses on a nearly full disk before anything is written.
+        let stage = try LinearStageFile(frames: frames)
         defer { stage.remove() }
+        let writer = try MonoWriter(output)
         var evidence = EvidenceBuilder()
         let errorDump = try linearStage.map { try MonoWriter($0.error) }
         let estimateDump = try linearStage.map { try MonoWriter($0.estimate) }

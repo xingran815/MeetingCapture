@@ -205,6 +205,7 @@ unless `--output` names another, and retention doesn't cover it there. For a rec
 |---|---|
 | `<base>.m4a` | The raw recording, two tracks: your mic and the system audio. Kept as WAV while recording, converted once the M4A is proven good |
 | `<base>_clean.m4a` | The same, with the speaker echo taken off your mic track, for listening |
+| `<part>_mic_before.wav`, `<part>_mic_after.wav` | Only with `--aec-debug-audio` (or the Settings switch): your mic before and after echo removal, uncompressed, to compare by ear. Listed with the recording, so retention and Move to Trash remove them too |
 | `<base>.txt` | The transcript: `[hh:mm:ss] You: …`, `Speaker 1: …` |
 | `<yyyyMMdd_HHmmss>_<topic>.html` | The report: one page, works offline, light and dark, searchable transcript |
 | `<base>.md`, `<base>.report.json` | The same report as Markdown and as data |

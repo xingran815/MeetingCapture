@@ -252,7 +252,7 @@ def _val(model, b):
 
 def mask_for(le, ld, weights):
     """le, ld: [frames, BINS] float arrays -> mask [frames, BINS], run on the CPU, whole clip."""
-    state = torch.load(weights, map_location="cpu")
+    state = torch.load(weights, map_location="cpu", weights_only=True)
     model = NRES(bins=state["out.bias"].shape[0])
     model.load_state_dict(state)
     model.eval()

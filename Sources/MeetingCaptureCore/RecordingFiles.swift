@@ -66,6 +66,11 @@ enum RecordingFiles {
         guard baseName(of: stem) == stem else {
             return "a name ending in _part2 is kept for the later files of a long recording. Choose another name."
         }
+        // A recording named `standup_mic_after` would read as `standup`'s debug copy, so
+        // retention and Move to Trash would never reach its own audio (M8 security review).
+        if let suffix = derivedSuffixes.first(where: { stem.hasSuffix($0) && stem.count > $0.count }) {
+            return "a name ending in \(suffix) is kept for files made from a recording. Choose another name."
+        }
         let names = (try? FileManager.default.contentsOfDirectory(atPath: base.deletingLastPathComponent().path)) ?? []
         // Compared without case, because the default Mac disk treats `A.wav` and `a.wav`
         // as one file, and writing one would erase the other.

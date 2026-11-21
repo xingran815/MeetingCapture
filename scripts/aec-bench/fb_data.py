@@ -11,7 +11,7 @@ training data. A training clip goes through the binary's linear stage, and only 
 are kept, all 513 bins of the 1024-point STFT: log|E|^2, log|D|^2 and |S| (the near end the
 output should keep, zero for echo-only clips), float16. A quarter are also used echo only.
 """
-import csv, io, json, os, random, subprocess, sys, tempfile, threading, urllib.request, zipfile
+import csv, io, json, os, random, re, subprocess, sys, tempfile, threading, urllib.request, zipfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -52,7 +52,16 @@ class HTTPFile(io.RawIOBase):
         req = urllib.request.Request(self.url, headers={"Range": f"bytes={self.pos}-{end}"})
         for attempt in range(4):
             try:
-                data = urllib.request.urlopen(req, timeout=120).read()
+                with urllib.request.urlopen(req, timeout=120) as resp:
+                    # Only the asked-for range, from https: a server that ignores Range would
+                    # send the whole 26 GB, and one that starts elsewhere would corrupt the zip
+                    # reads (M8 security review).
+                    if not resp.geturl().startswith("https://"):
+                        raise ValueError(f"redirected off https: {resp.geturl()}")
+                    if resp.status != 206 or not resp.headers.get("Content-Range", "").startswith(
+                            f"bytes {self.pos}-"):
+                        raise ValueError(f"no partial content for bytes {self.pos}-{end}")
+                    data = resp.read(end - self.pos + 1)
                 break
             except OSError:
                 if attempt == 3:
@@ -71,9 +80,29 @@ def archive():
     return _local.zip
 
 
+SAFE_ID = re.compile(r"[A-Za-z0-9_-]+")
+MAX_MEMBER = 512 << 20  # a challenge WAV is a few MB; anything this big is not one
+
+
+def member(zf, name):
+    """One archive member's bytes, refusing one larger than MAX_MEMBER before it's unpacked."""
+    size = zf.getinfo(name).file_size
+    if size > MAX_MEMBER:
+        raise ValueError(f"{name} would unpack to {size} bytes")
+    return zf.read(name)
+
+
+def safe_id(x):
+    """A clip or session id from the archive, checked before it becomes part of a file name, so
+    a tampered archive can't write outside the bench folder (M8 security review)."""
+    if not SAFE_ID.fullmatch(x):
+        raise ValueError(f"unexpected id {x!r}")
+    return x
+
+
 def read(fid, kind):
     """One wav from the zip, as float64 at 48 kHz."""
-    x, sr = sf.read(io.BytesIO(archive().read(f"data/{fid}_{kind}.wav")), dtype="float64")
+    x, sr = sf.read(io.BytesIO(member(archive(), f"data/{safe_id(fid)}_{kind}.wav")), dtype="float64")
     assert sr == 48000, (fid, kind, sr)
     return x if x.ndim == 1 else x[:, 0]
 

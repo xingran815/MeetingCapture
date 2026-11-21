@@ -28,7 +28,7 @@ LOW = 171  # bins below 8 kHz in a 1024-point frame at 48 kHz
 
 
 def load(pt, dev):
-    state = torch.load(pt, map_location="cpu")
+    state = torch.load(pt, map_location="cpu", weights_only=True)
     model = NRES(hidden=state["gru.weight_hh_l0"].shape[1], bins=state["out.bias"].shape[0])
     model.load_state_dict(state)
     return model.to(dev).eval()

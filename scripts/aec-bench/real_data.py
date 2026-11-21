@@ -46,7 +46,8 @@ def archive():
 
 
 def read(session, kind):
-    x, sr = sf.read(io.BytesIO(archive().read(f"fullband/{session}_{kind}.wav")), dtype="float64")
+    x, sr = sf.read(io.BytesIO(fb_data.member(archive(), f"fullband/{fb_data.safe_id(session)}_{kind}.wav")),
+                    dtype="float64")
     if sr != SR:
         raise ValueError(f"{kind} is {sr} Hz")
     return x if x.ndim == 1 else x[:, 0]
@@ -132,7 +133,7 @@ if __name__ == "__main__":
         d.mkdir(parents=True, exist_ok=True)
     kinds = defaultdict(set)
     for n in archive().namelist():
-        m = re.match(r"fullband/(.+)_([a-z-]+_(?:mic|lpb))\.wav$", n)
+        m = re.match(r"fullband/([A-Za-z0-9_-]+)_([a-z-]+_(?:mic|lpb))\.wav$", n)  # no / or ..
         if m:
             kinds[m.group(1)].add(m.group(2))
     need = {"farend-singletalk_mic", "farend-singletalk_lpb", "nearend-singletalk_mic", "doubletalk_mic",

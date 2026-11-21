@@ -19,7 +19,7 @@ ORDER = [
 ]
 
 src, dst = Path(sys.argv[1]), Path(sys.argv[2])
-sd = torch.load(src, map_location="cpu")
+sd = torch.load(src, map_location="cpu", weights_only=True)
 assert list(sd.keys()) == ORDER, list(sd.keys())
 flat = np.concatenate([sd[k].numpy().astype(np.float32).ravel() for k in ORDER])
 half = flat.astype("<f2")
