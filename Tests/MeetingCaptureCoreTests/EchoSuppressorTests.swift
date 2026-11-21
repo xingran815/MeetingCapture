@@ -35,11 +35,12 @@ final class EchoSuppressorTests: XCTestCase {
 
     private func readPairs(_ stage: LinearStageFile) throws -> [Float] {
         let data = try Data(contentsOf: stage.url)
-        return data.withUnsafeBytes { Array($0.bindMemory(to: Float.self)) }
+        // int16 pairs on disk, read as the values they stand for (M8 deep review: half the disk).
+        return data.withUnsafeBytes { Array($0.bindMemory(to: Int16.self)) }.map { Float($0) / 32768 }
     }
 
     func testFileHoldsQuantizedValues_farSilentEstimateReadsBackAsZero() throws {
-        let stage = try LinearStageFile()
+        let stage = try LinearStageFile(frames: 5, available: nil)
         defer { stage.remove() }
         let error = [0.1, -0.25, 0.3333333, 2.0, -3.0]
         let estimate = [1e-6, -1e-6, 2e-6, 0.0, 1.2e-5]
@@ -61,7 +62,7 @@ final class EchoSuppressorTests: XCTestCase {
     }
 
     func testAppendAccumulatesAcrossCalls() throws {
-        let stage = try LinearStageFile()
+        let stage = try LinearStageFile(frames: 3, available: nil)
         defer { stage.remove() }
         try stage.append(error: [0.1, 0.2], estimate: [0, 0])
         try stage.append(error: [0.3], estimate: [0])
@@ -100,7 +101,7 @@ final class EchoSuppressorTests: XCTestCase {
     private func levelChange(seconds: Double, estimate: ([Double]) -> [Double]) throws -> Double {
         let frames = Int(seconds * Double(EchoRemover.sampleRate))
         let voice = EchoLab.speech(frames: frames, seed: 7, rms: 0.05)
-        let stage = try LinearStageFile()
+        let stage = try LinearStageFile(frames: frames, available: nil)
         defer { stage.remove() }
         for start in stride(from: 0, to: frames, by: 4800) {
             let end = min(start + 4800, frames)
@@ -141,7 +142,7 @@ final class EchoSuppressorSlowTests: XCTestCase {
         let seconds = 30.0
         let frames = Int(seconds * Double(EchoRemover.sampleRate))
         let voice = EchoLab.speech(frames: frames, seed: 11, rms: 0.03)
-        let stage = try LinearStageFile()
+        let stage = try LinearStageFile(frames: frames, available: nil)
         defer { stage.remove() }
         for start in stride(from: 0, to: frames, by: 4800) {
             let end = min(start + 4800, frames)
