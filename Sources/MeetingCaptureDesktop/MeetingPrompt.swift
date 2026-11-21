@@ -46,25 +46,33 @@ protocol BrowserTabReading {
 final class AppleScriptBrowserTabs: BrowserTabReading {
     private let queue = DispatchQueue(label: "MeetingCapture.browserTabs")
 
-    nonisolated static func script(for appID: String) -> String? {
-        let bundle: String
+    nonisolated static func bundleID(for appID: String) -> String? {
         switch appID {
-        case "chrome": bundle = "com.google.Chrome"
-        case "safari": bundle = "com.apple.Safari"
+        case "chrome": return "com.google.Chrome"
+        case "safari": return "com.apple.Safari"
         default: return nil
         }
+    }
+
+    nonisolated static func script(for appID: String) -> String? {
+        guard let bundle = bundleID(for: appID) else { return nil }
         // `application id` with the app already running (it holds the mic), so nothing launches.
         return "tell application id \"\(bundle)\" to get URL of every tab of every window"
     }
 
     func check(appID: String, done: @escaping @MainActor (TabCheck) -> Void) {
-        guard let source = Self.script(for: appID) else {
+        guard let source = Self.script(for: appID), let bundle = Self.bundleID(for: appID) else {
             done(.unknown)
             return
         }
         // Off the main thread: the first time, the call waits until the user answers
         // macOS's Automation question.
         queue.async {
+            // A browser that quit since it held the mic would be launched by `tell`.
+            guard !NSRunningApplication.runningApplications(withBundleIdentifier: bundle).isEmpty else {
+                Task { @MainActor in done(.notMeeting) }
+                return
+            }
             let result = Self.run(source)
             Task { @MainActor in done(result) }
         }
@@ -247,9 +255,11 @@ final class MeetingPromptController {
 
     /// Timeouts, and panels the app's own state made pointless.
     func tick() {
+        let recording = model.map { $0.phase != .idle } ?? false
+        // Recorded another way: the call is answered.
+        if recording, unanswered != nil { unanswered = nil }
         guard let panel else { return }
         let t = now()
-        let recording = model.map { $0.phase != .idle } ?? false
         switch panel {
         case .ask(let call, let closesAt):
             if recording {
@@ -282,6 +292,11 @@ final class MeetingPromptController {
         }
         unanswered = nil
         model.perform(.start, source: call.appID)
+        guard model.phase != .idle else {
+            // Couldn't prepare the recording; the window says why (`recordError`).
+            close()
+            return
+        }
         panel = .recording(call, closesAt: now().addingTimeInterval(3))
         hotKey.unregister()
     }
@@ -360,7 +375,8 @@ final class MeetingPromptWindow {
             rootView: MeetingPromptView(state: state, controller: controller).terminalThemed())
         panel.contentView = host
         panel.setContentSize(host.fittingSize)
-        if let screen = NSScreen.main {
+        // The screen with the menu bar, where the extra's `?` is.
+        if let screen = NSScreen.screens.first ?? NSScreen.main {
             let frame = screen.visibleFrame
             panel.setFrameTopLeftPoint(NSPoint(x: frame.maxX - host.fittingSize.width - 16, y: frame.maxY - 12))
         }
