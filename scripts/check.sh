@@ -25,8 +25,12 @@ step() { printf '\n== %s\n' "$1"; }
 die()  { echo "check: FAILED at: $1" >&2; exit 1; }
 START=$SECONDS
 
+# Swift 6.4 made swiftbuild the default, which writes one test bundle per target instead of the
+# one *PackageTests.xctest the unit runner splits by class; pin the native build system here.
+BUILD_SYSTEM=(--build-system native)
+
 build() {
-    swift build 2>&1 | tail -3
+    swift build "${BUILD_SYSTEM[@]}" 2>&1 | tail -3
     return "${PIPESTATUS[0]}"
 }
 
@@ -45,10 +49,10 @@ unit_job() { "$ROOT/scripts/unit-job.sh" "$@"; }
 unit_tests() (
     local bundle listed classes slow fast serial dir job i ran want failed
     export PATH="$ROOT/Tests/FakeBin:$PATH"
-    swift build --build-tests 2>&1 | grep -E 'error:' | tail -5
+    swift build "${BUILD_SYSTEM[@]}" --build-tests 2>&1 | grep -E 'error:' | tail -5
     [ "${PIPESTATUS[0]}" -eq 0 ] || return 1
     bundle="$(find -H "$ROOT/.build/debug" -maxdepth 1 -name '*PackageTests.xctest' | head -1)"
-    listed="$(swift test list --skip-build 2>/dev/null)" || { echo "unit: couldn't list the tests"; return 1; }
+    listed="$(swift test list "${BUILD_SYSTEM[@]}" --skip-build 2>/dev/null)" || { echo "unit: couldn't list the tests"; return 1; }
     classes="$(printf '%s\n' "$listed" | sed -n 's/^\([A-Za-z0-9_]*Tests\.[A-Za-z0-9_]*\)\/.*/\1/p' | sort -u)"
     [ -n "$classes" ] && [ -d "$bundle" ] || { echo "unit: couldn't list the tests"; return 1; }
     slow="$(printf '%s\n' "$classes" | grep -E 'SlowTests$' || true)"
