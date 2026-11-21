@@ -161,7 +161,7 @@ git commit -qm "chore: base" || { echo "base commit failed"; exit 2; }
 
 # Steps each mode must run, in order, as the stubs record them.
 expected() {  # mode
-    printf '%s\n' "swift build" "swift build --build-tests" "swift test list --skip-build" \
+    printf '%s\n' "swift build --build-system native" "swift build --build-system native --build-tests" "swift test list --build-system native --skip-build" \
         "xcrun xctest -XCTest $FAST1 $BUNDLE" "xcrun xctest -XCTest $FAST2 $BUNDLE" \
         "xcrun xctest -XCTest $PIPECLS $BUNDLE" "xcrun xctest -XCTest $REMCLS $BUNDLE" \
         "xcrun xctest -XCTest $SERCLS $BUNDLE"
@@ -216,6 +216,15 @@ for mode in --unit --production --full --live; do
     else ok "$mode doesn't run lint.sh or sweep.sh"; fi
 done
 
+# Finding (Swift 6.4 swiftbuild default): check.sh must pin `--build-system native` on all
+# three swift calls (build, build --build-tests, test list), or no single *PackageTests.xctest exists.
+FAIL=""; check_cmd --unit
+native_n="$(grep -c '^swift .*--build-system native' "$STUB_TRACE")"
+swift_n="$(grep -c '^swift ' "$STUB_TRACE")"
+if [ "$RC" -eq 0 ] && [ "$swift_n" -eq 3 ] && [ "$native_n" -eq 3 ]; then
+    ok "Finding (Swift 6.4 swiftbuild default): check.sh passes --build-system native to all three swift calls"
+else bad "check.sh --unit: expected 3 swift calls, all with --build-system native" "$(cat "$STUB_TRACE")"; fi
+
 # Finding (M3.2 --full): unit_tests put Tests/FakeBin on PATH in the calling shell, so the
 # no-fake-CLI guard ran with the fake CLIs and failed. The stubs record their PATH; the unit
 # step's stubs must see FakeBin and the guard's stub must not. Matched on the last path part,
@@ -240,7 +249,7 @@ path_lacks_fakebin() {  # line-prefix: 0 when at least one such line exists and 
 for mode in --production --full; do
     : > "$STUB_PATHS"; FAIL=""; check_cmd "$mode"
     if [ "$RC" -ne 0 ]; then bad "Finding (M3.2 --full): check.sh $mode failed with healthy stubs" "$OUT"; continue; fi
-    if path_has_fakebin "swift build --build-tests" && path_has_fakebin "xcrun xctest"; then
+    if path_has_fakebin "swift build --build-system native --build-tests" && path_has_fakebin "xcrun xctest"; then
         ok "Finding (M3.2 --full): check.sh $mode's unit step sees Tests/FakeBin on PATH"
     else bad "check.sh $mode: the unit step's stubs didn't see Tests/FakeBin" "$(cat "$STUB_PATHS")"; fi
     if path_lacks_fakebin "test-guard|"; then
@@ -348,7 +357,7 @@ done
 
 rm -f "$REC"; FAIL="e2e-full"; check_cmd --full
 record_has "failing --full records result failed" "commit $HEAD_SHA" "tree clean" "result failed"
-rm -f "$REC"; FAIL="swift build"; check_cmd --full
+rm -f "$REC"; FAIL="swift build --build-system native"; check_cmd --full
 record_has "--full failing at the first step records result failed" "result failed"
 rm -f "$REC"; FAIL="MeetingCaptureCLI --live-check"; check_cmd --live
 record_has "failing --live records result failed" "mode --live" "result failed"
@@ -495,7 +504,7 @@ unit_fails "a count mismatch (more run than listed) fails" "unit: ran 8 tests of
 FAIL=""; STUB_LIST_EMPTY=1 run_check scripts/check.sh --unit
 unit_fails "no tests listed fails" "couldn't list the tests"
 if grep -q '^xcrun' "$STUB_TRACE"; then bad "xctest ran with no tests listed"; else ok "no xctest run when nothing was listed"; fi
-FAIL="swift test list --skip-build"; check_cmd --unit
+FAIL="swift test list --build-system native --skip-build"; check_cmd --unit
 unit_fails "a failing test listing fails" "couldn't list the tests"
 FAIL=""
 mv ".build/debug/$BUNDLE" "$WORK/bundle.keep"
@@ -573,8 +582,8 @@ if grep -qxF "$(xc_line "MeetingCaptureCoreTests.AaaTests,MeetingCaptureCoreTest
 else bad "4-way split wrong" "$(cat "$STUB_TRACE")"; fi
 rm -rf "$XC_DIR"; mkdir -p "$XC_DIR"
 
-FAIL="swift build --build-tests"; check_cmd --unit
-unit_fails "a build failure (swift build --build-tests) fails check.sh --unit"
+FAIL="swift build --build-system native --build-tests"; check_cmd --unit
+unit_fails "a build failure (swift build --build-tests, native) fails check.sh --unit"
 if grep -qE '^(swift test list|xcrun)' "$STUB_TRACE"; then bad "tests ran after a failed test build"; else ok "a failed test build runs no tests"; fi
 FAIL=""
 check_cmd --unit
