@@ -173,7 +173,7 @@ final class CallWatcherTests: XCTestCase {
         let call = started(w.update(now: at(11), users: [user(chrome)], running: [])).first
         XCTAssertEqual(call?.site, "meet.google.com")
         XCTAssertEqual(call?.isBrowser, true)
-        XCTAssertEqual(call?.sourceLine, "Chrome is on meet.google.com")
+        XCTAssertEqual(call?.sourceLine, "Chrome has a tab on meet.google.com")
         XCTAssertTrue(started(w.update(now: at(12), users: [user(chrome)], running: [])).isEmpty)
     }
 
@@ -215,6 +215,23 @@ final class CallWatcherTests: XCTestCase {
         XCTAssertEqual(w.update(now: at(110), users: [user(chrome)], running: []), [.checkTabs(appID: "chrome")])
     }
 
+    func testM9ReviewFinding6AnAnswerForAHoldThatEndedIsDropped() {
+        let w = CallWatcher(appIDs: ["chrome"])
+        // Never held: the answer is dropped.
+        w.tabsChecked(appID: "chrome", .meeting(host: "meet.google.com"))
+        _ = w.update(now: at(0), users: [user(chrome)], running: [])
+        XCTAssertEqual(
+            w.update(now: at(10), users: [user(chrome)], running: []), [.checkTabs(appID: "chrome")],
+            "a stale answer must not start a call")
+        // The hold ends before the answer arrives.
+        _ = w.update(now: at(21), users: [], running: [])
+        w.tabsChecked(appID: "chrome", .meeting(host: "meet.google.com"))
+        _ = w.update(now: at(100), users: [user(chrome)], running: [])
+        let events = w.update(now: at(110), users: [user(chrome)], running: [])
+        XCTAssertEqual(events, [.checkTabs(appID: "chrome")], "a fresh check, no call from the old answer")
+        XCTAssertTrue(w.activeCalls.isEmpty)
+    }
+
     // MARK: MeetingSites
 
     func testMeetingHostsMatchOnADotBoundary() {
@@ -249,7 +266,7 @@ final class CallWatcherTests: XCTestCase {
         XCTAssertEqual(zoomCall.sourceLine, "Zoom is using the microphone")
         let safari = DetectedCall(appID: "safari", appLabel: "Safari (Meet)", site: "meet.google.com", isBrowser: true)
         XCTAssertEqual(safari.appName, "Safari")
-        XCTAssertEqual(safari.sourceLine, "Safari is on meet.google.com")
+        XCTAssertEqual(safari.sourceLine, "Safari has a tab on meet.google.com")
     }
 
     // MARK: Recorder.captureApps

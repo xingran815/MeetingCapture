@@ -13,10 +13,18 @@ final class FakeMic: MicUsageSource {
 @MainActor
 final class FakeTabs: BrowserTabReading {
     var answer: TabCheck = .unknown
+    /// When true the answer is kept until `release()`.
+    var holds = false
     private(set) var asked: [String] = []
+    private var pending: [@MainActor (TabCheck) -> Void] = []
     func check(appID: String, done: @escaping @MainActor (TabCheck) -> Void) {
         asked.append(appID)
-        done(answer)
+        if holds { pending.append(done) } else { done(answer) }
+    }
+    func release() {
+        let waiting = pending
+        pending = []
+        for done in waiting { done(answer) }
     }
 }
 
@@ -371,7 +379,7 @@ final class MeetingPromptControllerTests: MeetingPromptTestCase {
         XCTAssertEqual(tabs.asked, ["chrome"])
         let panel = try! XCTUnwrap(prompt.panel)
         XCTAssertEqual(panel.call.site, "meet.google.com")
-        XCTAssertEqual(MeetingPromptText.detail(panel), "Chrome is on meet.google.com")
+        XCTAssertEqual(MeetingPromptText.detail(panel), "Chrome has a tab on meet.google.com")
     }
 
     func testAnotherSiteOrNoMeetingTabAsksNothing() {
@@ -409,11 +417,112 @@ final class MeetingPromptControllerTests: MeetingPromptTestCase {
     }
 
     func testTheTabScriptNamesOnlyChromeAndSafariAndOnlyReadsURLs() {
-        let chrome = AppleScriptBrowserTabs.script(for: "chrome")
-        XCTAssertEqual(chrome, "tell application id \"com.google.Chrome\" to get URL of every tab of every window")
-        XCTAssertTrue(AppleScriptBrowserTabs.script(for: "safari")?.contains("com.apple.Safari") == true)
+        let chrome = try! XCTUnwrap(AppleScriptBrowserTabs.script(for: "chrome"))
+        let safari = try! XCTUnwrap(AppleScriptBrowserTabs.script(for: "safari"))
+        for (script, bundle) in [(chrome, "com.google.Chrome"), (safari, "com.apple.Safari")] {
+            XCTAssertTrue(script.contains("application id \"\(bundle)\""))
+            XCTAssertTrue(script.contains("is running"), "a quit browser must not be launched")
+            XCTAssertTrue(script.contains("get URL of every tab of every window"))
+            XCTAssertFalse(script.contains("execute"))
+            XCTAssertFalse(script.contains("do shell script"))
+        }
+        XCTAssertFalse(chrome.contains("com.apple.Safari"))
+        XCTAssertFalse(safari.contains("com.google.Chrome"))
         XCTAssertNil(AppleScriptBrowserTabs.script(for: "zoom"))
         XCTAssertNil(AppleScriptBrowserTabs.script(for: ""))
+    }
+
+    // MARK: M9 review findings
+
+    func testM9ReviewFinding1ARejoinedCallCancelsCallEnded() {
+        session.armImmediately = true
+        model.perform(.start, source: "zoom")
+        wait("recording") { self.model.phase == .recording }
+        prompt.handle([.ended(zoomCall)])
+        XCTAssertEqual(prompt.panel, .callEnded(zoomCall, stopsAt: clock.addingTimeInterval(30)))
+        advance(10)
+        prompt.handle([.started(zoomCall)])
+        XCTAssertNil(prompt.panel, "the call came back: the question closes")
+        advance(60)
+        prompt.tick()
+        XCTAssertEqual(model.phase, .recording)
+        XCTAssertEqual(session.stopCalls, 0)
+    }
+
+    func testM9ReviewFinding2QuestionMarkClearsWhenAsksAreTurnedOff() {
+        mic.users = [MicUser(pid: 1, bundleID: "us.zoom.xos")]
+        prompt.poll()
+        advance(3)
+        prompt.poll()
+        prompt.skip()
+        XCTAssertNotNil(prompt.unanswered)
+        defaults.set(false, forKey: MeetingPromptPreference.askKey)
+        advance(15)
+        prompt.poll()
+        XCTAssertNil(prompt.unanswered, "nothing is watched, so the ? goes")
+        XCTAssertEqual(session.startCalls, 0)
+        // Asks back on: holding zoom again prompts.
+        defaults.set(true, forKey: MeetingPromptPreference.askKey)
+        advance(100)
+        prompt.poll()
+        advance(3)
+        prompt.poll()
+        XCTAssertEqual(prompt.panel?.call.appID, "zoom")
+    }
+
+    /// A is recorded and its call ends; A is stopped and B (a new session object) starts.
+    private func callEndedForAThenBRecording() -> FakeSession {
+        recordFromPanel(zoomCall)
+        prompt.handle([.ended(zoomCall)])
+        XCTAssertNotNil(prompt.panel)
+        model.perform(.stop)
+        wait("idle") { self.model.phase == .idle }
+        let b = FakeSession()
+        b.armImmediately = true
+        model.makeSession = { b }
+        model.perform(.start)
+        wait("recording B") { self.model.phase == .recording }
+        return b
+    }
+
+    func testM9ReviewFinding3TickPastTheDeadlineNeverStopsANewerRecording() {
+        let b = callEndedForAThenBRecording()
+        advance(31)
+        prompt.tick()
+        XCTAssertNil(prompt.panel)
+        settle(0.2)
+        XCTAssertEqual(model.phase, .recording, "B keeps recording")
+        XCTAssertEqual(b.stopCalls, 0)
+    }
+
+    func testM9ReviewFinding3StopNowNeverStopsANewerRecording() {
+        let b = callEndedForAThenBRecording()
+        prompt.stopNow()
+        XCTAssertNil(prompt.panel)
+        settle(0.2)
+        XCTAssertEqual(model.phase, .recording, "B keeps recording")
+        XCTAssertEqual(b.stopCalls, 0)
+    }
+
+    func testM9ReviewFinding4OneTabCheckAtATime() {
+        tabs.holds = true
+        prompt.handle([.checkTabs(appID: "chrome")])
+        prompt.handle([.checkTabs(appID: "chrome")])
+        XCTAssertEqual(tabs.asked, ["chrome"], "the second is not queued while the first waits")
+        XCTAssertEqual(prompt.tabChecksInFlight, ["chrome"])
+        tabs.release()
+        XCTAssertTrue(prompt.tabChecksInFlight.isEmpty)
+        prompt.handle([.checkTabs(appID: "chrome")])
+        XCTAssertEqual(tabs.asked, ["chrome", "chrome"], "after the answer a later check goes through")
+    }
+
+    func testM9ReviewFinding9RecordWhenStartIsNoLongerPossibleKeepsTheCall() {
+        ask(zoomCall)
+        model.needsSetup = true
+        prompt.record()
+        XCTAssertNil(prompt.panel)
+        XCTAssertEqual(prompt.unanswered, zoomCall)
+        XCTAssertEqual(session.startCalls, 0)
     }
 
     func testPreferenceDefaults() {
