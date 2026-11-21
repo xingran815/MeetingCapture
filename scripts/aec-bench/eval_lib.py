@@ -71,6 +71,14 @@ def _raw_scores(bench, name, talk):
     return None
 
 
+def _pesq(pesq, ref, deg):
+    """PESQ-WB, or NaN where the pesq library itself fails (it raised on one clean output)."""
+    try:
+        return pesq(SR, ref, deg, "wb")
+    except Exception:
+        return float("nan")
+
+
 def score_all(bench, split, process, verbose=False):
     """process(name, mic, lpb) -> (output at 16 kHz, note) or output."""
     from pesq import pesq
@@ -85,8 +93,7 @@ def score_all(bench, split, process, verbose=False):
         if talk == "st":
             row["erle_db"] = erle(mic, out)
         if near is not None:
-            row["pesq_raw"] = pesq(SR, near, mic, "wb")
-            row["pesq"] = pesq(SR, near, out, "wb")
+            row["pesq_raw"], row["pesq"] = _pesq(pesq, near, mic), _pesq(pesq, near, out)
         rows.append(row)
         if verbose:
             print(json.dumps(row, default=lambda v: round(float(v), 2)), flush=True)
@@ -102,7 +109,7 @@ def summary(rows, label):
         s = [x for x in rows if x["kind"] == kind and x["talk"] == talk]
         if not s:
             continue
-        m = lambda k: np.mean([x[k] for x in s])
+        m = lambda k: np.nanmean([x[k] for x in s])
         txt = f"{kind[:4]}-{talk} echo {m('mos_echo'):.2f} deg {m('mos_deg'):.2f}"
         if talk == "dt":
             txt += f" (raw {m('mos_deg_raw'):.2f})"

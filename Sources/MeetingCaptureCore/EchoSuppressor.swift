@@ -10,13 +10,19 @@ import Foundation
 ///     measured on this file's echo-heavy frames, times a soft per-frame "is the user
 ///     talking" weight that looks four frames ahead. Tuned on the AEC-Challenge dev clips to
 ///     keep the user's voice (`VOICE_SAFE` in `scripts/aec-bench/res_lab.py`).
-///   - Neural mask: a small GRU (`EchoSuppressorWeights`, about 0.4 M weights) trained on
-///     public AEC-Challenge clips, 0-8 kHz only; above 8 kHz it repeats its top band's mean.
+///   - Neural mask: a small GRU (`EchoSuppressorWeights`) trained on public AEC-Challenge
+///     clips. It covers `EchoSuppressorWeights.bins` bins from 0 Hz; full-band weights cover
+///     all 513 (0-24 kHz), and weights that stop lower repeat their top band's mean above.
 ///   - The gain is the geometric mean of the two, and comfort noise fills each bin back up to
 ///     the room's steady noise, so the background doesn't pump with the far side.
 ///
-/// Unsure: the network only saw 16 kHz challenge audio, so above 8 kHz is a guess; the
-/// bench is 10 s clips, and only the M3.2 takes are whole calls.
+/// The shipped weights (D-107) learned from synthetic 48 kHz clips, the 16 kHz challenge clips
+/// and real 48 kHz PC calls whose tracks carry sound above 8 kHz, with taking the user's voice
+/// away weighted 8 times.
+///
+/// Unsure: one training seed of three; the others removed as much echo but degraded real
+/// double talk a little more. The bench is 10 s clips and 10 real sessions; the M3.2 takes and
+/// one real call are the only whole calls of the user's tried.
 ///
 /// The linear stage waits in a temp file between the passes (about 690 MB for a 30-minute
 /// part); memory stays at a few histograms and one frame.
@@ -230,15 +236,24 @@ final class LinearStageFile {
 
     deinit { remove() }
 
+    /// Both signals are rounded to 16 bits, as the lab's linear-stage dumps are (MonoWriter), so
+    /// the neural mask sees the features it was trained on. Without it, a far-silent frame's
+    /// estimate falls far under the int16 floor the network learned, and networks trained on
+    /// real calls took 20 dB off the user's voice (issue 31). The rounding itself is at -96 dB.
     func append(error: [Double], estimate: [Double]) throws {
         guard let handle else { return }
         var pairs = [Float](repeating: 0, count: 2 * error.count)
         for i in error.indices {
-            pairs[2 * i] = Float(error[i])
-            pairs[2 * i + 1] = Float(estimate[i])
+            pairs[2 * i] = Self.int16(error[i])
+            pairs[2 * i + 1] = Self.int16(estimate[i])
         }
         try pairs.withUnsafeBytes { try handle.write(contentsOf: Data($0)) }
         frames += error.count
+    }
+
+    /// A sample as an int16 WAV stores it: scaled by 32768, rounded, clipped.
+    static func int16(_ x: Double) -> Float {
+        Float(min(max((x * 32768).rounded(), -32768), 32767) / 32768)
     }
 
     func remove() {
@@ -379,11 +394,11 @@ extension RealFFT.Spectrum {
 // MARK: - The network
 
 /// nres.py's NRES, frame by frame: Linear → LayerNorm → PReLU → two GRU layers → Linear →
-/// sigmoid, over log powers of bins 0-170 (0-8 kHz at 48 kHz). PyTorch's GRU gate order
+/// sigmoid, over log powers of the first `inputBins` bins. PyTorch's GRU gate order
 /// (reset, update, new) and its `r * (W_hn h + b_hn)` form.
 struct NeuralMask {
-    static let inputBins = 171
-    static let hidden = 160
+    static let inputBins = EchoSuppressorWeights.bins
+    static let hidden = EchoSuppressorWeights.hidden
 
     private static let weights: [Float] = {
         let text = EchoSuppressorWeights.base64.filter { !$0.isWhitespace }
@@ -436,7 +451,7 @@ struct NeuralMask {
         state = [[Float](repeating: 0, count: h), [Float](repeating: 0, count: h)]
     }
 
-    /// The mask for every bin of one frame; above 8 kHz, the mean of its top 20 bins.
+    /// The mask for every bin of one frame; above the network's bins, the mean of its top 20.
     mutating func mask(errorPower pe: [Double], estimatePower pd: [Double]) -> [Double] {
         let n = Self.inputBins
         var x = [Float](repeating: 0, count: 3 * n)

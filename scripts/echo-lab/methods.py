@@ -340,7 +340,8 @@ METHODS.update({
 
 
 def product(mic, ref):
-    """The code a user gets, through the binary's test-only flag."""
+    """The code a user gets, through the binary's test-only flag. MEETINGCAPTURE_LAB_BIN picks
+    another built binary (the AEC bench scores one per network)."""
     import os
     import wave
 
@@ -354,7 +355,8 @@ def product(mic, ref):
             w.writeframes((np.clip(np.stack([mic[:n], ref[:n]], axis=1), -1, 1) * 32767).astype(np.int16).tobytes())
         env = dict(os.environ, MEETINGCAPTURE_E2E="1")
         subprocess.run(
-            [str(lab.REPO / ".build/release/MeetingCaptureCLI"), "--clean-echo", str(two), "--clean-echo-out", str(one)],
+            [os.environ.get("MEETINGCAPTURE_LAB_BIN", str(lab.REPO / ".build/release/MeetingCaptureCLI")),
+             "--clean-echo", str(two), "--clean-echo-out", str(one)],
             check=True, env=env, stdout=subprocess.DEVNULL,
         )
         return lab.read_wav(one)[0][:, 0]

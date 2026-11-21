@@ -22,8 +22,10 @@ import eval_lib as ev  # noqa: E402
 BENCH, BIN = Path(sys.argv[1]), sys.argv[2]
 SPLIT = sys.argv[3] if len(sys.argv) > 3 and sys.argv[3] != "all" else None
 LABEL = sys.argv[4] if len(sys.argv) > 4 else "run"
-WORK = BENCH / "work"
-WORK.mkdir(exist_ok=True)
+# One folder per label: two runs at once wrote the same clip names into a shared folder and
+# scored each other's audio (issue 31).
+WORK = BENCH / "work" / LABEL
+WORK.mkdir(parents=True, exist_ok=True)
 
 
 def remove_echo(name, mic, lpb):
