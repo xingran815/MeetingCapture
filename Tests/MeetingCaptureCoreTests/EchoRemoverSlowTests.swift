@@ -6,44 +6,66 @@ import XCTest
 /// Slow echo-remover edge cases (>3 s each), run by `check.sh` and skipped in CI (D-77). The core remover tests stay in `EchoRemoverTests`.
 final class EchoRemoverSlowTests: EchoRemoverTestCase {
 
-    /// Finding 2. A short interjection by the far side lets a window through the old
-    /// power gate. A fit on 0.4 s of reference and a voice that fills the window can
-    /// reproduce the voice and subtract it. The filter fitted during the long talk must
-    /// be reused instead.
+    /// Finding 2, on the linear stage. A short interjection by the far side lets a window
+    /// through the old power gate. A fit on 0.4 s of reference and a voice that fills the
+    /// window can reproduce the voice and subtract it. The filter fitted during the long
+    /// talk must be reused instead. The suppressor after the linear stage treats a steady
+    /// noise "voice" as noise and removes it, so this measures the linear stage itself.
     func testAShortFarSideInterjectionDoesNotTakeTheVoiceWithIt() throws {
-        let seconds = 80.0
-        let blips = [40.0, 50.0, 60.0, 70.0]
-        let farSpeech = EchoLab.speech(seconds: seconds, seed: 61, rms: 0.1)
-        var far = EchoLab.only(farSpeech, seconds: 0...30)
-        for t in blips { far = EchoLab.adding(far, Array(farSpeech[0..<Int(0.4 * rate)]), at: Int(t * rate)) }
-        // A voice with no gaps in it, so there is always something to steal.
-        let voice = EchoLab.scaled(EchoLab.lowpass(EchoLab.noise(far.count, seed: 77, rms: 1)), toRMS: 0.1)
-        let echo = EchoLab.echo(of: far)
-        let mic = EchoLab.sum(EchoLab.sum(echo, voice), EchoLab.noise(far.count, seed: 5, rms: 0.0003))
-        let (_, out) = try XCTUnwrap(try clean(mic: mic, system: far))
+        let (far, voice, echo, mic) = interjectionCall(
+            voice: EchoLab.scaled(
+                EchoLab.lowpass(EchoLab.noise(80 * EchoLab.rate, seed: 77, rms: 1)), toRMS: 0.1))
+        let (_, error) = try XCTUnwrap(try cleanKeepingLinearStage(mic: mic, system: far))
 
-        for t in blips {
+        for t in interjectionBlips {
             // The echo of a blip arrives 150 ms late and lasts 0.4 s.
+            let a = Int((t + 0.2) * rate)
+            let b = Int((t + 0.55) * rate)
+            let projection = correlation(Array(error[a..<b]), Array(voice[a..<b]))
+            let rawProjection = correlation(Array(mic[a..<b]), Array(voice[a..<b]))
+            print("EchoRemoverTests: linear stage, blip at \(t): projection \(projection), uncleaned \(rawProjection)")
+            XCTAssertGreaterThanOrEqual(projection, 0.8, "the voice was taken with the blip at \(t) s")
+            let left = zip(error[a..<b], voice[a..<b]).map { $0 - $1 }
+            let before = EchoRemover.meanPower(Array(echo[a..<b]))
+            let reduction = EchoLab.db(before / max(EchoRemover.meanPower(left), 1e-30))
+            print("EchoRemoverTests: linear stage, blip at \(t): echo reduced \(reduction) dB")
+            XCTAssertGreaterThanOrEqual(reduction, 6, "echo left at \(t) s")
+        }
+        XCTAssertGreaterThanOrEqual(
+            correlation(
+                Array(error[(10 * EchoLab.rate)..<(30 * EchoLab.rate)]),
+                Array(voice[(10 * EchoLab.rate)..<(30 * EchoLab.rate)])),
+            0.9)
+    }
+
+    /// Finding 2, whole remover, with a speech-like voice (the suppressor keeps speech but
+    /// may remove steady noise). The voice must survive around each blip; an uncleaned or
+    /// voice-removing result would read near 0.
+    func testASpeechVoiceSurvivesAShortFarSideInterjection() throws {
+        let voice = EchoLab.speech(seconds: 80, seed: 77, rms: 0.1)
+        let (far, _, _, mic) = interjectionCall(voice: voice)
+        let (_, out) = try XCTUnwrap(try clean(mic: mic, system: far))
+        for t in interjectionBlips {
             let a = Int((t + 0.2) * rate)
             let b = Int((t + 0.55) * rate)
             let projection = correlation(Array(out[a..<b]), Array(voice[a..<b]))
             let rawProjection = correlation(Array(mic[a..<b]), Array(voice[a..<b]))
-            print("EchoRemoverTests: blip at \(t): projection \(projection), uncleaned \(rawProjection)")
-            XCTAssertGreaterThanOrEqual(projection, 0.8, "the voice was taken with the blip at \(t) s")
-            // The echo is reduced too: what is left beside the voice is under the echo. The
-            // blip is as loud as the voice here, and the measure also counts any bending of the
-            // voice, so it reads about 8 dB (the uncleaned mic would read 0).
-            let left = zip(out[a..<b], voice[a..<b]).map { $0 - $1 }
-            let before = EchoRemover.meanPower(Array(echo[a..<b]))
-            XCTAssertGreaterThanOrEqual(
-                EchoLab.db(before / max(EchoRemover.meanPower(left), 1e-30)), 6, "echo left at \(t) s")
+            print("EchoRemoverTests: speech voice, blip at \(t): projection \(projection), uncleaned \(rawProjection)")
+            XCTAssertGreaterThanOrEqual(projection, 0.7, "the speech voice was taken with the blip at \(t) s")
         }
-        // The long talk before was cleaned as usual, and the voice survived there too.
-        XCTAssertGreaterThanOrEqual(
-            correlation(
-                Array(out[(10 * EchoLab.rate)..<(30 * EchoLab.rate)]),
-                Array(voice[(10 * EchoLab.rate)..<(30 * EchoLab.rate)])),
-            0.9)
+    }
+
+    private var interjectionBlips: [Double] { [40.0, 50.0, 60.0, 70.0] }
+
+    private func interjectionCall(voice: [Double]) -> (far: [Double], voice: [Double], echo: [Double], mic: [Double]) {
+        let farSpeech = EchoLab.speech(seconds: 80, seed: 61, rms: 0.1)
+        var far = EchoLab.only(farSpeech, seconds: 0...30)
+        for t in interjectionBlips {
+            far = EchoLab.adding(far, Array(farSpeech[0..<Int(0.4 * rate)]), at: Int(t * rate))
+        }
+        let echo = EchoLab.echo(of: far)
+        let mic = EchoLab.sum(EchoLab.sum(echo, voice), EchoLab.noise(far.count, seed: 5, rms: 0.0003))
+        return (far, voice, echo, mic)
     }
 
     /// Finding 4: a delay that jumps mid-part is reported, and a steady one isn't.

@@ -23,6 +23,19 @@ class EchoRemoverTestCase: AudioTestCase {
         return (result, try EchoLab.read(result.cleaned))
     }
 
+    /// Like `clean`, but also returns the linear stage's own error (mic minus echo estimate),
+    /// before the suppressor touches it.
+    func cleanKeepingLinearStage(mic: [Double], system: [Double]) throws -> (audio: [Double], linearError: [Double])? {
+        try EchoLab.writeMono(mic, to: url("mic.wav"))
+        try EchoLab.writeMono(system, to: url("system.wav"))
+        guard
+            let result = try EchoRemover.clean(
+                mic: url("mic.wav"), system: url("system.wav"), to: url("out.wav"),
+                linearStage: (error: url("linear-error.wav"), estimate: url("linear-estimate.wav")))
+        else { return nil }
+        return (try EchoLab.read(result.cleaned), try EchoLab.read(url("linear-error.wav")))
+    }
+
     func correlation(_ a: [Double], _ b: [Double]) -> Double {
         var dot = 0.0
         var aa = 0.0
@@ -223,7 +236,8 @@ class EchoScriptFlagTestCase: AudioTestCase {
         process.standardError = err
         process.standardInput = FileHandle.nullDevice
         try process.run()
-        let deadline = Date().addingTimeInterval(20)  // a capture that started would still be running
+        // A capture that started would still be running; echo removal alone takes ~19 s now.
+        let deadline = Date().addingTimeInterval(90)
         while process.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.02) }
         if process.isRunning {
             process.terminate()

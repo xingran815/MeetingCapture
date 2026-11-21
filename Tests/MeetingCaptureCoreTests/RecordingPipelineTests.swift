@@ -185,9 +185,17 @@ final class RecordingPipelineTests: AudioTestCase {
 
     func testNoiseOnEveryTrackIsTranscribedFlaggedAndKeepsTheAudio() async throws {
         let file = url("m.wav")
-        var generator = SystemRandomNumberGenerator()
-        let noise = (0..<(TestAudio.rate * 6)).map { _ in Float.random(in: -0.003...0.003, using: &generator) }
-        try TestAudio.writeWAV(at: file, seconds: 6, mic: { noise[$0] }, system: { noise[$0] })
+        // Independent noise per track: identical tracks would read as a zero-delay echo (a7fe9f2).
+        func noise(seed: UInt64) -> [Float] {
+            var state = seed
+            return (0..<(TestAudio.rate * 6)).map { _ in
+                state = state &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+                return (Float(state >> 40) / Float(1 << 24) - 0.5) * 0.006
+            }
+        }
+        let micNoise = noise(seed: 1)
+        let systemNoise = noise(seed: 2)
+        try TestAudio.writeWAV(at: file, seconds: 6, mic: { micNoise[$0] }, system: { systemNoise[$0] })
         let transcriber = ScriptedTranscriber(text: "invented")
         let result = try await finish([file], transcriber)
         XCTAssertEqual(transcriber.paths.count, 2, "D-56: noise-like tracks still reach Whisper, \(transcriber.paths)")
