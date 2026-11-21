@@ -21,6 +21,8 @@ scripts/build-app.sh [--install]               # .build/MeetingCapture.app, opti
 ./install.sh                                   # release CLI to ~/.local/bin/meetingcapture, hooks, TCC prompts
 ```
 
+Swift 6.4 defaults to the swiftbuild build system, whose test layout `check.sh` doesn't read, so `check.sh` passes `--build-system native`; do the same for a hand-run `swift test`.
+
 Run the compiled binary, never `swift run`: TCC (Screen Recording) is keyed to the binary path. The app has its own TCC identity (`com.meetingcapture.desktop`); signed ad-hoc it loses its grants on every rebuild (D-92).
 
 Automated tests: `scripts/check.sh` (see the devkit block). Capture changes also get a check by hand: record, inspect with `afinfo`, read the `.txt`, `.md` and HTML outputs. App screenshots: `scripts/app-snapshots.sh` (the app draws itself under `MEETINGCAPTURE_E2E=1` with `scripts/app-demo-home.sh`'s invented library and `MEETINGCAPTURE_DEMO=recording|paused|processing|library`).
@@ -53,7 +55,8 @@ CMSampleBuffer+PCM.swift  CMSampleBuffer → AVAudioPCMBuffer (handles non-inter
 RecordingStopper.swift  lets exactly one stop through; arm() holds early stops until capture is live
 RecordingDiscard.swift  Abort: an unwanted recording's own parts and sidecar to the Trash, never by name matching beyond its base, sidecar last
 RecordingFiles.swift  how a recording's parts relate (meeting.wav, meeting_part2.wav, …; WAV or M4A)
-EchoRemover.swift    after-the-call echo removal: lag and clock drift → sliding least squares → residual suppressor · EchoEvidence, the delay-and-level check on each mic line
+EchoRemover.swift    after-the-call echo removal: lag and clock drift → sliding least squares → EchoSuppressor · EchoEvidence, the delay-and-level check on each mic line
+EchoSuppressor.swift  residual echo: classical per-bin gain × a full-band GRU mask (Accelerate, weights in the generated EchoSuppressorWeights.swift) + comfort noise · LinearStageFile, the int16 temp file between passes (D-106, D-107)
 Transcribe.swift     WhisperKit wrapper · language from the loudest 30 s · timestamped segments
 SpeakerLabels.swift  mic track is `You`; speaker turns on the system track become `Speaker 1`, `Speaker 2`, …
 RecordingPipeline.swift  recorded files → labelled transcript → M4A, verified → WAV deleted
@@ -128,6 +131,7 @@ These are load-bearing and not obvious from reading a single file:
 - **The two clocks differ by about 8 ppm, so the lag moves during a call (D-66).** On `main-3` it climbs from 144 to 148 ms. A fixed or slowly adapting filter can't follow that: batch least squares got 8.7 dB without correcting the drift, 18.6 dB with it. `EchoRemover` measures the lag across the file, warps the reference, and fits again every 2 s.
 - **A fit needs far more reference than taps.** Under 2 s of far side in the window, it reproduces the user's voice and subtracts it, so that window reuses the last good filter. The shift has to be the lag at the warp's pivot, not the median, or a fast mic clock puts the echo out of reach. One shift can't follow a lag step mid-part: that's only noted.
 - **Echo maths needs doubles.** Float32 in the Toeplitz solve loses about 10 dB. The lag search also has a false peak at exactly 0 in some windows, so it ignores under 2 ms and takes a median.
+- **The neural mask must see the features it was trained on (D-107).** The lab trains on int16 WAV dumps of the linear stage, so `LinearStageFile` rounds to int16. Feeding float put far-silent frames under the floor the network learned, and the app took 20 dB off the user's voice while Python predicted nothing wrong. Score a new network through the built binary (`scripts/aec-bench`), never only in Python.
 - **No echo peak means leave the mic alone.** With headphones `clean` returns nil, and the raw mic is transcribed. An echo that leads the reference is left alone too.
 - **A repeat isn't an echo, so labels go by delay and level, never by text (D-67).** A mic line is left out only if cleaning took at least 10 dB off the mic's loudest fifth and the cleaned loudest fifth is under a ceiling: 15 dB above the room, or 10 dB under this recording's own voice if that's lower. Talk-over also shows a big drop, so only level protects a soft speaker. The note and the sidecar give the times of left-out lines, never their words. Level is a mean of power, so one real word in a long line counts.
 - **A broadband echo figure can flatter (D-68).** Room noise is mostly low, so the broadband ceiling on `main-3` is 28 dB, but in the speech band it's 38 dB and the result is 29 dB. Output also falls below the room on some frames, so part of a figure can be room noise removed. Read `part1_speech_band` and the voice figures with any reduction figure. DTLN's 42 dB came with 10 dB off a voice.
