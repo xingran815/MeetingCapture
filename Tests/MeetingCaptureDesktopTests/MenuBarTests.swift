@@ -28,8 +28,8 @@ final class MenuBarTests: XCTestCase {
         return Data(bytes: try XCTUnwrap(rep.bitmapData), count: rep.bytesPerRow * 36)
     }
 
-    func testFourTemplateGlyphsAreDistinct() throws {
-        XCTAssertEqual(MenuBarGlyph.allCases.count, 4)
+    func testFiveTemplateGlyphsAreDistinct() throws {
+        XCTAssertEqual(MenuBarGlyph.allCases.count, 5)
         var seen: [Data] = []
         var labels = Set<String>()
         for glyph in MenuBarGlyph.allCases {
@@ -45,7 +45,37 @@ final class MenuBarTests: XCTestCase {
             }
             seen.append(data)
         }
-        XCTAssertEqual(labels.count, 4)
+        XCTAssertEqual(labels.count, 5)
+    }
+
+    func testAskingGlyphIsOnlyForAnIdleAppWithAnUnansweredCall() {
+        XCTAssertEqual(MenuBarGlyph(Activity.idle, unansweredCall: true), .asking)
+        XCTAssertEqual(MenuBarGlyph(Activity.idle, unansweredCall: false), .idle)
+        XCTAssertEqual(MenuBarGlyph(Activity.recording(elapsed: 1), unansweredCall: true), .recording)
+        XCTAssertEqual(MenuBarGlyph(Activity.starting, unansweredCall: true), .recording)
+        XCTAssertEqual(MenuBarGlyph(Activity.paused(elapsed: 1), unansweredCall: true), .paused)
+        XCTAssertEqual(MenuBarGlyph.asking.image.size, NSSize(width: 18, height: 18))
+    }
+
+    func testStatusLineForAnUnansweredCall() {
+        XCTAssertEqual(MenuBarText.status(.idle, unansweredCall: "Zoom"), "? Zoom call, not recording")
+        XCTAssertEqual(MenuBarText.status(.idle, unansweredCall: nil), "✓ Ready")
+    }
+
+    func testRecordThisCallIsFirstOnlyWhenIdleWithAnUnansweredCall() {
+        let idle = MenuBarItem.items(
+            recording: false, paused: false, enabled: { _ in true }, lastReport: nil, unansweredCall: true)
+        XCTAssertEqual(idle.first?.title, "Record This Call")
+        XCTAssertEqual(idle.first?.action, .recordCall)
+        XCTAssertEqual(idle[1].title, "Start Recording")
+        let off = MenuBarItem.items(
+            recording: false, paused: false, enabled: { _ in false }, lastReport: nil, unansweredCall: true)
+        XCTAssertEqual(off.first?.enabled, false, "follows canPerform(.start)")
+        let rec = MenuBarItem.items(
+            recording: true, paused: false, enabled: { _ in true }, lastReport: nil, unansweredCall: true)
+        XCTAssertFalse(rec.contains { $0.action == .recordCall })
+        let plain = MenuBarItem.items(recording: false, paused: false, enabled: { _ in true }, lastReport: nil)
+        XCTAssertFalse(plain.contains { $0.action == .recordCall })
     }
 
     func testClock() {
