@@ -19,6 +19,7 @@ enum DemoState {
     static func applyIfAsked(to model: AppModel) {
         WindowSnapshot.scheduleIfAsked()
         DispatchQueue.main.async { MenuBarSnapshot.writeIfAsked(model: model) }
+        DispatchQueue.main.async { PromptSnapshot.writeIfAsked(model: model) }
         guard let demo = requested else { return }
         switch demo {
         case "recording", "paused":
@@ -147,16 +148,19 @@ enum MenuBarSnapshot {
         let env = ProcessInfo.processInfo.environment
         guard env["MEETINGCAPTURE_E2E"] == "1", let path = env["MEETINGCAPTURE_MENUBAR_SNAPSHOT"], path.hasPrefix("/")
         else { return }
-        let states: [AppModel.Activity] = [
-            .idle, .recording(elapsed: 724), .paused(elapsed: 724),
-            .processing(step: 3, of: 5, name: "Labelling speakers"),
+        // The fifth is M9's `?`: idle, with a call the user didn't record.
+        let states: [(AppModel.Activity, Bool)] = [
+            (.idle, false), (.recording(elapsed: 724), false), (.paused(elapsed: 724), false),
+            (.processing(step: 3, of: 5, name: "Labelling speakers"), false), (.idle, true),
         ]
         let sheet = HStack(alignment: .top, spacing: 24) {
-            ForEach(Array(states.enumerated()), id: \.offset) { _, state in
+            ForEach(Array(states.enumerated()), id: \.offset) { _, pair in
+                let (state, asking) = pair
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach([false, true], id: \.self) { dark in
                         HStack(spacing: 4) {
-                            Image(nsImage: MenuBarGlyph(state).image).renderingMode(.template)
+                            Image(nsImage: MenuBarGlyph(state, unansweredCall: asking).image)
+                                .renderingMode(.template)
                             if let text = MenuBarText.barText(state, showsText: false) { Text(text).monospacedDigit() }
                         }
                         .font(.system(size: 13, weight: .medium))
@@ -166,10 +170,10 @@ enum MenuBarSnapshot {
                         .background(dark ? Color(white: 0.12) : Color(white: 0.92))
                     }
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(MenuBarText.status(state)).fontWeight(.semibold)
+                        Text(MenuBarText.status(state, unansweredCall: asking ? "Zoom" : nil)).fontWeight(.semibold)
                         Text("Source: Zoom").foregroundStyle(.secondary)
                         Divider()
-                        ForEach(menuLines(state), id: \.self) { Text($0) }
+                        ForEach(menuLines(state, asking: asking), id: \.self) { Text($0) }
                     }
                     .font(.system(size: 12))
                     .padding(10)
@@ -191,7 +195,7 @@ enum MenuBarSnapshot {
         NSApp.terminate(nil)
     }
 
-    private static func menuLines(_ state: AppModel.Activity) -> [String] {
+    private static func menuLines(_ state: AppModel.Activity, asking: Bool) -> [String] {
         var recording = false
         var paused = false
         switch state {
@@ -200,12 +204,55 @@ enum MenuBarSnapshot {
         default: break
         }
         let items = MenuBarItem.items(
-            recording: recording, paused: paused, enabled: { _ in true }, lastReport: "Atlas sprint review")
+            recording: recording, paused: paused, enabled: { _ in true }, lastReport: "Atlas sprint review",
+            unansweredCall: asking)
         var lines: [String] = []
         for (i, item) in items.enumerated() {
             if i > 0, items[i - 1].isRecordingCommand, !item.isRecordingCommand { lines.append("—") }
             lines.append(item.title + (item.keys.map { "  " + $0 } ?? ""))
         }
         return lines
+    }
+}
+
+/// Test-only: `MEETINGCAPTURE_PROMPT_SNAPSHOT=<file.png>` (with `MEETINGCAPTURE_E2E=1`)
+/// draws M9's panels (a Zoom call, a browser call on a meeting site, one whose tabs
+/// couldn't be read, recording, call ended) in Phosphor and Paper, then quits.
+@MainActor
+enum PromptSnapshot {
+    static func writeIfAsked(model: AppModel) {
+        let env = ProcessInfo.processInfo.environment
+        guard env["MEETINGCAPTURE_E2E"] == "1", let path = env["MEETINGCAPTURE_PROMPT_SNAPSHOT"], path.hasPrefix("/")
+        else { return }
+        let at = Date().addingTimeInterval(20)
+        let zoom = DetectedCall(appID: "zoom", appLabel: "Zoom", site: nil, isBrowser: false)
+        let meet = DetectedCall(
+            appID: "chrome", appLabel: "Google Chrome (Meet)", site: "meet.google.com", isBrowser: true)
+        let safari = DetectedCall(appID: "safari", appLabel: "Safari (Meet)", site: nil, isBrowser: true)
+        let states: [MeetingPromptController.Panel] = [
+            .ask(zoom, closesAt: at), .ask(meet, closesAt: at), .ask(safari, closesAt: at),
+            .recording(zoom, closesAt: at), .callEnded(zoom, stopsAt: at.addingTimeInterval(10)),
+        ]
+        let sheet = HStack(alignment: .top, spacing: 24) {
+            ForEach([TerminalTheme.phosphor, .paper], id: \.name) { theme in
+                VStack(alignment: .leading, spacing: 16) {
+                    ForEach(Array(states.enumerated()), id: \.offset) { _, state in
+                        MeetingPromptView(state: state, controller: model.meetingPrompt)
+                            .environment(\.theme, theme)
+                            .foregroundStyle(theme.text)
+                    }
+                }
+                .padding(20)
+                .background(theme.isDark ? Color(white: 0.2) : Color(white: 0.85))
+            }
+        }
+        let renderer = ImageRenderer(content: sheet)
+        renderer.scale = 2
+        if let image = renderer.nsImage, let tiff = image.tiffRepresentation,
+            let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:])
+        {
+            try? png.write(to: URL(fileURLWithPath: path))
+        }
+        NSApp.terminate(nil)
     }
 }

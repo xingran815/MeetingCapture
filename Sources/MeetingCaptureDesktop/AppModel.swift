@@ -122,7 +122,14 @@ final class AppModel {
     private var recorder: RecordingSession?
     private var meterTimer: Timer?
     /// Makes the session `startRecording` uses. Only tests and the E2E demo change it.
+    /// The real one scopes capture to `recordingSourceAppID` when the meeting prompt set it.
     var makeSession: () throws -> RecordingSession = { try Recorder.prepare() }
+    /// The meeting app the user said yes to (M9), for this recording; nil when started
+    /// by hand. The call-ended question asks only for this app's call.
+    private(set) var recordingSourceAppID: String?
+    /// "Transcribe this meeting?" (M9, D-108). It watches only once the app calls
+    /// `startWatching()`, so tests and snapshots never read the mic list.
+    let meetingPrompt = MeetingPromptController()
     /// Asks before an abort throws the recording away. Tests replace it.
     var confirmAbort: () -> Bool = AppModel.askToAbort
     /// Set once the user confirmed an abort, until the files are in the Trash.
@@ -136,6 +143,8 @@ final class AppModel {
             !ModelStore.hasWhisperModel(s.whisperModel) || !ModelStore.hasSpeakerModel
             || AVCaptureDevice.authorizationStatus(for: .audio) != .authorized || !CGPreflightScreenCaptureAccess()
         Library.cleanOldAudio(settings: s)
+        makeSession = { [weak self] in try Recorder.prepare(sourceAppID: self?.recordingSourceAppID) }
+        meetingPrompt.model = self
         reload()
         DemoState.applyIfAsked(to: self)
     }
@@ -173,10 +182,11 @@ final class AppModel {
         }
     }
 
-    func perform(_ command: RecordingCommand) {
+    /// `source` is the meeting prompt's app, for `.start` only.
+    func perform(_ command: RecordingCommand, source: String? = nil) {
         guard canPerform(command) else { return }
         switch command {
-        case .start: startRecording()
+        case .start: startRecording(source: source)
         case .pauseResume: togglePause()
         case .stop: stopRecording()
         case .abort: abortRecording()
@@ -212,9 +222,10 @@ final class AppModel {
         entries.filter(\.hasReport).max { $0.createdAt < $1.createdAt }
     }
 
-    func startRecording() {
+    func startRecording(source: String? = nil) {
         guard phase == .idle else { return }
         recordError = nil
+        recordingSourceAppID = source
         let recorder: RecordingSession
         do { recorder = try makeSession() } catch {
             recordError = "Couldn't prepare the recording: \(error.localizedDescription)"

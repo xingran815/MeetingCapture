@@ -146,6 +146,7 @@ private struct RecordingSettings: View {
             }
             .disabled(model.settings.captureAllAudio)
             Toggle("Record my microphone", isOn: $model.settings.micEnabled)
+            MeetingPromptSettings()
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
@@ -436,4 +437,43 @@ struct SetupView: View {
             }
         }
     }
+}
+
+/// M9 (D-108): "Transcribe this meeting?". Desktop-only, so in the app's defaults.
+private struct MeetingPromptSettings: View {
+    @Environment(\.theme) private var theme
+    @AppStorage(MeetingPromptPreference.askKey) private var asks = true
+    @AppStorage(MeetingPromptPreference.skippedAppsKey) private var skipped = ""
+    @AppStorage(MeetingPromptPreference.timeoutKey) private var timeout = 20
+    @AppStorage(MeetingPromptPreference.stopAtCallEndKey) private var stopsAtEnd = true
+
+    var body: some View {
+        Section("When a meeting starts") {
+            Toggle("Ask whether to record", isOn: $asks)
+            ForEach(MeetingAppChoice.all) { app in
+                Toggle(
+                    "Ask for " + app.label,
+                    isOn: Binding(
+                        get: { !skippedSet.contains(app.id) },
+                        set: { on in
+                            var s = skippedSet
+                            if on { s.remove(app.id) } else { s.insert(app.id) }
+                            skipped = s.sorted().joined(separator: ",")
+                        })
+                )
+                .disabled(!asks)
+            }
+            Picker("Close the question after", selection: $timeout) {
+                ForEach(MeetingPromptPreference.timeouts, id: \.self) { Text("\($0) s").tag($0) }
+            }
+            .disabled(!asks)
+            Toggle("When the call ends, ask, then stop after 30 s", isOn: $stopsAtEnd)
+            Text(
+                "Nothing is recorded until you press Record (or ⌃⌥R while the question shows). For Chrome and Safari, macOS asks once whether MeetingCapture may read the tabs' addresses: only the site's name is compared, and nothing is kept. Without it, the question says only that the browser is using the microphone."
+            )
+            .font(.mono(11.5)).foregroundStyle(theme.dim)
+        }
+    }
+
+    private var skippedSet: Set<String> { Set(skipped.split(separator: ",").map(String.init)) }
 }

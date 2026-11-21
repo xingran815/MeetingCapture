@@ -4,7 +4,16 @@ import SwiftUI
 @main
 struct MeetingCaptureDesktopApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
-    @State private var model = AppModel()
+    @State private var model: AppModel
+    /// The "Transcribe this meeting?" panel (M9); it follows `model.meetingPrompt`.
+    @State private var promptWindow: MeetingPromptWindow
+
+    init() {
+        let model = AppModel()
+        _model = State(initialValue: model)
+        _promptWindow = State(initialValue: MeetingPromptWindow(controller: model.meetingPrompt))
+        model.meetingPrompt.startWatching()
+    }
     @FocusedValue(\.notebookActions) private var notebook
     /// D-102: on by default, and the user can hide it in Settings.
     @AppStorage(MenuBarPreference.key) private var showsMenuBarExtra = true

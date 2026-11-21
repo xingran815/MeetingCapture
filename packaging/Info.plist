@@ -30,6 +30,8 @@
 	<string>MeetingCapture records your side of the call. The audio stays on this Mac.</string>
 	<key>NSAudioCaptureUsageDescription</key>
 	<string>MeetingCapture records the call's audio. It stays on this Mac.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>When your browser uses the microphone, MeetingCapture checks whether a tab is on a meeting site such as meet.google.com before asking to record. Only the site's name is compared; tab addresses are never kept or sent.</string>
 	<key>NSSupportsAutomaticTermination</key>
 	<false/>
 </dict>
