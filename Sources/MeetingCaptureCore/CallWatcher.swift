@@ -132,9 +132,10 @@ public struct DetectedCall: Equatable, Sendable {
         }
     }
 
-    /// "Zoom is using the microphone", "Chrome is on meet.google.com".
+    /// "Zoom is using the microphone", "Chrome has a tab on meet.google.com": any tab,
+    /// which may not be the one using the mic (M9 review).
     public var sourceLine: String {
-        if let site { return "\(appName) is on \(site)" }
+        if let site { return "\(appName) has a tab on \(site)" }
         return "\(appName) is using the microphone"
     }
 }
@@ -189,8 +190,12 @@ public final class CallWatcher {
     public var activeCalls: [DetectedCall] { catalog.compactMap { state[$0.id]?.call } }
 
     /// The answer to a `.checkTabs` event; used on the next `update`.
+    /// An answer for a hold that has since ended is dropped (M9 review), so a later hold
+    /// gets a fresh check.
     public func tabsChecked(appID: String, _ result: TabCheck) {
-        state[appID, default: AppState()].tabs = result
+        guard var s = state[appID], s.tabsAskedAt != nil, s.holdingSince != nil else { return }
+        s.tabs = result
+        state[appID] = s
     }
 
     /// One look at the mic. `running` holds the bundle IDs of running apps; it tells a

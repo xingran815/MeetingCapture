@@ -54,10 +54,15 @@ final class AppleScriptBrowserTabs: BrowserTabReading {
         }
     }
 
+    /// `is running` inside the script too: a browser that quit after the check would
+    /// otherwise be launched by `tell` (M9 review).
     nonisolated static func script(for appID: String) -> String? {
         guard let bundle = bundleID(for: appID) else { return nil }
-        // `application id` with the app already running (it holds the mic), so nothing launches.
-        return "tell application id \"\(bundle)\" to get URL of every tab of every window"
+        return """
+            if application id "\(bundle)" is running then
+                tell application id "\(bundle)" to get URL of every tab of every window
+            end if
+            """
     }
 
     func check(appID: String, done: @escaping @MainActor (TabCheck) -> Void) {
@@ -65,20 +70,34 @@ final class AppleScriptBrowserTabs: BrowserTabReading {
             done(.unknown)
             return
         }
-        // Off the main thread: the first time, the call waits until the user answers
-        // macOS's Automation question.
+        // The permission question waits for the user's answer, so it's asked off the
+        // main thread. `NSAppleScript` itself runs on the main thread, as Apple asks; once
+        // permission is settled it returns at once (M9 review).
         queue.async {
-            // A browser that quit since it held the mic would be launched by `tell`.
             guard !NSRunningApplication.runningApplications(withBundleIdentifier: bundle).isEmpty else {
                 Task { @MainActor in done(.notMeeting) }
                 return
             }
-            let result = Self.run(source)
-            Task { @MainActor in done(result) }
+            let allowed = Self.automationAllowed(bundle)
+            Task { @MainActor in
+                guard allowed else {
+                    done(.unknown)
+                    return
+                }
+                done(Self.run(source))
+            }
         }
     }
 
-    nonisolated private static func run(_ source: String) -> TabCheck {
+    /// macOS's Automation permission for this browser, asking the user the first time.
+    nonisolated private static func automationAllowed(_ bundle: String) -> Bool {
+        let target = NSAppleEventDescriptor(bundleIdentifier: bundle)
+        guard let desc = target.aeDesc else { return false }
+        let status = AEDeterminePermissionToAutomateTarget(desc, typeWildCard, typeWildCard, true)
+        return status == noErr
+    }
+
+    private static func run(_ source: String) -> TabCheck {
         guard let script = NSAppleScript(source: source) else { return .unknown }
         var error: NSDictionary?
         let output = script.executeAndReturnError(&error)
@@ -173,6 +192,11 @@ final class MeetingPromptController {
     @ObservationIgnored let watcher = CallWatcher()
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private let hotKey = PromptHotKey()
+    /// Browsers whose tabs are being read; a check isn't queued twice while macOS's
+    /// Automation question waits for an answer (M9 review).
+    @ObservationIgnored private(set) var tabChecksInFlight: Set<String> = []
+    /// The recording "Call ended. Stop?" was raised for, so it never stops a newer one.
+    @ObservationIgnored private var callEndedSession: ObjectIdentifier?
 
     init() {}
 
@@ -201,11 +225,11 @@ final class MeetingPromptController {
     /// Reads who holds the mic and handles what changed.
     func poll() {
         watcher.appIDs = watchedApps
-        guard !watcher.appIDs.isEmpty else {
-            tick()
-            return
-        }
-        let events = watcher.update(now: now(), users: micSource.micUsers(), running: runningApps())
+        // With nothing watched, still update with no users: the watcher ends the calls of
+        // apps it no longer watches, which clears a `?` (M9 review). The mic isn't read.
+        let watching = !watcher.appIDs.isEmpty
+        let events = watcher.update(
+            now: now(), users: watching ? micSource.micUsers() : [], running: watching ? runningApps() : [])
         handle(events)
         tick()
     }
@@ -223,7 +247,10 @@ final class MeetingPromptController {
         for event in events {
             switch event {
             case .checkTabs(let appID):
+                guard !tabChecksInFlight.contains(appID) else { continue }
+                tabChecksInFlight.insert(appID)
                 tabs.check(appID: appID) { [weak self] result in
+                    self?.tabChecksInFlight.remove(appID)
                     self?.watcher.tabsChecked(appID: appID, result)
                 }
             case .started(let call):
@@ -235,6 +262,8 @@ final class MeetingPromptController {
     }
 
     private func callStarted(_ call: DetectedCall) {
+        // The recorded app's call came back (a dropped connection, a rejoin): don't stop it.
+        if case .callEnded(let ended, _) = panel, ended.appID == call.appID { close() }
         // One prompt per call: a call seen while recording, or while another prompt
         // shows, is never asked about later.
         guard let model, asksAtCallStart, askingApps.contains(call.appID) else { return }
@@ -250,6 +279,7 @@ final class MeetingPromptController {
             return
         }
         if case .callEnded = panel { return }
+        callEndedSession = model.currentSession.map(ObjectIdentifier.init)
         panel = .callEnded(call, stopsAt: now().addingTimeInterval(MeetingPromptPreference.callEndedSeconds))
     }
 
@@ -272,7 +302,7 @@ final class MeetingPromptController {
         case .recording(_, let closesAt):
             if t >= closesAt { close() }
         case .callEnded(_, let stopsAt):
-            if !recording {
+            if !recording || !isCallEndedSession {
                 close()
             } else if t >= stopsAt {
                 close()
@@ -287,6 +317,8 @@ final class MeetingPromptController {
     func record() {
         guard case .ask(let call, _) = panel, let model else { return }
         guard model.canPerform(.start) else {
+            // Keep the late start in the menu bar (M9 review).
+            unanswered = call
             close()
             return
         }
@@ -328,8 +360,15 @@ final class MeetingPromptController {
     /// Stop, on "Call ended. Stop?".
     func stopNow() {
         guard case .callEnded = panel else { return }
+        let same = isCallEndedSession
         close()
-        model?.perform(.stop)
+        if same { model?.perform(.stop) }
+    }
+
+    /// True while the recording is still the one the call-ended question was raised for.
+    private var isCallEndedSession: Bool {
+        guard let id = callEndedSession, let session = model?.currentSession else { return false }
+        return ObjectIdentifier(session) == id
     }
 
     /// Keep Recording, on "Call ended. Stop?".
@@ -339,6 +378,7 @@ final class MeetingPromptController {
     }
 
     private func close() {
+        callEndedSession = nil
         panel = nil
         hotKey.unregister()
     }
