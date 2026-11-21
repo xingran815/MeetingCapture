@@ -41,4 +41,6 @@ Desktop only: editing the report's text (More › Edit Report…), and keeping o
 
 Desktop only (M7, D-101, D-102): the menu bar extra, whose icon shows ready, recording, paused or working by its shape and whose menu starts, pauses and stops a recording, opens the last report, the window and Settings; and the theme (Settings › Look: Phosphor, Paper, or follow the Mac). The terminal already is a terminal, so it needs neither; closing the app's window never stops a recording. While a recording runs, the app can show other reports from the library; the recording row at the top of the library brings the recording back.
 
+Desktop only (M9, D-108): "Transcribe this meeting?" when a listed meeting app starts using the microphone, the `?` icon and Record This Call for a skipped call, and "Call ended. Stop?". The shell can't watch for calls in the background, because it runs only while it's open in a terminal; start a recording with key 1 instead.
+
 Terminal only: per-tier CLI models, reasoning, API profiles, `--scenario`, language pin, echo removal settings, chunk length, daily call cap, safety cap, auto-transcribe and auto-summarize, flags for scripting.

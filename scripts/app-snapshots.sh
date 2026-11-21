@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # M7's screenshots, made by the app itself under MEETINGCAPTURE_E2E=1 with invented data
 # (scripts/app-demo-home.sh): the library with a report, Recording, Paused and Processing,
-# each in Phosphor and Paper, plus the menu bar extra's four states. Nothing is recorded:
+# each in Phosphor and Paper, plus the menu bar extra's states and M9's meeting prompt. Nothing is recorded:
 # DemoState.swift fakes the states, and the user's config and folders are never read.
 #
 #   scripts/app-snapshots.sh [out dir]    → default dev/tmp/m7-shots (gitignored)
@@ -29,5 +29,10 @@ rm -f "$out/menubar.png"
 MEETINGCAPTURE_E2E=1 MEETINGCAPTURE_HOME="$home" MEETINGCAPTURE_MENUBAR_SNAPSHOT="$out/menubar.png" \
     perl -e 'alarm shift; exec @ARGV' 30 "$bin" >/dev/null 2>&1 || true
 [[ -s "$out/menubar.png" ]] || { echo "app-snapshots: no menu bar picture" >&2; exit 1; }
+# M9: the meeting prompt's panels in both themes.
+rm -f "$out/meeting-prompt.png"
+MEETINGCAPTURE_E2E=1 MEETINGCAPTURE_HOME="$home" MEETINGCAPTURE_PROMPT_SNAPSHOT="$out/meeting-prompt.png" \
+    perl -e 'alarm shift; exec @ARGV' 30 "$bin" >/dev/null 2>&1 || true
+[[ -s "$out/meeting-prompt.png" ]] || { echo "app-snapshots: no meeting prompt picture" >&2; exit 1; }
 n="$(find "$out" -maxdepth 1 -name '*.png' | wc -l | tr -d ' ')"
 echo "app-snapshots: $n pictures in $out"

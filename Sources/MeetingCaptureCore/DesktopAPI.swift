@@ -168,19 +168,32 @@ public final class Recorder {
     public let base: URL
     private let capture = AudioCapture()
     private let config: Config
+    /// The catalog id the user said yes to in the meeting prompt (M9), tried first.
+    public let sourceAppID: String?
 
-    private init(base: URL, config: Config) {
+    private init(base: URL, config: Config, sourceAppID: String?) {
         self.base = base
         self.config = config
+        self.sourceAppID = sourceAppID
     }
 
     /// Makes the output folder and writes the sidecar first, so a crash leaves
-    /// something the next launch can find.
-    public static func prepare() throws -> Recorder {
+    /// something the next launch can find. `sourceAppID` (M9) puts that meeting app
+    /// first, even if Settings left it out of detection; "all system audio" still wins.
+    public static func prepare(sourceAppID: String? = nil) throws -> Recorder {
         let config = Config.load()
         let base = try config.newMeetingBase()
         try RecordingSidecar.started().save(to: RecordingSidecar.url(forBase: base))
-        return Recorder(base: base, config: config)
+        return Recorder(base: base, config: config, sourceAppID: sourceAppID)
+    }
+
+    /// The meeting apps capture looks for, in order.
+    static func captureApps(enabledIDs: [String], sourceAppID: String?) -> [MeetingApp] {
+        let enabled = MeetingApp.catalog.filter { enabledIDs.contains($0.id) }
+        guard let id = sourceAppID, let first = MeetingApp.catalog.first(where: { $0.id == id }) else {
+            return enabled
+        }
+        return [first] + enabled.filter { $0.id != id }
     }
 
     /// Records until `stop()` or the safety cap. Returns the WAV parts written.
@@ -189,7 +202,7 @@ public final class Recorder {
             duration: Double(config.defaultDurationMinutes * 60),
             outputPath: base.appendingPathExtension("wav").path,
             captureAllAudio: config.captureAllAudio,
-            meetingApps: MeetingApp.catalog.filter { config.enabledMeetingAppIDs.contains($0.id) },
+            meetingApps: Self.captureApps(enabledIDs: config.enabledMeetingAppIDs, sourceAppID: sourceAppID),
             enableMic: config.micEnabled)
         guard !parts.isEmpty else { throw RecorderError.nothingSaved }
         return parts

@@ -173,7 +173,15 @@ Record with the ● RECORD key (⌘R); pause with ⇧⌘P, stop with ⌘. . Reco
 reports are in the sidebar tree, groups first. A menu bar icon, a speech bubble
 holding `>_`, shows what the app is doing by its shape (`>_` ready, ● recording,
 ‖ paused, ··· working) and can start, pause and stop a recording, so closing the
-window never stops one. Hide it in **Settings → Look**. [docs/parity.md](docs/parity.md) lists where each feature lives in
+window never stops one. Hide it in **Settings → Look**.
+
+When a meeting app (Zoom, Teams, Webex, VSee, or Chrome or Safari on a meeting
+site) starts using the microphone, a small panel asks **Transcribe this meeting?**
+Nothing is recorded until you click **Record** or press ⌃⌥R while it shows. Skip it
+and the menu bar icon shows `?` until the call ends, with **Record This Call** in its
+menu. When the recorded app's call ends, the app asks to stop and stops after 30 s.
+For browsers, macOS asks once whether the app may read the tabs' addresses; only the
+site's name is compared. Settings → Recording → When a meeting starts. [docs/parity.md](docs/parity.md) lists where each feature lives in
 the app and in the shell.
 
 ### Flags, for scripts

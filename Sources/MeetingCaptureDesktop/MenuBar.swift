@@ -5,13 +5,14 @@ import SwiftUI
 // M7 (D-102): the menu bar extra. It shows whether the app is recording by the glyph's
 // shape (D-101), and offers the few actions that matter without the window.
 
-/// The four shapes inside the bubble.
+/// The shapes inside the bubble. `asking` (M9) is `?`: a call is on and the user
+/// didn't say to record it. Same 18 pt as the others (D-104).
 enum MenuBarGlyph: String, CaseIterable {
-    case idle, recording, paused, processing
+    case idle, recording, paused, processing, asking
 
-    init(_ activity: AppModel.Activity) {
+    init(_ activity: AppModel.Activity, unansweredCall: Bool = false) {
         switch activity {
-        case .idle: self = .idle
+        case .idle: self = unansweredCall ? .asking : .idle
         case .starting, .recording: self = .recording
         case .paused: self = .paused
         case .processing: self = .processing
@@ -54,6 +55,23 @@ enum MenuBarGlyph: String, CaseIterable {
             case .paused:
                 NSRect(x: 6.8, y: 4.5, width: 1.6, height: 5.4).fill()
                 NSRect(x: 9.6, y: 4.5, width: 1.6, height: 5.4).fill()
+            case .asking:
+                let mark = NSBezierPath()
+                mark.move(to: NSPoint(x: 6.9, y: 5.6))
+                mark.curve(
+                    to: NSPoint(x: 9, y: 3.9), controlPoint1: NSPoint(x: 6.9, y: 4.5),
+                    controlPoint2: NSPoint(x: 7.8, y: 3.9))
+                mark.curve(
+                    to: NSPoint(x: 11.1, y: 5.7), controlPoint1: NSPoint(x: 10.2, y: 3.9),
+                    controlPoint2: NSPoint(x: 11.1, y: 4.6))
+                mark.curve(
+                    to: NSPoint(x: 9, y: 7.9), controlPoint1: NSPoint(x: 11.1, y: 7), controlPoint2: NSPoint(x: 9, y: 7)
+                )
+                mark.line(to: NSPoint(x: 9, y: 8.6))
+                mark.lineWidth = 1.4
+                mark.lineCapStyle = .square
+                mark.stroke()
+                NSRect(x: 8.3, y: 9.6, width: 1.4, height: 1.4).fill()
             case .processing:
                 NSRect(x: 5, y: 6.5, width: 1.6, height: 1.6).fill()
                 NSRect(x: 8.2, y: 6.5, width: 1.6, height: 1.6).fill()
@@ -73,6 +91,7 @@ enum MenuBarGlyph: String, CaseIterable {
         case .recording: return "MeetingCapture, recording"
         case .paused: return "MeetingCapture, paused"
         case .processing: return "MeetingCapture, working"
+        case .asking: return "MeetingCapture, a call is on and not recorded"
         }
     }
 }
@@ -96,10 +115,10 @@ enum MenuBarText {
         }
     }
 
-    /// The menu's first line.
-    static func status(_ activity: AppModel.Activity) -> String {
+    /// The menu's first line. `unansweredCall` is the app's name while `?` shows.
+    static func status(_ activity: AppModel.Activity, unansweredCall: String? = nil) -> String {
         switch activity {
-        case .idle: return "✓ Ready"
+        case .idle: return unansweredCall.map { "? \($0) call, not recording" } ?? "✓ Ready"
         case .starting: return "● Starting…"
         case .recording(let t): return "● Recording \(clock(t))"
         case .paused(let t): return "‖ Paused at \(clock(t))"
@@ -120,6 +139,8 @@ enum MenuBarText {
 struct MenuBarItem: Identifiable, Equatable {
     enum Action: Equatable {
         case command(RecordingCommand)
+        /// Record This Call: the call the user skipped or let pass (M9).
+        case recordCall
         case openLastReport
         case openWindow
         case settings
@@ -132,8 +153,10 @@ struct MenuBarItem: Identifiable, Equatable {
     var action: Action
     var id: String { title }
     var isRecordingCommand: Bool {
-        if case .command = action { return true }
-        return false
+        switch action {
+        case .command, .recordCall: return true
+        default: return false
+        }
     }
 
     /// Start, or Pause/Resume, Stop and Abort; then the last report, Open, Settings and Quit.
@@ -142,13 +165,19 @@ struct MenuBarItem: Identifiable, Equatable {
         items(
             recording: model.phase != .idle, paused: model.paused,
             enabled: { model.canPerform($0) },
-            lastReport: model.lastReport.map { $0.topic ?? AppModel.title(for: $0.base, short: true) })
+            lastReport: model.lastReport.map { $0.topic ?? AppModel.title(for: $0.base, short: true) },
+            unansweredCall: model.meetingPrompt.unanswered != nil)
     }
 
     static func items(
-        recording: Bool, paused: Bool, enabled: (RecordingCommand) -> Bool, lastReport: String?
+        recording: Bool, paused: Bool, enabled: (RecordingCommand) -> Bool, lastReport: String?,
+        unansweredCall: Bool = false
     ) -> [MenuBarItem] {
         var items: [MenuBarItem] = []
+        if !recording, unansweredCall {
+            items.append(
+                MenuBarItem(title: "Record This Call", keys: nil, enabled: enabled(.start), action: .recordCall))
+        }
         if !recording {
             items.append(
                 MenuBarItem(title: "Start Recording", keys: "⌘R", enabled: enabled(.start), action: .command(.start)))
@@ -178,7 +207,7 @@ struct MenuBarLabel: View {
 
     var body: some View {
         let activity = model.activity
-        let glyph = MenuBarGlyph(activity)
+        let glyph = MenuBarGlyph(activity, unansweredCall: model.meetingPrompt.unanswered != nil)
         HStack(spacing: 4) {
             Image(nsImage: glyph.image)
             if let text = MenuBarText.barText(activity, showsText: showsText) {
@@ -198,7 +227,7 @@ struct MenuBarMenu: View {
     @Environment(\.openSettings) private var openSettings
 
     var body: some View {
-        Text(MenuBarText.status(model.activity))
+        Text(MenuBarText.status(model.activity, unansweredCall: model.meetingPrompt.unanswered?.appName))
         Text("Source: " + source)
         Divider()
         let items = MenuBarItem.items(for: model)
@@ -220,6 +249,8 @@ struct MenuBarMenu: View {
         switch action {
         case .command(let command):
             model.perform(command)
+        case .recordCall:
+            model.meetingPrompt.recordUnanswered()
         case .openLastReport:
             if let last = model.lastReport {
                 model.showsJob = false
