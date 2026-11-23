@@ -44,6 +44,7 @@ DesktopAPI.swift     facade the app and shell share: AppSettings, Recorder, Meet
 Shell.swift          interactive menus: main (1 record … 6 library, 7 groups), settings, API configurations · orchestrates the pipeline
 Menu.swift           termios cbreak list picker: Menu.pick (one-shot) + Menu.run (stays open, redraws in place)
 MeetingApps.swift    catalog of conferencing apps for SCStream audio auto-detection (Zoom, Teams, Webex, VSee, Chrome, Safari)
+CallWatcher.swift    which meeting app holds the mic (CoreAudio process objects) · pure call start/end state · meeting-site hosts; reports only, never starts capture (D-108)
 Config.swift         persisted settings (JSON) · llmRoute, primaryCLI, tier models, daily cap, redaction, retention · llmProfiles + active profile · legacy-path and legacy-schema migration
 LLMProvider.swift    API presets (deepseek/openai/ollama/anthropic/custom) · LLMAPIStyle (OpenAI chat vs Anthropic Messages) · ReasoningStyle/ReasoningEffort · LLMProfile
 APIKeyStore.swift    per-profile API keys (~/.config/MeetingCapture/llm_api_keys.json, mode 0600)
@@ -76,7 +77,7 @@ Notebook.swift       the user's layer (`<base>.edits.json`, `<base>.notes.md`) m
 Groups.swift         `groups.json` (manual groups by base name, flock'd) · GroupContextBuilder: allow-listed, capped context from a group's earlier reports, never a transcript · ReportInputs gathers notes, context and a pinned scenario for every route (D-94, D-96, D-97)
 Diagnostics.swift    live checks that spend usage; only `check.sh --live` and `scripts/quality-compare.sh` run them
 
-MeetingCaptureDesktop/   SwiftUI app on DesktopAPI: AppModel (one command path: perform/canPerform, activity), ContentView (top bar, library tree, status line), RecordViews, ReportViews (WKWebView, non-persistent store, theme laid over the page in the app only), NotebookViews, GroupViews, SettingsViews, Theme (Phosphor and Paper tokens, the shared terminal shapes), MenuBar (the extra: glyphs drawn from packaging/brand coordinates, items), DemoState (E2E-only demo states and snapshots)
+MeetingCaptureDesktop/   SwiftUI app on DesktopAPI: AppModel (one command path: perform/canPerform, activity), ContentView (top bar, library tree, status line), RecordViews, ReportViews (WKWebView, non-persistent store, theme laid over the page in the app only), NotebookViews, GroupViews, SettingsViews, Theme (Phosphor and Paper tokens, the shared terminal shapes), MeetingPrompt (the call-start panel, browser tab check, ⌃⌥R), MenuBar (the extra: glyphs drawn from packaging/brand coordinates, items), DemoState (E2E-only demo states and snapshots)
 
 scripts/             check.sh, ci.sh, sweeps (sweep.sh, identity.sh), e2e, build-app.sh, live and quality scripts
 scripts/echo-lab/    M3.2's measuring tools: metrics, candidate methods, word scoring. Real calls only through real_counts.py, which prints counts
