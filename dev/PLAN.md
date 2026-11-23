@@ -1,5 +1,5 @@
 # Plan — MeetingCapture refactor
-Status: refactor done (M1–M6); M7 and M8 done; issue 28 next · mode: 🏢 light production (adopted) · started 2026-11-06 · devkit 0.3.0
+Status: refactor done (M1–M6); M7 and M8 done; M9 merged, 👤 check open · mode: 🏢 light production (adopted) · started 2026-11-06 · devkit 0.3.0
 
 ## Intention
 For its owner, a professional meeting helper (terminal and macOS app): speaker-labelled transcripts, scenario-based summaries through existing subscriptions, HTML reports, and no email or key leaks.
@@ -28,8 +28,9 @@ For its owner, a professional meeting helper (terminal and macOS app): speaker-l
 | 6 | Docs, security pass, SpeexDSP removal | #10 | `m6-docs-release` | yes | **yes**, with `/security-review` | no | done |
 | 7 | Terminal Native UI, menu bar extra, logo | #29 (then #28) | `m7-terminal-ui` | yes | reviewer and deep review (Abort moves files, D-103) | **approves both themes and the four menu bar states** | done (approved 2026-11-15) |
 | 8 | Better echo removal, measured on the AEC-Challenge data | #31 | `m8-aec` | yes | deep review and `/security-review` (pipeline, deleted debug files, downloads) | **chose the shipped weights** (D-107) | done |
+| 9 | "Transcribe this meeting?" prompt | #28 | `m9-meeting-prompt` | yes | reviewer and `/security-review` (Apple Events read browser URLs) | **real call: prompt, record, skip** | merged, 👤 open: user chose to check after the merge (D-109) |
 
-Each milestone's Done-when list is in `docs/specs/0<n>-*.md`. M3.1's is `docs/specs/03.1-faster-checks.md`. M3.2's is `docs/specs/03.2-echo.md`. M5.1's and M5.2's are `docs/specs/05.1-notebook.md` and `docs/specs/05.2-groups.md`. M7's is `docs/specs/07-terminal-ui.md`. M8 has no spec: its goals are in issue 31 and its report. Its researcher, developer and reviewer subagents, and its `/goal`-style loop, apply to that milestone only (D-59).
+Each milestone's Done-when list is in `docs/specs/0<n>-*.md`. M3.1's is `docs/specs/03.1-faster-checks.md`. M3.2's is `docs/specs/03.2-echo.md`. M5.1's and M5.2's are `docs/specs/05.1-notebook.md` and `docs/specs/05.2-groups.md`. M7's is `docs/specs/07-terminal-ui.md`. M9's is `docs/specs/08-meeting-prompt.md`. M8 has no spec: its goals are in issue 31 and its report. Its researcher, developer and reviewer subagents, and its `/goal`-style loop, apply to that milestone only (D-59).
 
 ## How each milestone runs
 1. Branch from `main`. Build in the main session.
